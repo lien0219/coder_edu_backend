@@ -8,7 +8,6 @@ import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
 	"coder_edu_backend/internal/service"
-	"coder_edu_backend/pkg/configwatcher"
 	"coder_edu_backend/pkg/database"
 	"coder_edu_backend/pkg/logger"
 	"coder_edu_backend/pkg/monitoring"
@@ -16,7 +15,6 @@ import (
 	"coder_edu_backend/pkg/tracing"
 	"context"
 	"log"
-	"path/filepath"
 	"time"
 
 	_ "coder_edu_backend/docs"
@@ -131,30 +129,6 @@ func NewApp(cfg *config.Config) *App {
 
 func (a *App) Run() {
 	log.Printf("Server running on port %s", a.Config.Server.Port)
-
-	// 启动配置热加载
-	go func() {
-		configDir := "configs"
-		configFile := "config.yaml"
-		configPath := filepath.Join(configDir, configFile)
-		configwatcher.WatchConfig(configPath, a.Config, func(newCfg interface{}) {
-			logger.Log.Info("Config reloaded")
-
-			newConfig, ok := newCfg.(*config.Config)
-			if !ok {
-				logger.Log.Error("Failed to cast new config to Config type")
-				return
-			}
-
-			a.Config = newConfig
-			for _, callback := range a.configCallbacks {
-				callback(newConfig)
-			}
-
-			logger.InitLogger(a.Config)
-			logger.Log.Info("Logger reinitialized with new config")
-		})
-	}()
 
 	if err := a.Router.Run(":" + a.Config.Server.Port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

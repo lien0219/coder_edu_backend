@@ -85,7 +85,7 @@ Coder Edu Backend是一个基于Go语言开发的教育平台后端服务，提�
    运行应用
    
    ```
-   go run main.go
+   go run main.go (fresh)
    ```
 ## 开发指南
 ### 项目架构

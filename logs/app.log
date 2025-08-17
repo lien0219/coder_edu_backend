@@ -1,0 +1,2 @@
+{"level":"INFO","time":"2025-08-18T00:11:30.036+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-18T00:11:37.059+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}

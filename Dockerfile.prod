@@ -1,0 +1,15 @@
+# 构建阶段
+FROM golang:1.20-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN go mod download
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o coder_edu_backend ./cmd
+
+# 运行阶段
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /root/
+COPY --from=builder /app/coder_edu_backend .
+COPY configs/config.prod.yaml ./configs/config.yaml
+EXPOSE 8080
+CMD ["./coder_edu_backend"]

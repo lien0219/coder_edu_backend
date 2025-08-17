@@ -1,0 +1,28 @@
+server:
+  port: 8080
+  mode: "debug"
+
+database:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: "REDACTED_PASSWORD"
+  dbname: "coder_edu_backend"
+  charset: "utf8mb4"
+  parseTime: true
+
+jwt:
+  secret: "REDACTED_JWT_SECRET"
+  expire_hours: 72
+
+storage:
+  type: "local" # or "minio"
+  local_path: "./uploads"
+  minio_endpoint: "localhost:9000"
+  minio_access_key: "minioadmin"
+  minio_secret_key: "minioadmin"
+  minio_bucket: "coder_edu_backend"
+
+Tracing:
+  Enabled: true
+  CollectorEndpoint: http://localhost:8080/api/traces

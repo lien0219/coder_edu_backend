@@ -1,0 +1,9 @@
+{"level":"INFO","time":"2025-08-17T21:34:46.270+0800","caller":"app/app.go:34","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-17T21:37:59.385+0800","caller":"app/app.go:35","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-17T22:08:17.838+0800","caller":"app/app.go:38","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-17T22:17:28.451+0800","caller":"app/app.go:38","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-17T22:26:28.413+0800","caller":"app/app.go:39","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-17T22:30:59.984+0800","caller":"app/app.go:39","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-17T22:38:40.469+0800","caller":"app/app.go:41","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-17T22:52:12.292+0800","caller":"app/app.go:46","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-17T23:00:28.817+0800","caller":"app/app.go:46","msg":"Logger initialized successfully"}

@@ -1,0 +1,337 @@
+basePath: /api
+definitions:
+  coder_edu_backend_internal_util.Response:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
+  internal_controller.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  internal_controller.RegisterRequest:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        minLength: 8
+        type: string
+      role:
+        enum:
+        - student
+        - teacher
+        - admin
+        type: string
+    required:
+    - email
+    - name
+    - password
+    - role
+    type: object
+  model.Resource:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      moduleType:
+        type: string
+      title:
+        type: string
+      type:
+        $ref: '#/definitions/model.ResourceType'
+      updatedAt:
+        type: string
+      uploaderID:
+        type: integer
+      url:
+        type: string
+      viewCount:
+        type: integer
+    type: object
+  model.ResourceType:
+    enum:
+    - pdf
+    - video
+    - article
+    - worksheet
+    type: string
+    x-enum-varnames:
+    - PDF
+    - Video
+    - Article
+    - Worksheet
+  model.User:
+    properties:
+      createdAt:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      language:
+        type: string
+      name:
+        type: string
+      password:
+        type: string
+      role:
+        $ref: '#/definitions/model.UserRole'
+      updatedAt:
+        type: string
+      xp:
+        type: integer
+    type: object
+  model.UserRole:
+    enum:
+    - student
+    - teacher
+    - admin
+    type: string
+    x-enum-varnames:
+    - Student
+    - Teacher
+    - Admin
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: This is a backend server for CoderEdu learning platform.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: CoderEdu Backend API
+  version: "1.0"
+paths:
+  /api/admin/resources:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload a PDF, video, article, or worksheet for a specific module
+      parameters:
+      - description: Resource title
+        in: formData
+        name: title
+        required: true
+        type: string
+      - description: Resource description
+        in: formData
+        name: description
+        type: string
+      - description: Resource type (pdf, video, article, worksheet)
+        enum:
+        - pdf
+        - video
+        - article
+        - worksheet
+        in: formData
+        name: type
+        required: true
+        type: string
+      - description: Module type (pre-class, in-class, post-class)
+        enum:
+        - pre-class
+        - in-class
+        - post-class
+        in: formData
+        name: moduleType
+        required: true
+        type: string
+      - description: Resource file
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Upload a learning resource (Admin only)
+      tags:
+      - content
+  /api/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user and return JWT token
+      parameters:
+      - description: User login credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_controller.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            allOf:
+            - $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+      summary: User login
+      tags:
+      - auth
+  /api/profile:
+    get:
+      consumes:
+      - application/json
+      description: Get the profile of the currently authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            allOf:
+            - $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.User'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Get current user profile
+      tags:
+      - auth
+  /api/register:
+    post:
+      consumes:
+      - application/json
+      description: Register a new user with the given information
+      parameters:
+      - description: User registration information
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_controller.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+      summary: Register a new user
+      tags:
+      - auth
+  /api/resources:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of resources for a specific module type
+      parameters:
+      - description: Module type (pre-class, in-class, post-class)
+        enum:
+        - pre-class
+        - in-class
+        - post-class
+        in: query
+        name: moduleType
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            allOf:
+            - $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.Resource'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Get resources by module type
+      tags:
+      - content
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

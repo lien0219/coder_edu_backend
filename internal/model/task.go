@@ -1,0 +1,29 @@
+package model
+
+import (
+	"gorm.io/gorm"
+	"time"
+)
+
+type TaskStatus string
+
+const (
+	TaskPending   TaskStatus = "pending"
+	TaskProgress  TaskStatus = "in_progress"
+	TaskCompleted TaskStatus = "completed"
+)
+
+type Task struct {
+	gorm.Model
+	ID          uint       `gorm:"primaryKey"`
+	Title       string     `gorm:"size:255;not null"`
+	Description string     `gorm:"type:text"`
+	ModuleType  string     `gorm:"size:50;not null"` // pre-class, in-class, post-class
+	Status      TaskStatus `gorm:"type:enum('pending','in_progress','completed');default:'pending'"`
+	UserID      uint       `gorm:"index"`
+	DueDate     time.Time
+}
+
+func (Task) TableName() string {
+	return "tasks"
+}

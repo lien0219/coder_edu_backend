@@ -1,9 +1,9 @@
-// @title CoderEdu Backend API
+// @title CoderEdu 后端 API
 // @version 1.0
-// @description This is a backend server for CoderEdu learning platform.
+// @description CoderEdu学习平台的后端服务器。
 // @termsOfService http://swagger.io/terms/
 
-// @contact.name API Support
+// @contact.name API支持
 // @contact.url http://www.swagger.io/support
 // @contact.email support@swagger.io
 

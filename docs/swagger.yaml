@@ -1,14 +1,6 @@
 basePath: /api
 definitions:
-  coder_edu_backend_internal_util.Response:
-    properties:
-      code:
-        type: integer
-      data: {}
-      message:
-        type: string
-    type: object
-  internal_controller.LoginRequest:
+  controller.LoginRequest:
     properties:
       email:
         type: string
@@ -18,7 +10,7 @@ definitions:
     - email
     - password
     type: object
-  internal_controller.RegisterRequest:
+  controller.RegisterRequest:
     properties:
       email:
         type: string
@@ -105,36 +97,44 @@ definitions:
     - Student
     - Teacher
     - Admin
+  util.Response:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
 host: localhost:8080
 info:
   contact:
     email: support@swagger.io
-    name: API Support
+    name: API支持
     url: http://www.swagger.io/support
-  description: This is a backend server for CoderEdu learning platform.
+  description: CoderEdu学习平台的后端服务器。
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   termsOfService: http://swagger.io/terms/
-  title: CoderEdu Backend API
+  title: CoderEdu 后端 API
   version: "1.0"
 paths:
   /api/admin/resources:
     post:
       consumes:
       - multipart/form-data
-      description: Upload a PDF, video, article, or worksheet for a specific module
+      description: 上传PDF、视频、文章或工作表到特定模块
       parameters:
-      - description: Resource title
+      - description: 资源标题
         in: formData
         name: title
         required: true
         type: string
-      - description: Resource description
+      - description: 资源描述
         in: formData
         name: description
         type: string
-      - description: Resource type (pdf, video, article, worksheet)
+      - description: 资源类型（pdf, video, article, worksheet)
         enum:
         - pdf
         - video
@@ -144,7 +144,7 @@ paths:
         name: type
         required: true
         type: string
-      - description: Module type (pre-class, in-class, post-class)
+      - description: 模块类型（pre-class, in-class, post-class)
         enum:
         - pre-class
         - in-class
@@ -153,7 +153,7 @@ paths:
         name: moduleType
         required: true
         type: string
-      - description: Resource file
+      - description: 资源文件
         in: formData
         name: file
         required: true
@@ -162,75 +162,75 @@ paths:
       - application/json
       responses:
         "201":
-          description: Created
+          description: 创建成功
           schema:
             allOf:
-            - $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            - $ref: '#/definitions/util.Response'
             - properties:
                 data:
                   type: object
               type: object
         "400":
-          description: Bad Request
+          description: 请求参数错误
           schema:
-            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            $ref: '#/definitions/util.Response'
         "401":
-          description: Unauthorized
+          description: 未授权
           schema:
-            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            $ref: '#/definitions/util.Response'
         "403":
-          description: Forbidden
+          description: 权限不足
           schema:
-            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            $ref: '#/definitions/util.Response'
         "500":
-          description: Internal Server Error
+          description: 服务器内部错误
           schema:
-            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            $ref: '#/definitions/util.Response'
       security:
       - ApiKeyAuth: []
-      summary: Upload a learning resource (Admin only)
+      summary: 上传学习资源（仅管理员）
       tags:
-      - content
+      - 内容
   /api/login:
     post:
       consumes:
       - application/json
-      description: Authenticate user and return JWT token
+      description: 验证用户身份并返回JWT令牌
       parameters:
-      - description: User login credentials
+      - description: 用户登录凭据
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_controller.LoginRequest'
+          $ref: '#/definitions/controller.LoginRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: Success
+          description: 成功
           schema:
             allOf:
-            - $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            - $ref: '#/definitions/util.Response'
             - properties:
                 data:
                   type: object
               type: object
         "400":
-          description: Bad Request
+          description: 请求参数错误
           schema:
-            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            $ref: '#/definitions/util.Response'
         "401":
-          description: Unauthorized
+          description: 未授权
           schema:
-            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
-      summary: User login
+            $ref: '#/definitions/util.Response'
+      summary: 用户登录
       tags:
-      - auth
+      - 认证
   /api/profile:
     get:
       consumes:
       - application/json
-      description: Get the profile of the currently authenticated user
+      description: 获取当前已认证用户的个人资料
       produces:
       - application/json
       responses:
@@ -238,7 +238,7 @@ paths:
           description: Success
           schema:
             allOf:
-            - $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            - $ref: '#/definitions/util.Response'
             - properties:
                 data:
                   $ref: '#/definitions/model.User'
@@ -246,54 +246,54 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            $ref: '#/definitions/util.Response'
       security:
       - ApiKeyAuth: []
-      summary: Get current user profile
+      summary: 获取当前用户资料
       tags:
-      - auth
+      - 认证
   /api/register:
     post:
       consumes:
       - application/json
-      description: Register a new user with the given information
+      description: 使用提供的信息注册新用户
       parameters:
-      - description: User registration information
+      - description: 用户注册信息
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_controller.RegisterRequest'
+          $ref: '#/definitions/controller.RegisterRequest'
       produces:
       - application/json
       responses:
         "201":
-          description: Created
+          description: 创建成功
           schema:
             allOf:
-            - $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            - $ref: '#/definitions/util.Response'
             - properties:
                 data:
                   type: object
               type: object
         "400":
-          description: Bad Request
+          description: 请求参数错误
           schema:
-            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            $ref: '#/definitions/util.Response'
         "500":
-          description: Internal Server Error
+          description: 服务器内部错误
           schema:
-            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
-      summary: Register a new user
+            $ref: '#/definitions/util.Response'
+      summary: 注册新用户
       tags:
-      - auth
+      - 认证
   /api/resources:
     get:
       consumes:
       - application/json
-      description: Get a list of resources for a specific module type
+      description: 获取特定模块类型的资源列表
       parameters:
-      - description: Module type (pre-class, in-class, post-class)
+      - description: 模块类型（pre-class, in-class, post-class)
         enum:
         - pre-class
         - in-class
@@ -306,10 +306,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: Success
+          description: 成功
           schema:
             allOf:
-            - $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            - $ref: '#/definitions/util.Response'
             - properties:
                 data:
                   items:
@@ -317,18 +317,31 @@ paths:
                   type: array
               type: object
         "400":
-          description: Bad Request
+          description: 请求参数错误
           schema:
-            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            $ref: '#/definitions/util.Response'
         "500":
-          description: Internal Server Error
+          description: 服务器内部错误
           schema:
-            $ref: '#/definitions/coder_edu_backend_internal_util.Response'
+            $ref: '#/definitions/util.Response'
       security:
       - ApiKeyAuth: []
-      summary: Get resources by module type
+      summary: 按模块类型获取资源
       tags:
-      - content
+      - 内容
+  /health:
+    get:
+      description: 检查服务状态
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      summary: 健康检查
+      tags:
+      - 系统
 securityDefinitions:
   ApiKeyAuth:
     in: header

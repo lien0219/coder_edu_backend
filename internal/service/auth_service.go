@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type AuthService struct {
@@ -24,6 +25,13 @@ func NewAuthService(userRepo *repository.UserRepository, cfg *config.Config) *Au
 }
 
 func (s *AuthService) Register(user *model.User) error {
+	_, err := s.UserRepo.FindByEmail(user.Email)
+	if err == nil {
+		return errors.New("该邮箱已被注册")
+	} else if err != gorm.ErrRecordNotFound {
+		return err
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return err

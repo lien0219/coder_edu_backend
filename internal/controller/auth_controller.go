@@ -34,6 +34,7 @@ type RegisterRequest struct {
 // @Param   body body RegisterRequest true "用户注册信息"
 // @Success 201 {object} util.Response{data=object} "创建成功"
 // @Failure 400 {object} util.Response "请求参数错误"
+// @Failure 409 {object} util.Response "邮箱已被注册"
 // @Failure 500 {object} util.Response "服务器内部错误"
 // @Router /api/register [post]
 func (c *AuthController) Register(ctx *gin.Context) {
@@ -51,7 +52,11 @@ func (c *AuthController) Register(ctx *gin.Context) {
 	}
 
 	if err := c.AuthService.Register(user); err != nil {
-		util.InternalServerError(ctx)
+		if err.Error() == "该邮箱已被注册" {
+			util.Error(ctx, 409, "该邮箱已被注册")
+		} else {
+			util.InternalServerError(ctx)
+		}
 		return
 	}
 

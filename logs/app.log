@@ -37,3 +37,6 @@
 {"level":"INFO","time":"2025-08-19T23:08:49.461+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
 {"level":"FATAL","time":"2025-08-19T23:08:49.514+0800","caller":"app/app.go:48","msg":"Failed to initialize database","error":"Error 3780 (HY000): Referencing column 'user_id' and referenced column 'id' in foreign key constraint 'fk_tasks_user' are incompatible.","stacktrace":"coder_edu_backend/internal/app.NewApp\n\tD:/桌面/技术栈/Golang/project/coder_edu_backend/internal/app/app.go:48\nmain.main\n\tD:/桌面/技术栈/Golang/project/coder_edu_backend/main.go:36\nruntime.main\n\tD:/golang/src/runtime/proc.go:283"}
 {"level":"INFO","time":"2025-08-19T23:11:16.954+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-19T23:12:39.345+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-19T23:17:32.839+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-19T23:28:21.402+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}

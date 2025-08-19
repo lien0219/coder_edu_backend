@@ -11,7 +11,7 @@ const docTemplate = `{
         "title": "{{.Title}}",
         "termsOfService": "http://swagger.io/terms/",
         "contact": {
-            "name": "API Support",
+            "name": "API支持",
             "url": "http://www.swagger.io/support",
             "email": "support@swagger.io"
         },
@@ -31,7 +31,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Upload a PDF, video, article, or worksheet for a specific module",
+                "description": "上传PDF、视频、文章或工作表到特定模块",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -39,20 +39,20 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "content"
+                    "内容"
                 ],
-                "summary": "Upload a learning resource (Admin only)",
+                "summary": "上传学习资源（仅管理员）",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Resource title",
+                        "description": "资源标题",
                         "name": "title",
                         "in": "formData",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "Resource description",
+                        "description": "资源描述",
                         "name": "description",
                         "in": "formData"
                     },
@@ -64,7 +64,7 @@ const docTemplate = `{
                             "worksheet"
                         ],
                         "type": "string",
-                        "description": "Resource type (pdf, video, article, worksheet)",
+                        "description": "资源类型（pdf, video, article, worksheet)",
                         "name": "type",
                         "in": "formData",
                         "required": true
@@ -76,14 +76,14 @@ const docTemplate = `{
                             "post-class"
                         ],
                         "type": "string",
-                        "description": "Module type (pre-class, in-class, post-class)",
+                        "description": "模块类型（pre-class, in-class, post-class)",
                         "name": "moduleType",
                         "in": "formData",
                         "required": true
                     },
                     {
                         "type": "file",
-                        "description": "Resource file",
+                        "description": "资源文件",
                         "name": "file",
                         "in": "formData",
                         "required": true
@@ -91,11 +91,11 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "Created",
+                        "description": "创建成功",
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                                    "$ref": "#/definitions/util.Response"
                                 },
                                 {
                                     "type": "object",
@@ -109,27 +109,27 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "请求参数错误",
                         "schema": {
-                            "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                            "$ref": "#/definitions/util.Response"
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "未授权",
                         "schema": {
-                            "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                            "$ref": "#/definitions/util.Response"
                         }
                     },
                     "403": {
-                        "description": "Forbidden",
+                        "description": "权限不足",
                         "schema": {
-                            "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                            "$ref": "#/definitions/util.Response"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "服务器内部错误",
                         "schema": {
-                            "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                            "$ref": "#/definitions/util.Response"
                         }
                     }
                 }
@@ -137,7 +137,7 @@ const docTemplate = `{
         },
         "/api/login": {
             "post": {
-                "description": "Authenticate user and return JWT token",
+                "description": "验证用户身份并返回JWT令牌",
                 "consumes": [
                     "application/json"
                 ],
@@ -145,27 +145,27 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "auth"
+                    "认证"
                 ],
-                "summary": "User login",
+                "summary": "用户登录",
                 "parameters": [
                     {
-                        "description": "User login credentials",
+                        "description": "用户登录凭据",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_controller.LoginRequest"
+                            "$ref": "#/definitions/controller.LoginRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Success",
+                        "description": "成功",
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                                    "$ref": "#/definitions/util.Response"
                                 },
                                 {
                                     "type": "object",
@@ -179,15 +179,15 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "请求参数错误",
                         "schema": {
-                            "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                            "$ref": "#/definitions/util.Response"
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "未授权",
                         "schema": {
-                            "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                            "$ref": "#/definitions/util.Response"
                         }
                     }
                 }
@@ -200,7 +200,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get the profile of the currently authenticated user",
+                "description": "获取当前已认证用户的个人资料",
                 "consumes": [
                     "application/json"
                 ],
@@ -208,16 +208,16 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "auth"
+                    "认证"
                 ],
-                "summary": "Get current user profile",
+                "summary": "获取当前用户资料",
                 "responses": {
                     "200": {
                         "description": "Success",
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                                    "$ref": "#/definitions/util.Response"
                                 },
                                 {
                                     "type": "object",
@@ -233,7 +233,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                            "$ref": "#/definitions/util.Response"
                         }
                     }
                 }
@@ -241,7 +241,7 @@ const docTemplate = `{
         },
         "/api/register": {
             "post": {
-                "description": "Register a new user with the given information",
+                "description": "使用提供的信息注册新用户",
                 "consumes": [
                     "application/json"
                 ],
@@ -249,27 +249,27 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "auth"
+                    "认证"
                 ],
-                "summary": "Register a new user",
+                "summary": "注册新用户",
                 "parameters": [
                     {
-                        "description": "User registration information",
+                        "description": "用户注册信息",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_controller.RegisterRequest"
+                            "$ref": "#/definitions/controller.RegisterRequest"
                         }
                     }
                 ],
                 "responses": {
                     "201": {
-                        "description": "Created",
+                        "description": "创建成功",
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                                    "$ref": "#/definitions/util.Response"
                                 },
                                 {
                                     "type": "object",
@@ -283,15 +283,15 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "请求参数错误",
                         "schema": {
-                            "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                            "$ref": "#/definitions/util.Response"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "服务器内部错误",
                         "schema": {
-                            "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                            "$ref": "#/definitions/util.Response"
                         }
                     }
                 }
@@ -304,7 +304,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get a list of resources for a specific module type",
+                "description": "获取特定模块类型的资源列表",
                 "consumes": [
                     "application/json"
                 ],
@@ -312,9 +312,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "content"
+                    "内容"
                 ],
-                "summary": "Get resources by module type",
+                "summary": "按模块类型获取资源",
                 "parameters": [
                     {
                         "enum": [
@@ -323,7 +323,7 @@ const docTemplate = `{
                             "post-class"
                         ],
                         "type": "string",
-                        "description": "Module type (pre-class, in-class, post-class)",
+                        "description": "模块类型（pre-class, in-class, post-class)",
                         "name": "moduleType",
                         "in": "query",
                         "required": true
@@ -331,11 +331,11 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Success",
+                        "description": "成功",
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                                    "$ref": "#/definitions/util.Response"
                                 },
                                 {
                                     "type": "object",
@@ -352,15 +352,35 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "请求参数错误",
                         "schema": {
-                            "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                            "$ref": "#/definitions/util.Response"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "服务器内部错误",
                         "schema": {
-                            "$ref": "#/definitions/coder_edu_backend_internal_util.Response"
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "检查服务状态",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统"
+                ],
+                "summary": "健康检查",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
                         }
                     }
                 }
@@ -368,19 +388,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "coder_edu_backend_internal_util.Response": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "integer"
-                },
-                "data": {},
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_controller.LoginRequest": {
+        "controller.LoginRequest": {
             "type": "object",
             "required": [
                 "email",
@@ -395,7 +403,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_controller.RegisterRequest": {
+        "controller.RegisterRequest": {
             "type": "object",
             "required": [
                 "email",
@@ -518,6 +526,18 @@ const docTemplate = `{
                 "Teacher",
                 "Admin"
             ]
+        },
+        "util.Response": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {},
+                "message": {
+                    "type": "string"
+                }
+            }
         }
     },
     "securityDefinitions": {
@@ -535,8 +555,8 @@ var SwaggerInfo = &swag.Spec{
 	Host:             "localhost:8080",
 	BasePath:         "/api",
 	Schemes:          []string{},
-	Title:            "CoderEdu Backend API",
-	Description:      "This is a backend server for CoderEdu learning platform.",
+	Title:            "CoderEdu 后端 API",
+	Description:      "CoderEdu学习平台的后端服务器。",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

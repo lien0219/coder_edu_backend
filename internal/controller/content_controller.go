@@ -26,22 +26,22 @@ type UploadResourceRequest struct {
 }
 
 // UploadResource godoc
-// @Summary Upload a learning resource (Admin only)
-// @Description Upload a PDF, video, article, or worksheet for a specific module
-// @Tags content
+// @Summary 上传学习资源（仅管理员）
+// @Description 上传PDF、视频、文章或工作表到特定模块
+// @Tags 内容
 // @Accept  multipart/form-data
 // @Produce  json
 // @Security ApiKeyAuth
-// @Param   title formData string true "Resource title"
-// @Param   description formData string false "Resource description"
-// @Param   type formData string true "Resource type (pdf, video, article, worksheet)" Enums(pdf, video, article, worksheet)
-// @Param   moduleType formData string true "Module type (pre-class, in-class, post-class)" Enums(pre-class, in-class, post-class)
-// @Param   file formData file true "Resource file"
-// @Success 201 {object} util.Response{data=object} "Created"
-// @Failure 400 {object} util.Response "Bad Request"
-// @Failure 401 {object} util.Response "Unauthorized"
-// @Failure 403 {object} util.Response "Forbidden"
-// @Failure 500 {object} util.Response "Internal Server Error"
+// @Param   title formData string true "资源标题"
+// @Param   description formData string false "资源描述"
+// @Param   type formData string true "资源类型（pdf, video, article, worksheet)" Enums(pdf, video, article, worksheet)
+// @Param   moduleType formData string true "模块类型（pre-class, in-class, post-class)" Enums(pre-class, in-class, post-class)
+// @Param   file formData file true "资源文件"
+// @Success 201 {object} util.Response{data=object} "创建成功"
+// @Failure 400 {object} util.Response "请求参数错误"
+// @Failure 401 {object} util.Response "未授权"
+// @Failure 403 {object} util.Response "权限不足"
+// @Failure 500 {object} util.Response "服务器内部错误"
 // @Router /api/admin/resources [post]
 func (c *ContentController) UploadResource(ctx *gin.Context) {
 	var req UploadResourceRequest
@@ -72,16 +72,16 @@ func (c *ContentController) UploadResource(ctx *gin.Context) {
 }
 
 // GetResources godoc
-// @Summary Get resources by module type
-// @Description Get a list of resources for a specific module type
-// @Tags content
+// @Summary 按模块类型获取资源
+// @Description 获取特定模块类型的资源列表
+// @Tags 内容
 // @Accept  json
 // @Produce  json
 // @Security ApiKeyAuth
-// @Param   moduleType query string true "Module type (pre-class, in-class, post-class)" Enums(pre-class, in-class, post-class)
-// @Success 200 {object} util.Response{data=[]model.Resource} "Success"
-// @Failure 400 {object} util.Response "Bad Request"
-// @Failure 500 {object} util.Response "Internal Server Error"
+// @Param   moduleType query string true "模块类型（pre-class, in-class, post-class)" Enums(pre-class, in-class, post-class)
+// @Success 200 {object} util.Response{data=[]model.Resource} "成功"
+// @Failure 400 {object} util.Response "请求参数错误"
+// @Failure 500 {object} util.Response "服务器内部错误"
 // @Router /api/resources [get]
 func (c *ContentController) GetResources(ctx *gin.Context) {
 	moduleType := ctx.Query("moduleType")

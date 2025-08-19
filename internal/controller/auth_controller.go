@@ -26,15 +26,15 @@ type RegisterRequest struct {
 }
 
 // Register godoc
-// @Summary Register a new user
-// @Description Register a new user with the given information
-// @Tags auth
+// @Summary 注册新用户
+// @Description 使用提供的信息注册新用户
+// @Tags 认证
 // @Accept  json
 // @Produce  json
-// @Param   body body RegisterRequest true "User registration information"
-// @Success 201 {object} util.Response{data=object} "Created"
-// @Failure 400 {object} util.Response "Bad Request"
-// @Failure 500 {object} util.Response "Internal Server Error"
+// @Param   body body RegisterRequest true "用户注册信息"
+// @Success 201 {object} util.Response{data=object} "创建成功"
+// @Failure 400 {object} util.Response "请求参数错误"
+// @Failure 500 {object} util.Response "服务器内部错误"
 // @Router /api/register [post]
 func (c *AuthController) Register(ctx *gin.Context) {
 	var req RegisterRequest
@@ -66,15 +66,15 @@ type LoginRequest struct {
 }
 
 // Login godoc
-// @Summary User login
-// @Description Authenticate user and return JWT token
-// @Tags auth
+// @Summary 用户登录
+// @Description 验证用户身份并返回JWT令牌
+// @Tags 认证
 // @Accept  json
 // @Produce  json
-// @Param   body body LoginRequest true "User login credentials"
-// @Success 200 {object} util.Response{data=object} "Success"
-// @Failure 400 {object} util.Response "Bad Request"
-// @Failure 401 {object} util.Response "Unauthorized"
+// @Param   body body LoginRequest true "用户登录凭据"
+// @Success 200 {object} util.Response{data=object} "成功"
+// @Failure 400 {object} util.Response "请求参数错误"
+// @Failure 401 {object} util.Response "未授权"
 // @Router /api/login [post]
 func (c *AuthController) Login(ctx *gin.Context) {
 	var req LoginRequest
@@ -93,9 +93,9 @@ func (c *AuthController) Login(ctx *gin.Context) {
 }
 
 // GetProfile godoc
-// @Summary Get current user profile
-// @Description Get the profile of the currently authenticated user
-// @Tags auth
+// @Summary 获取当前用户资料
+// @Description 获取当前已认证用户的个人资料
+// @Tags 认证
 // @Accept  json
 // @Produce  json
 // @Security ApiKeyAuth

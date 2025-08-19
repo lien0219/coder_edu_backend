@@ -18,7 +18,7 @@ type Resource struct {
 	Type        ResourceType `gorm:"type:enum('pdf','video','article','worksheet');not null"`
 	URL         string       `gorm:"size:255;not null"`
 	ModuleType  string       `gorm:"size:50"`
-	UploaderID  uint         `gorm:"index"`
+	UploaderID  uint         `gorm:"index;type:int unsigned"`
 	ViewCount   int          `gorm:"default:0"`
 }
 

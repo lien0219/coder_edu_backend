@@ -1,8 +1,9 @@
 package model
 
 import (
-	"gorm.io/gorm"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type TaskStatus string
@@ -20,7 +21,7 @@ type Task struct {
 	Description string     `gorm:"type:text"`
 	ModuleType  string     `gorm:"size:50;not null"` // pre-class, in-class, post-class
 	Status      TaskStatus `gorm:"type:enum('pending','in_progress','completed');default:'pending'"`
-	UserID      uint       `gorm:"index"`
+	UserID      uint       `gorm:"index;type:int unsigned"`
 	DueDate     time.Time
 }
 

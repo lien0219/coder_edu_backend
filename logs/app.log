@@ -69,3 +69,13 @@
 {"level":"INFO","time":"2025-08-23T22:43:30.780+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
 {"level":"INFO","time":"2025-08-23T22:52:09.259+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
 {"level":"INFO","time":"2025-08-23T22:56:09.813+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-23T23:24:59.551+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-23T23:25:06.423+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-23T23:49:57.661+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-23T23:54:55.188+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-24T00:24:56.896+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-24T00:25:03.637+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-24T00:49:57.341+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-24T00:54:56.995+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-24T10:32:35.050+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-08-24T10:32:44.688+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}

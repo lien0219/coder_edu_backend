@@ -51,12 +51,35 @@ func NewApp(cfg *config.Config) *App {
 
 	userRepo := repository.NewUserRepository(db)
 	resourceRepo := repository.NewResourceRepository(db)
+	taskRepo := repository.NewTaskRepository(db)
+	goalRepo := repository.NewGoalRepository(db)
+	moduleRepo := repository.NewModuleRepository(db)
+	progressRepo := repository.NewProgressRepository(db)
+	learningLogRepo := repository.NewLearningLogRepository(db)
+	quizRepo := repository.NewQuizRepository(db)
+	achievementRepo := repository.NewAchievementRepository(db)
+	postRepo := repository.NewPostRepository(db)
+	questionRepo := repository.NewQuestionRepository(db)
+	answerRepo := repository.NewAnswerRepository(db)
+	sessionRepo := repository.NewSessionRepository(db)
+	skillRepo := repository.NewSkillRepository(db)
+	recommendationRepo := repository.NewRecommendationRepository(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	contentService := service.NewContentService(resourceRepo, cfg)
+	dashboardService := service.NewDashboardService(userRepo, taskRepo, resourceRepo, goalRepo)
+	learningService := service.NewLearningService(moduleRepo, taskRepo, resourceRepo, progressRepo, learningLogRepo, quizRepo, db)
+	achievementService := service.NewAchievementService(achievementRepo, userRepo, goalRepo)
+	communityService := service.NewCommunityService(postRepo, nil, questionRepo, answerRepo, userRepo)
+	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo)
 
 	authController := controller.NewAuthController(authService)
 	contentController := controller.NewContentController(contentService)
+	dashboardController := controller.NewDashboardController(dashboardService)
+	learningController := controller.NewLearningController(learningService)
+	achievementController := controller.NewAchievementController(achievementService)
+	communityController := controller.NewCommunityController(communityService)
+	analyticsController := controller.NewAnalyticsController(analyticsService)
 
 	// 监控
 	monitoring.Init()
@@ -108,6 +131,36 @@ func NewApp(cfg *config.Config) *App {
 	{
 		auth.GET("/profile", authController.GetProfile)
 		auth.GET("/resources", contentController.GetResources)
+
+		auth.GET("/dashboard", dashboardController.GetDashboard)
+		auth.GET("/dashboard/today-tasks", dashboardController.GetTodayTasks)
+		auth.PATCH("/dashboard/tasks/:taskId", dashboardController.UpdateTaskStatus)
+
+		auth.GET("/learning/pre-class", learningController.GetPreClass)
+		auth.GET("/learning/in-class", learningController.GetInClass)
+		auth.GET("/learning/post-class", learningController.GetPostClass)
+		auth.POST("/learning/learning-log", learningController.SubmitLearningLog)
+		auth.POST("/learning/quiz/:quizId", learningController.SubmitQuiz)
+
+		auth.GET("/achievements", achievementController.GetUserAchievements)
+		auth.GET("/achievements/leaderboard", achievementController.GetLeaderboard)
+		auth.GET("/achievements/goals", achievementController.GetUserGoals)
+		auth.POST("/achievements/goals", achievementController.CreateGoal)
+		auth.PATCH("/achievements/goals/:goalId", achievementController.UpdateGoalProgress)
+
+		auth.GET("/community/posts", communityController.GetPosts)
+		auth.POST("/community/posts", communityController.CreatePost)
+		auth.GET("/community/questions", communityController.GetQuestions)
+		auth.POST("/community/questions", communityController.CreateQuestion)
+		auth.POST("/community/questions/:questionId/answers", communityController.AnswerQuestion)
+		auth.POST("/community/:type/:id/upvote", communityController.Upvote)
+
+		auth.GET("/analytics/overview", analyticsController.GetOverview)
+		auth.GET("/analytics/progress", analyticsController.GetProgress)
+		auth.GET("/analytics/skills", analyticsController.GetSkills)
+		auth.GET("/analytics/recommendations", analyticsController.GetRecommendations)
+		auth.POST("/analytics/session/start", analyticsController.StartSession)
+		auth.POST("/analytics/session/:sessionId/end", analyticsController.EndSession)
 	}
 
 	admin := router.Group("/api/admin")

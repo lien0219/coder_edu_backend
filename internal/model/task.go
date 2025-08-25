@@ -23,6 +23,8 @@ type Task struct {
 	Status      TaskStatus `gorm:"type:enum('pending','in_progress','completed');default:'pending'"`
 	UserID      uint       `gorm:"index;type:int unsigned"`
 	DueDate     time.Time
+	Order       int    `gorm:"default:0"`
+	Difficulty  string `gorm:"size:10"` // 难度字段
 }
 
 func (Task) TableName() string {

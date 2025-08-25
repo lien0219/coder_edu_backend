@@ -97,6 +97,84 @@ definitions:
     - Student
     - Teacher
     - Admin
+  service.AnswerRequest:
+    properties:
+      content:
+        type: string
+    required:
+    - content
+    type: object
+  service.GoalRequest:
+    properties:
+      description:
+        type: string
+      targetValue:
+        type: integer
+      title:
+        type: string
+    required:
+    - targetValue
+    - title
+    type: object
+  service.LearningLogRequest:
+    properties:
+      challenges:
+        items:
+          type: string
+        type: array
+      content:
+        type: string
+      insights:
+        items:
+          type: string
+        type: array
+      nextSteps:
+        items:
+          type: string
+        type: array
+      tags:
+        items:
+          type: string
+        type: array
+    required:
+    - content
+    type: object
+  service.PostRequest:
+    properties:
+      content:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+    required:
+    - content
+    - title
+    type: object
+  service.QuestionRequest:
+    properties:
+      content:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+    required:
+    - content
+    - title
+    type: object
+  service.QuizSubmission:
+    properties:
+      answers:
+        additionalProperties:
+          type: integer
+        description: questionID -> answerIndex
+        type: object
+    type: object
   util.Response:
     properties:
       code:
@@ -119,6 +197,117 @@ info:
   title: CoderEdu 后端 API
   version: "1.0"
 paths:
+  /api/achievements:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户的成就、徽章和积分
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取用户成就
+      tags:
+      - 成就系统
+  /api/achievements/goals:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户的学习目标
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取用户目标
+      tags:
+      - 成就系统
+    post:
+      consumes:
+      - application/json
+      description: 创建新的学习目标
+      parameters:
+      - description: 目标信息
+        in: body
+        name: goal
+        required: true
+        schema:
+          $ref: '#/definitions/service.GoalRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建学习目标
+      tags:
+      - 成就系统
+  /api/achievements/goals/{goalId}:
+    patch:
+      consumes:
+      - application/json
+      description: 更新学习目标的进度
+      parameters:
+      - description: 目标ID
+        in: path
+        name: goalId
+        required: true
+        type: integer
+      - description: 进度百分比
+        in: body
+        maximum: 100
+        minimum: 0
+        name: progress
+        required: true
+        schema:
+          type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新目标进度
+      tags:
+      - 成就系统
+  /api/achievements/leaderboard:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户积分排行榜
+      parameters:
+      - default: 10
+        description: 返回数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取排行榜
+      tags:
+      - 成就系统
   /api/admin/resources:
     post:
       consumes:
@@ -191,6 +380,484 @@ paths:
       summary: 上传学习资源（仅管理员）
       tags:
       - 内容
+  /api/analytics/overview:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户的学习分析概览数据
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取学习分析概览
+      tags:
+      - 分析
+  /api/analytics/progress:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户的学习进度数据
+      parameters:
+      - default: 6
+        description: 周数
+        in: query
+        name: weeks
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取学习进度
+      tags:
+      - 分析
+  /api/analytics/recommendations:
+    get:
+      consumes:
+      - application/json
+      description: 获取基于用户学习数据的个性化建议
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取个性化建议
+      tags:
+      - 分析
+  /api/analytics/session/{sessionId}/end:
+    post:
+      consumes:
+      - application/json
+      description: 记录用户的学习会话结束
+      parameters:
+      - description: 会话ID
+        in: path
+        name: sessionId
+        required: true
+        type: integer
+      - description: 活动数据
+        in: body
+        name: activity
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 结束学习会话
+      tags:
+      - 分析
+  /api/analytics/session/start:
+    post:
+      consumes:
+      - application/json
+      description: 记录用户的学习会话开始
+      parameters:
+      - description: 模块ID
+        in: query
+        name: moduleId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 记录学习会话
+      tags:
+      - 分析
+  /api/analytics/skills:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户的技能评估数据
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取技能评估
+      tags:
+      - 分析
+  /api/community/{type}/{id}/upvote:
+    post:
+      consumes:
+      - application/json
+      description: 给帖子、评论或回答点赞
+      parameters:
+      - description: 内容类型
+        enum:
+        - post
+        - comment
+        - answer
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: 内容ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 点赞内容
+      tags:
+      - 社区
+  /api/community/posts:
+    get:
+      consumes:
+      - application/json
+      description: 获取社区讨论帖子列表
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - description: 标签筛选
+        in: query
+        name: tag
+        type: string
+      - default: new
+        description: 排序方式
+        enum:
+        - new
+        - popular
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取讨论帖子
+      tags:
+      - 社区
+    post:
+      consumes:
+      - application/json
+      description: 创建新的讨论帖子
+      parameters:
+      - description: 帖子内容
+        in: body
+        name: post
+        required: true
+        schema:
+          $ref: '#/definitions/service.PostRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建讨论帖子
+      tags:
+      - 社区
+  /api/community/questions:
+    get:
+      consumes:
+      - application/json
+      description: 获取问答区问题列表
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - description: 标签筛选
+        in: query
+        name: tag
+        type: string
+      - description: 是否已解决
+        in: query
+        name: solved
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取问题列表
+      tags:
+      - 社区
+    post:
+      consumes:
+      - application/json
+      description: 创建新的问题
+      parameters:
+      - description: 问题内容
+        in: body
+        name: question
+        required: true
+        schema:
+          $ref: '#/definitions/service.QuestionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建问题
+      tags:
+      - 社区
+  /api/community/questions/{questionId}/answers:
+    post:
+      consumes:
+      - application/json
+      description: 回答一个问题
+      parameters:
+      - description: 问题ID
+        in: path
+        name: questionId
+        required: true
+        type: integer
+      - description: 回答内容
+        in: body
+        name: answer
+        required: true
+        schema:
+          $ref: '#/definitions/service.AnswerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 回答问题
+      tags:
+      - 社区
+  /api/dashboard:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户仪表盘数据，包括今日任务、进度、资源等
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取仪表盘数据
+      tags:
+      - 仪表盘
+  /api/dashboard/tasks/{taskId}:
+    patch:
+      consumes:
+      - application/json
+      description: 标记任务为完成或进行中
+      parameters:
+      - description: 任务ID
+        in: path
+        name: taskId
+        required: true
+        type: integer
+      - description: 任务状态
+        in: body
+        name: status
+        required: true
+        schema:
+          enum:
+          - completed
+          - in_progress
+          type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新任务状态
+      tags:
+      - 仪表盘
+  /api/dashboard/today-tasks:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户今日需要完成的学习任务
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取今日任务
+      tags:
+      - 仪表盘
+  /api/learning/in-class:
+    get:
+      consumes:
+      - application/json
+      description: 获取课中学习模块的内容
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取课中学习内容
+      tags:
+      - 学习模块
+  /api/learning/learning-log:
+    post:
+      consumes:
+      - application/json
+      description: 提交课后学习日志和反思
+      parameters:
+      - description: 学习日志内容
+        in: body
+        name: log
+        required: true
+        schema:
+          $ref: '#/definitions/service.LearningLogRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 提交学习日志
+      tags:
+      - 学习模块
+  /api/learning/post-class:
+    get:
+      consumes:
+      - application/json
+      description: 获取课后回顾模块的内容
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取课后回顾内容
+      tags:
+      - 学习模块
+  /api/learning/pre-class:
+    get:
+      consumes:
+      - application/json
+      description: 获取课前准备模块的内容
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取课前准备内容
+      tags:
+      - 学习模块
+  /api/learning/quiz/{quizId}:
+    post:
+      consumes:
+      - application/json
+      description: 提交课后测验答案
+      parameters:
+      - description: 测验ID
+        in: path
+        name: quizId
+        required: true
+        type: integer
+      - description: 测验答案
+        in: body
+        name: answers
+        required: true
+        schema:
+          $ref: '#/definitions/service.QuizSubmission'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 提交测验答案
+      tags:
+      - 学习模块
   /api/login:
     post:
       consumes:
@@ -278,6 +945,10 @@ paths:
               type: object
         "400":
           description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "409":
+          description: 邮箱已被注册
           schema:
             $ref: '#/definitions/util.Response'
         "500":

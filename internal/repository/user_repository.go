@@ -2,6 +2,7 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+
 	"gorm.io/gorm"
 )
 
@@ -38,4 +39,16 @@ func (r *UserRepository) UpdateXP(userID uint, xp int) error {
 		Where("id = ?", userID).
 		Update("xp", gorm.Expr("xp + ?", xp)).
 		Error
+}
+func (r *UserRepository) FindTopByXP(limit int) ([]model.User, error) {
+	var users []model.User
+	err := r.DB.Order("xp DESC").Limit(limit).Find(&users).Error
+	return users, err
+}
+
+// 获取指定用户的所有成就
+func (r *UserRepository) GetAchievements(userID uint) ([]model.Achievement, error) {
+	var achievements []model.Achievement
+	err := r.DB.Where("user_id = ?", userID).Find(&achievements).Error
+	return achievements, err
 }

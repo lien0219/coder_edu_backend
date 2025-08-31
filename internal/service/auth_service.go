@@ -50,7 +50,7 @@ func (s *AuthService) Login(email, password string) (string, error) {
 		return "", errors.New("invalid credentials")
 	}
 
-	return util.GenerateJWT(user, s.Cfg.JWT.Secret, s.Cfg.JWT.ExpireTime)
+	return util.GenerateJWT(user, s.Cfg.JWT.Secret, 72)
 }
 
 func (s *AuthService) GetCurrentUser(c *gin.Context) *model.User {

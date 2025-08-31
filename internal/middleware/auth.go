@@ -4,6 +4,7 @@ import (
 	"coder_edu_backend/internal/config"
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/util"
+	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		cfg := c.MustGet("config").(*config.Config)
 		claims, err := util.ParseJWT(tokenString, cfg.JWT.Secret)
 		if err != nil {
+			fmt.Printf("JWT解析错误: %v\n", err)
 			util.Unauthorized(c)
 			c.Abort()
 			return

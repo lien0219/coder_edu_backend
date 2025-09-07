@@ -53,7 +53,15 @@ func LoadConfig(path string) (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 
+	viper.SetEnvPrefix("CODER_EDU")
 	viper.AutomaticEnv()
+
+	viper.BindEnv("database.host", "DATABASE_HOST")
+	viper.BindEnv("database.port", "DATABASE_PORT")
+	viper.BindEnv("database.user", "DATABASE_USER")
+	viper.BindEnv("database.password", "DATABASE_PASSWORD")
+	viper.BindEnv("database.dbname", "DATABASE_NAME")
+	viper.BindEnv("jwt.secret", "JWT_SECRET")
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, err

@@ -2,49 +2,42 @@ version: "3.8"
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
-    image: coder_edu_backend:latest
+    build: .
+    container_name: coder_edu_backend
     ports:
       - "8080:8080"
-    environment:
-      - TZ=Asia/Shanghai
     depends_on:
-      - mysql
+      - db
+    environment:
+      - DATABASE_HOST=db
+      - DATABASE_PORT=3306
+      - DATABASE_USER=root
+      - DATABASE_PASSWORD=REDACTED_PASSWORD
+      - DATABASE_NAME=coder_edu_backend
+      - JWT_SECRET=REDACTED_JWT_SECRET
+    volumes:
+      - ./uploads:/app/uploads
     networks:
-      - learning-net
+      - coder_edu_network
 
-  mysql:
+  db:
     image: mysql:8.0
-    command: --default-authentication-plugin=mysql_native_password
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: learning_platform
-      MYSQL_USER: appuser
-      MYSQL_PASSWORD: apppassword
-    volumes:
-      - mysql-data:/var/lib/mysql
-    networks:
-      - learning-net
-
-  minio:
-    image: minio/minio
-    command: server /data
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+    container_name: coder_edu_mysql
     ports:
-      - "9000:9000"
-      - "9001:9001" # MinIO控制台
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=REDACTED_PASSWORD
+      - MYSQL_DATABASE=coder_edu_backend
     volumes:
-      - minio-data:/data
+      - mysql_data:/var/lib/mysql
+      - mysql_config:/etc/mysql/conf.d
     networks:
-      - learning-net
+      - coder_edu_network
 
 networks:
-  learning-net:
+  coder_edu_network:
+    driver: bridge
 
 volumes:
-  mysql-data:
-  minio-data:
+  mysql_data:
+  mysql_config:

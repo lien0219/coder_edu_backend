@@ -31,6 +31,29 @@ definitions:
     - password
     - role
     type: object
+  controller.UpdateUserRequest:
+    properties:
+      disabled:
+        type: boolean
+      email:
+        type: string
+      language:
+        type: string
+      name:
+        type: string
+      password:
+        type: string
+      role:
+        enum:
+        - student
+        - teacher
+        - admin
+        type: string
+    required:
+    - email
+    - name
+    - role
+    type: object
   model.Resource:
     properties:
       createdAt:
@@ -70,11 +93,15 @@ definitions:
     properties:
       createdAt:
         type: string
+      disabled:
+        type: boolean
       email:
         type: string
       id:
         type: integer
       language:
+        type: string
+      lastLogin:
         type: string
       name:
         type: string
@@ -380,6 +407,268 @@ paths:
       summary: 上传学习资源（仅管理员）
       tags:
       - 内容
+  /api/admin/users:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户列表，支持分页和筛选
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      - description: 角色筛选
+        in: query
+        name: role
+        type: string
+      - description: 状态筛选
+        in: query
+        name: status
+        type: string
+      - description: 搜索关键词
+        in: query
+        name: search
+        type: string
+      - description: 开始日期
+        in: query
+        name: startDate
+        type: string
+      - description: 结束日期
+        in: query
+        name: endDate
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.User'
+                  type: array
+              type: object
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 获取用户列表
+      tags:
+      - 用户管理
+  /api/admin/users/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除指定的用户
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: 用户不存在
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 删除用户
+      tags:
+      - 用户管理
+    get:
+      consumes:
+      - application/json
+      description: 根据ID获取用户详细信息
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.User'
+              type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: 用户不存在
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 获取单个用户信息
+      tags:
+      - 用户管理
+    put:
+      consumes:
+      - application/json
+      description: 更新用户的详细信息
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 用户更新信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.User'
+              type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: 用户不存在
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 更新用户信息
+      tags:
+      - 用户管理
+  /api/admin/users/{id}/disable:
+    post:
+      consumes:
+      - application/json
+      description: 禁用或启用指定的用户
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 是否禁用
+        in: query
+        name: disable
+        required: true
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: 用户不存在
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 禁用/启用用户
+      tags:
+      - 用户管理
+  /api/admin/users/{id}/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: 重置用户密码并返回临时密码
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: 用户不存在
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 重置用户密码
+      tags:
+      - 用户管理
   /api/analytics/overview:
     get:
       consumes:

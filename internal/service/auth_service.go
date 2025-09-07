@@ -46,6 +46,10 @@ func (s *AuthService) Login(email, password string) (string, error) {
 		return "", errors.New("invalid credentials")
 	}
 
+	if user.Disabled {
+		return "", errors.New("account disabled")
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return "", errors.New("invalid credentials")
 	}

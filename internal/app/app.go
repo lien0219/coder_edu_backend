@@ -72,6 +72,7 @@ func NewApp(cfg *config.Config) *App {
 	achievementService := service.NewAchievementService(achievementRepo, userRepo, goalRepo)
 	communityService := service.NewCommunityService(postRepo, nil, questionRepo, answerRepo, userRepo)
 	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo)
+	userService := service.NewUserService(userRepo)
 
 	authController := controller.NewAuthController(authService)
 	contentController := controller.NewContentController(contentService)
@@ -80,6 +81,7 @@ func NewApp(cfg *config.Config) *App {
 	achievementController := controller.NewAchievementController(achievementService)
 	communityController := controller.NewCommunityController(communityService)
 	analyticsController := controller.NewAnalyticsController(analyticsService)
+	userController := controller.NewUserController(userService)
 
 	// 监控
 	monitoring.Init()
@@ -167,6 +169,12 @@ func NewApp(cfg *config.Config) *App {
 	admin.Use(middleware.AuthMiddleware(), middleware.RoleMiddleware(model.Admin))
 	{
 		admin.POST("/resources", contentController.UploadResource)
+		admin.GET("/users", userController.GetUsers)
+		admin.GET("/users/:id", userController.GetUser)
+		admin.PUT("/users/:id", userController.UpdateUser)
+		admin.DELETE("/users/:id", userController.DeleteUser)
+		admin.POST("/users/:id/reset-password", userController.ResetPassword)
+		admin.POST("/users/:id/disable", userController.DisableUser)
 	}
 
 	if cfg.Storage.Type == "local" {

@@ -87,7 +87,7 @@ func (c *MotivationController) CreateMotivation(ctx *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param id path int true "激励短句ID"
-// @Param motivation body struct{Content string; IsEnabled bool} true "激励短句信息"
+// @Param motivation body model.Motivation true "激励短句信息"
 // @Success 200 {object} util.Response
 // @Router /api/admin/motivations/{id} [put]
 func (c *MotivationController) UpdateMotivation(ctx *gin.Context) {

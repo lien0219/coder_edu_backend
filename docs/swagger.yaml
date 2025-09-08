@@ -54,6 +54,8 @@ definitions:
     - name
     - role
     type: object
+  model.Motivation:
+    type: object
   model.Resource:
     properties:
       createdAt:
@@ -61,6 +63,8 @@ definitions:
       description:
         type: string
       id:
+        type: integer
+      moduleID:
         type: integer
       moduleType:
         type: string
@@ -335,6 +339,120 @@ paths:
       summary: 获取排行榜
       tags:
       - 成就系统
+  /api/admin/motivations:
+    get:
+      consumes:
+      - application/json
+      description: 获取系统中所有的激励短句（管理员权限）
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取所有激励短句
+      tags:
+      - 激励短句
+    post:
+      consumes:
+      - application/json
+      description: 创建新的激励短句（管理员权限）
+      parameters:
+      - description: 激励短句内容
+        in: body
+        name: content
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建新的激励短句
+      tags:
+      - 激励短句
+  /api/admin/motivations/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除激励短句（管理员权限）
+      parameters:
+      - description: 激励短句ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除激励短句
+      tags:
+      - 激励短句
+    put:
+      consumes:
+      - application/json
+      description: 更新激励短句内容和状态（管理员权限）
+      parameters:
+      - description: 激励短句ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 激励短句信息
+        in: body
+        name: motivation
+        required: true
+        schema:
+          $ref: '#/definitions/model.Motivation'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新激励短句
+      tags:
+      - 激励短句
+  /api/admin/motivations/{id}/switch:
+    post:
+      consumes:
+      - application/json
+      description: 立即切换到指定的激励短句（管理员权限）
+      parameters:
+      - description: 激励短句ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 立即切换激励短句
+      tags:
+      - 激励短句
   /api/admin/resources:
     post:
       consumes:
@@ -1182,6 +1300,23 @@ paths:
       summary: 用户登录
       tags:
       - 认证
+  /api/motivation:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前显示的每日激励短句
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取当前显示的激励短句
+      tags:
+      - 激励短句
   /api/profile:
     get:
       consumes:

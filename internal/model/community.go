@@ -2,16 +2,15 @@ package model
 
 import (
 	"time"
-
-	"gorm.io/gorm"
 )
 
 type Post struct {
-	gorm.Model
-	ID        uint      `gorm:"primaryKey"`
+	BaseModel
+	// gorm.Model
+	// ID        uint      `gorm:"primaryKey"`
 	Title     string    `gorm:"size:255;not null"`
 	Content   string    `gorm:"type:text;not null"`
-	AuthorID  uint      `gorm:"index"`
+	AuthorID  uint      `gorm:"index;type:bigint unsigned"`
 	Tags      string    `gorm:"size:255"`
 	Upvotes   int       `gorm:"default:0"`
 	Views     int       `gorm:"default:0"`
@@ -25,10 +24,11 @@ func (Post) TableName() string {
 }
 
 type Comment struct {
-	gorm.Model
-	ID        uint   `gorm:"primaryKey"`
-	PostID    uint   `gorm:"index"`
-	AuthorID  uint   `gorm:"index"`
+	BaseModel
+	// gorm.Model
+	// ID        uint   `gorm:"primaryKey"`
+	PostID    uint   `gorm:"index;type:int unsigned"`
+	AuthorID  uint   `gorm:"index;type:bigint unsigned"`
 	Content   string `gorm:"type:text;not null"`
 	Upvotes   int    `gorm:"default:0"`
 	CreatedAt time.Time
@@ -39,11 +39,12 @@ func (Comment) TableName() string {
 }
 
 type Question struct {
-	gorm.Model
-	ID        uint     `gorm:"primaryKey"`
+	BaseModel
+	// gorm.Model
+	// ID        uint     `gorm:"primaryKey"`
 	Title     string   `gorm:"size:255;not null"`
 	Content   string   `gorm:"type:text;not null"`
-	AuthorID  uint     `gorm:"index"`
+	AuthorID  uint     `gorm:"index;type:bigint unsigned"`
 	Tags      string   `gorm:"size:255"`
 	Upvotes   int      `gorm:"default:0"`
 	Answers   []Answer `gorm:"foreignKey:QuestionID"`
@@ -57,10 +58,11 @@ func (Question) TableName() string {
 }
 
 type Answer struct {
-	gorm.Model
-	ID         uint   `gorm:"primaryKey"`
-	QuestionID uint   `gorm:"index"`
-	AuthorID   uint   `gorm:"index"`
+	BaseModel
+	// gorm.Model
+	// ID         uint   `gorm:"primaryKey"`
+	QuestionID uint   `gorm:"index;type:int unsigned"`
+	AuthorID   uint   `gorm:"index;type:bigint unsigned"`
 	Content    string `gorm:"type:text;not null"`
 	Upvotes    int    `gorm:"default:0"`
 	IsAccepted bool   `gorm:"default:false"`

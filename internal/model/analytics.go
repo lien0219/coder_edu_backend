@@ -9,8 +9,8 @@ import (
 type LearningSession struct {
 	gorm.Model
 	ID        uint `gorm:"primaryKey"`
-	UserID    uint `gorm:"index"`
-	ModuleID  uint `gorm:"index"`
+	UserID    uint `gorm:"index;type:bigint unsigned"`
+	ModuleID  uint `gorm:"index;type:bigint unsigned"`
 	StartTime time.Time
 	EndTime   *time.Time
 	Duration  int    `gorm:"default:0"`
@@ -24,7 +24,7 @@ func (LearningSession) TableName() string {
 type SkillAssessment struct {
 	gorm.Model
 	ID         uint   `gorm:"primaryKey"`
-	UserID     uint   `gorm:"index"`
+	UserID     uint   `gorm:"index;type:bigint unsigned"`
 	Skill      string `gorm:"size:100;not null"`
 	Score      int    `gorm:"default:0"`
 	AssessedAt time.Time

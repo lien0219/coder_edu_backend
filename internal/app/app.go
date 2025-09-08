@@ -64,10 +64,12 @@ func NewApp(cfg *config.Config) *App {
 	sessionRepo := repository.NewSessionRepository(db)
 	skillRepo := repository.NewSkillRepository(db)
 	recommendationRepo := repository.NewRecommendationRepository(db)
+	motivationRepo := repository.NewMotivationRepository(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	contentService := service.NewContentService(resourceRepo, cfg)
-	dashboardService := service.NewDashboardService(userRepo, taskRepo, resourceRepo, goalRepo)
+	motivationService := service.NewMotivationService(motivationRepo)
+	dashboardService := service.NewDashboardService(userRepo, taskRepo, resourceRepo, goalRepo, motivationService)
 	learningService := service.NewLearningService(moduleRepo, taskRepo, resourceRepo, progressRepo, learningLogRepo, quizRepo, db)
 	achievementService := service.NewAchievementService(achievementRepo, userRepo, goalRepo)
 	communityService := service.NewCommunityService(postRepo, nil, questionRepo, answerRepo, userRepo)
@@ -76,6 +78,7 @@ func NewApp(cfg *config.Config) *App {
 
 	authController := controller.NewAuthController(authService)
 	contentController := controller.NewContentController(contentService)
+	motivationController := controller.NewMotivationController(motivationService)
 	dashboardController := controller.NewDashboardController(dashboardService)
 	learningController := controller.NewLearningController(learningService)
 	achievementController := controller.NewAchievementController(achievementService)
@@ -126,6 +129,7 @@ func NewApp(cfg *config.Config) *App {
 		public.GET("/health", healthController.HealthCheck)
 		public.POST("/register", authController.Register)
 		public.POST("/login", authController.Login)
+		public.GET("/motivation", motivationController.GetCurrentMotivation)
 	}
 
 	auth := router.Group("/api")
@@ -175,6 +179,11 @@ func NewApp(cfg *config.Config) *App {
 		admin.DELETE("/users/:id", userController.DeleteUser)
 		admin.POST("/users/:id/reset-password", userController.ResetPassword)
 		admin.POST("/users/:id/disable", userController.DisableUser)
+		admin.GET("/motivations", motivationController.GetAllMotivations)
+		admin.POST("/motivations", motivationController.CreateMotivation)
+		admin.PUT("/motivations/:id", motivationController.UpdateMotivation)
+		admin.DELETE("/motivations/:id", motivationController.DeleteMotivation)
+		admin.POST("/motivations/:id/switch", motivationController.SwitchMotivation)
 	}
 
 	if cfg.Storage.Type == "local" {
@@ -191,7 +200,7 @@ func NewApp(cfg *config.Config) *App {
 func (a *App) Run() {
 	log.Printf("Server running on port %s", a.Config.Server.Port)
 
-	if err := a.Router.Run(":" + a.Config.Server.Port); err != nil {
+	if err := a.Router.Run("127.0.0.1:" + a.Config.Server.Port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

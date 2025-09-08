@@ -10,8 +10,8 @@ import (
 type LearningLog struct {
 	gorm.Model
 	ID         uint     `gorm:"primaryKey"`
-	UserID     uint     `gorm:"index"`
-	ModuleID   uint     `gorm:"index"`
+	UserID     uint     `gorm:"index;type:bigint unsigned"`
+	ModuleID   uint     `gorm:"index;type:bigint unsigned"`
 	Activity   string   `gorm:"type:text"`
 	Content    string   `gorm:"type:text"` //内容字段
 	Tags       []string `gorm:"type:json"` //标签字段

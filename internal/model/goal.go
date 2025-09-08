@@ -12,7 +12,7 @@ const (
 
 type Goal struct {
 	BaseModel
-	UserID      uint       `gorm:"index;type:int unsigned"`
+	UserID      uint       `gorm:"index;type:bigint unsigned"`
 	Title       string     `gorm:"size:255;not null"`
 	Description string     `gorm:"type:text"`
 	Status      GoalStatus `gorm:"type:enum('pending','in_progress','completed');default:'pending'"`

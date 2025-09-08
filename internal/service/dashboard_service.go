@@ -7,10 +7,11 @@ import (
 )
 
 type DashboardService struct {
-	UserRepo     *repository.UserRepository
-	TaskRepo     *repository.TaskRepository
-	ResourceRepo *repository.ResourceRepository
-	GoalRepo     *repository.GoalRepository
+	UserRepo          *repository.UserRepository
+	TaskRepo          *repository.TaskRepository
+	ResourceRepo      *repository.ResourceRepository
+	GoalRepo          *repository.GoalRepository
+	MotivationService *MotivationService
 }
 
 func NewDashboardService(
@@ -18,12 +19,14 @@ func NewDashboardService(
 	taskRepo *repository.TaskRepository,
 	resourceRepo *repository.ResourceRepository,
 	goalRepo *repository.GoalRepository,
+	motivationService *MotivationService,
 ) *DashboardService {
 	return &DashboardService{
-		UserRepo:     userRepo,
-		TaskRepo:     taskRepo,
-		ResourceRepo: resourceRepo,
-		GoalRepo:     goalRepo,
+		UserRepo:          userRepo,
+		TaskRepo:          taskRepo,
+		ResourceRepo:      resourceRepo,
+		GoalRepo:          goalRepo,
+		MotivationService: motivationService,
 	}
 }
 
@@ -90,14 +93,10 @@ func (s *DashboardService) GetUserDashboard(userID uint) (*Dashboard, error) {
 	}
 
 	// 每日激励语
-	motivations := []string{
-		"Every line of code you write is a step closer to mastery. Keep coding!",
-		"学习是唯一的财富，因为它可以被分享而不会减少。",
-		"Consistency is the key to programming success.",
-		"编程不是关于知道所有答案，而是关于知道如何找到它们。",
+	dailyMotivation, err := s.MotivationService.GetCurrentMotivation()
+	if err != nil || dailyMotivation == "" {
+		dailyMotivation = "Every line of code you write is a step closer to mastery. Keep coding!"
 	}
-
-	dailyMotivation := motivations[time.Now().Day()%len(motivations)]
 
 	return &Dashboard{
 		TodayTasks:      tasks,

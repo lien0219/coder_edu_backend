@@ -16,7 +16,7 @@ const (
 
 type LearningModule struct {
 	gorm.Model
-	ID          uint       `gorm:"primaryKey"`
+	// ID          uint       `gorm:"primaryKey"`
 	Title       string     `gorm:"size:255;not null"`
 	Description string     `gorm:"type:text"`
 	Type        ModuleType `gorm:"type:enum('pre_class','in_class','post_class');not null"`
@@ -32,8 +32,8 @@ func (LearningModule) TableName() string {
 type UserProgress struct {
 	gorm.Model
 	ID          uint `gorm:"primaryKey"`
-	UserID      uint `gorm:"index"`
-	ModuleID    uint `gorm:"index"`
+	UserID      uint `gorm:"index;type:bigint unsigned"`
+	ModuleID    uint `gorm:"index;type:bigint unsigned"`
 	Completed   bool `gorm:"default:false"`
 	Score       int  `gorm:"default:0"`
 	TimeSpent   int  `gorm:"default:0"`

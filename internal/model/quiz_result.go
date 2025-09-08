@@ -10,8 +10,8 @@ import (
 type QuizResult struct {
 	gorm.Model
 	ID          uint         `gorm:"primaryKey"`
-	UserID      uint         `gorm:"index"`
-	QuizID      uint         `gorm:"index"`
+	UserID      uint         `gorm:"index;type:bigint unsigned"`
+	QuizID      uint         `gorm:"index;type:int unsigned"`
 	Score       int          `gorm:"not null"`
 	Total       int          `gorm:"not null"`
 	Answers     map[uint]int `gorm:"type:json"`     // 答案字段

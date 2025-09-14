@@ -53,21 +53,25 @@ func (r *MotivationRepository) Delete(id uint) error {
 
 // 设置当前使用的激励短句
 func (r *MotivationRepository) SetCurrent(id uint) error {
-	// 事务处理
-	return r.DB.Transaction(func(tx *gorm.DB) error {
-		// 先取消所有当前使用的标记
-		if err := tx.Model(&model.Motivation{}).Update("is_currently_used", false).Error; err != nil {
-			return err
-		}
-		// 设置新的当前使用
-		if err := tx.Model(&model.Motivation{}).Where("id = ?", id).Updates(map[string]interface{}{
-			"is_currently_used": true,
-			"last_used_at":      time.Now(),
-		}).Error; err != nil {
-			return err
-		}
-		return nil
-	})
+	tx := r.DB.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+
+	if err := tx.Model(&model.Motivation{}).Where("is_currently_used = ?", true).Update("is_currently_used", false).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := tx.Model(&model.Motivation{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"is_currently_used": true,
+		"last_used_at":      time.Now(),
+	}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit().Error
 }
 
 // 检查是否至少有一个启用的短句

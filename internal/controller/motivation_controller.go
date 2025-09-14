@@ -1,8 +1,11 @@
 package controller
 
 import (
+	"bytes"
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
+	"fmt"
+	"io/ioutil"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -98,9 +101,14 @@ func (c *MotivationController) UpdateMotivation(ctx *gin.Context) {
 		return
 	}
 
+	body, _ := ioutil.ReadAll(ctx.Request.Body)
+	fmt.Printf("原始请求体: %s\n", string(body))
+
+	ctx.Request.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+
 	var req struct {
 		Content   string `json:"content" binding:"required,min=10,max=200"`
-		IsEnabled bool   `json:"is_enabled" binding:"required"`
+		IsEnabled *bool  `json:"is_enabled" binding:"required"`
 	}
 
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -108,7 +116,12 @@ func (c *MotivationController) UpdateMotivation(ctx *gin.Context) {
 		return
 	}
 
-	err = c.MotivationService.UpdateMotivation(uint(id), req.Content, req.IsEnabled)
+	if req.IsEnabled == nil {
+		util.BadRequest(ctx, "IsEnabled字段不能为空")
+		return
+	}
+
+	err = c.MotivationService.UpdateMotivation(uint(id), req.Content, *req.IsEnabled)
 	if err != nil {
 		util.BadRequest(ctx, err.Error())
 		return

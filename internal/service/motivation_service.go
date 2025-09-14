@@ -72,19 +72,18 @@ func (s *MotivationService) CreateMotivation(content string) error {
 
 // 更新激励短句
 func (s *MotivationService) UpdateMotivation(id uint, content string, isEnabled bool) error {
-	motivation, err := s.MotivationRepo.GetCurrent()
+	var motivation model.Motivation
+	err := s.MotivationRepo.DB.First(&motivation, id).Error
 	if err != nil {
 		return err
 	}
 
-	// 检查是否要禁用当前使用的短句
-	if motivation.ID == id && !isEnabled {
-		// 检查是否有其他启用的短句
+	current, err := s.MotivationRepo.GetCurrent()
+	if err == nil && current.ID == id && !isEnabled {
 		enabled, err := s.MotivationRepo.GetEnabled()
 		if err != nil {
 			return err
 		}
-		// 如果只有这一个启用的，则不允许禁用
 		if len(enabled) <= 1 {
 			return errors.New("至少需要保留一个启用的激励短句")
 		}
@@ -92,7 +91,7 @@ func (s *MotivationService) UpdateMotivation(id uint, content string, isEnabled 
 
 	motivation.Content = content
 	motivation.IsEnabled = isEnabled
-	return s.MotivationRepo.Update(motivation)
+	return s.MotivationRepo.Update(&motivation)
 }
 
 // 删除激励短句

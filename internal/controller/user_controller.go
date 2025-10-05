@@ -304,3 +304,44 @@ func (c *UserController) DisableUser(ctx *gin.Context) {
 
 	util.Success(ctx, gin.H{"message": fmt.Sprintf("用户已成功%s", status)})
 }
+
+// UpdateUserPoints 更新指定用户的总积分
+// @Summary 更新用户积分
+// @Description 根据用户ID更新积分，可为正可为负
+// @Tags 更新用户积分
+// @Accept json
+// @Produce json
+// @Param id path int true "用户ID"
+// @Param points query int true "要增加的积分数量（可为负数）"
+// @Success 200 {object} util.Response{data=model.User}
+// @Failure 400 {object} util.Response "请求参数错误"
+// @Failure 404 {object} util.Response "用户不存在"
+// @Router /api/users/{id}/points [post]
+func (c *UserController) UpdateUserPoints(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		util.BadRequest(ctx, "无效的用户ID")
+		return
+	}
+
+	pointsStr := ctx.Query("points")
+	points, err := strconv.Atoi(pointsStr)
+	if err != nil {
+		util.BadRequest(ctx, "无效的积分数量")
+		return
+	}
+
+	err = c.UserService.UpdateUserPoints(uint(id), points)
+	if err != nil {
+		if err.Error() == "用户不存在" {
+			util.NotFound(ctx)
+		} else {
+			util.InternalServerError(ctx)
+		}
+		return
+	}
+
+	updatedUser, _ := c.UserService.GetUserByID(uint(id))
+	util.Success(ctx, updatedUser)
+}

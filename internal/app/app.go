@@ -15,6 +15,7 @@ import (
 	"coder_edu_backend/pkg/tracing"
 	"context"
 	"log"
+	"strconv"
 	"time"
 
 	_ "coder_edu_backend/docs"
@@ -65,6 +66,10 @@ func NewApp(cfg *config.Config) *App {
 	skillRepo := repository.NewSkillRepository(db)
 	recommendationRepo := repository.NewRecommendationRepository(db)
 	motivationRepo := repository.NewMotivationRepository(db)
+	cProgrammingResRepo := repository.NewCProgrammingResourceRepository(db)
+	exerciseCategoryRepo := repository.NewExerciseCategoryRepository(db)
+	exerciseQuestionRepo := repository.NewExerciseQuestionRepository(db)
+	exerciseSubmissionRepo := repository.NewExerciseSubmissionRepository(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	contentService := service.NewContentService(resourceRepo, cfg)
@@ -75,6 +80,14 @@ func NewApp(cfg *config.Config) *App {
 	communityService := service.NewCommunityService(postRepo, nil, questionRepo, answerRepo, userRepo)
 	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo)
 	userService := service.NewUserService(userRepo)
+	cProgrammingResService := service.NewCProgrammingResourceService(
+		cProgrammingResRepo,
+		exerciseCategoryRepo,
+		exerciseQuestionRepo,
+		exerciseSubmissionRepo,
+		resourceRepo,
+		db,
+	)
 
 	authController := controller.NewAuthController(authService)
 	contentController := controller.NewContentController(contentService)
@@ -85,6 +98,7 @@ func NewApp(cfg *config.Config) *App {
 	communityController := controller.NewCommunityController(communityService)
 	analyticsController := controller.NewAnalyticsController(analyticsService)
 	userController := controller.NewUserController(userService)
+	cProgrammingResController := controller.NewCProgrammingResourceController(cProgrammingResService, contentService)
 
 	// 监控
 	monitoring.Init()
@@ -93,7 +107,7 @@ func NewApp(cfg *config.Config) *App {
 
 	router.Use(security.CORS())
 	router.Use(security.Secure())
-	router.Use(security.RateLimiter(500, time.Minute)) // 每分钟500次请求
+	router.Use(security.RateLimiter(300, time.Minute)) // 每分钟300次请求
 
 	// 初始化分布式追踪
 	if cfg.Tracing.Enabled {
@@ -130,6 +144,13 @@ func NewApp(cfg *config.Config) *App {
 		public.POST("/register", authController.Register)
 		public.POST("/login", authController.Login)
 		public.GET("/motivation", motivationController.GetCurrentMotivation)
+		public.POST("/users/:id/points", userController.UpdateUserPoints)
+	}
+
+	// 用于无需权限的答案提交接口
+	publicAPI := router.Group("/api/public")
+	{
+		publicAPI.POST("/c-programming/questions/:questionId/submit", cProgrammingResController.SubmitExerciseAnswerPublic)
 	}
 
 	auth := router.Group("/api")
@@ -167,11 +188,23 @@ func NewApp(cfg *config.Config) *App {
 		auth.GET("/analytics/recommendations", analyticsController.GetRecommendations)
 		auth.POST("/analytics/session/start", analyticsController.StartSession)
 		auth.POST("/analytics/session/:sessionId/end", analyticsController.EndSession)
+
+		auth.GET("/c-programming/resources", cProgrammingResController.GetResources)
+		auth.GET("/c-programming/resources/full", cProgrammingResController.GetResourcesWithAllContent)
+		auth.GET("/c-programming/resources/:id", cProgrammingResController.GetResourceByID)
+		auth.GET("/c-programming/resources/:id/categories", cProgrammingResController.GetCategoriesByResourceID)
+		auth.GET("/c-programming/categories/:categoryId/questions", cProgrammingResController.GetQuestionsByCategoryID)
+		auth.GET("/c-programming/categories/:categoryId/questions-with-status", cProgrammingResController.GetQuestionsByCategoryIDWithUserStatus)
+		auth.GET("/c-programming/resources/:id/videos", cProgrammingResController.GetVideosByResourceID)
+		auth.GET("/c-programming/resources/:id/articles", cProgrammingResController.GetArticlesByResourceID)
+
+		auth.GET("/c-programming/exercises/users/:userID/questions/:questionID/submission", cProgrammingResController.CheckUserSubmittedQuestion)
 	}
 
 	admin := router.Group("/api/admin")
 	admin.Use(middleware.AuthMiddleware(), middleware.RoleMiddleware(model.Admin))
 	{
+		admin.POST("/upload/icon", contentController.UploadIcon)
 		admin.POST("/resources", contentController.UploadResource)
 		admin.GET("/users", userController.GetUsers)
 		admin.GET("/users/:id", userController.GetUser)
@@ -179,15 +212,42 @@ func NewApp(cfg *config.Config) *App {
 		admin.DELETE("/users/:id", userController.DeleteUser)
 		admin.POST("/users/:id/reset-password", userController.ResetPassword)
 		admin.POST("/users/:id/disable", userController.DisableUser)
+
 		admin.GET("/motivations", motivationController.GetAllMotivations)
 		admin.POST("/motivations", motivationController.CreateMotivation)
 		admin.PUT("/motivations/:id", motivationController.UpdateMotivation)
 		admin.DELETE("/motivations/:id", motivationController.DeleteMotivation)
 		admin.POST("/motivations/:id/switch", motivationController.SwitchMotivation)
+
+		admin.POST("/c-programming/resources", cProgrammingResController.CreateResource)
+		admin.PUT("/c-programming/resources/:id", cProgrammingResController.UpdateResource)
+		admin.DELETE("/c-programming/resources/:id", cProgrammingResController.DeleteResource)
+		admin.POST("/c-programming/resources/:id/categories", cProgrammingResController.CreateCategory)
+		admin.POST("/c-programming/categories/:categoryId/questions", cProgrammingResController.CreateQuestion)
+		admin.POST("/c-programming/resources/upload", cProgrammingResController.UploadResource)
+		admin.GET("/c-programming/resources", cProgrammingResController.GetAdminResources)
+
+		admin.GET("/resources/:id/content", cProgrammingResController.GetResourceCompleteContent)
+		admin.POST("/resources/:id/videos", cProgrammingResController.AddVideoToResource)
+		admin.POST("/resources/:id/articles", cProgrammingResController.AddArticleToResource)
+		admin.POST("/resources/:id/exercise-categories", cProgrammingResController.CreateCategory)
+		admin.POST("/exercise-categories/:categoryId/questions", cProgrammingResController.CreateQuestion)
+		admin.GET("/c-programming/categories/:categoryId/questions/all", cProgrammingResController.AdminGetAllQuestionsByCategoryID)
+		admin.PUT("/videos/:id", cProgrammingResController.UpdateVideo)
+		admin.PUT("/articles/:id", cProgrammingResController.UpdateArticle)
+		admin.PUT("/exercise-categories/:id", cProgrammingResController.UpdateExerciseCategory)
+		admin.PUT("/questions/:id", cProgrammingResController.UpdateQuestion)
+		admin.DELETE("/:itemType/:itemId", cProgrammingResController.DeleteContentItem)
+
+		// 上传视频相关路由
+		admin.POST("/upload/video", contentController.UploadVideo)
+		admin.POST("/upload/video/chunk", contentController.UploadVideoChunk)
+		admin.GET("/upload/video/progress/:uploadId", contentController.GetUploadProgress)
 	}
 
 	if cfg.Storage.Type == "local" {
 		router.Static("/uploads", cfg.Storage.LocalPath)
+		router.Static("/api/uploads", cfg.Storage.LocalPath)
 	}
 
 	return &App{
@@ -195,6 +255,11 @@ func NewApp(cfg *config.Config) *App {
 		Router: router,
 		DB:     db,
 	}
+}
+
+func mustParseUint(s string) uint {
+	id, _ := strconv.ParseUint(s, 10, 32)
+	return uint(id)
 }
 
 func (a *App) Run() {

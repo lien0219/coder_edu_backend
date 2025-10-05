@@ -2,6 +2,7 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"fmt"
 
 	"gorm.io/gorm"
 )
@@ -15,7 +16,30 @@ func NewResourceRepository(db *gorm.DB) *ResourceRepository {
 }
 
 func (r *ResourceRepository) Create(resource *model.Resource) error {
-	return r.DB.Create(resource).Error
+
+	// return r.DB.Create(resource).Error
+
+	fmt.Printf("Creating resource: ModuleID=%d, ModuleType=%s, UploaderID=%d\n",
+		resource.ModuleID, resource.ModuleType, resource.UploaderID)
+
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SET FOREIGN_KEY_CHECKS=0").Error; err != nil {
+			fmt.Printf("Failed to disable foreign key checks: %v\n", err)
+			return err
+		}
+
+		if err := tx.Create(resource).Error; err != nil {
+			fmt.Printf("Error creating resource: %v\n", err)
+			return err
+		}
+
+		if err := tx.Exec("SET FOREIGN_KEY_CHECKS=1").Error; err != nil {
+			fmt.Printf("Failed to enable foreign key checks: %v\n", err)
+			return err
+		}
+
+		return nil
+	})
 }
 
 func (r *ResourceRepository) FindByID(id uint) (*model.Resource, error) {

@@ -175,3 +175,13 @@ func (s *UserService) UpdateUserWithPassword(user *model.User, newPassword strin
 
 	return s.UserRepo.Update(existingUser)
 }
+
+// UpdateUserPoints 更新用户的积分
+func (s *UserService) UpdateUserPoints(userID uint, points int) error {
+	_, err := s.UserRepo.FindByID(userID)
+	if err != nil {
+		return errors.New("用户不存在")
+	}
+
+	return s.UserRepo.UpdateXP(userID, points)
+}

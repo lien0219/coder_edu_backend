@@ -68,7 +68,7 @@ func (r *UserRepository) Update(user *model.User) error {
 func (r *UserRepository) UpdateXP(userID uint, xp int) error {
 	return r.DB.Model(&model.User{}).
 		Where("id = ?", userID).
-		Update("xp", gorm.Expr("xp + ?", xp)).
+		UpdateColumn("xp", gorm.Expr("xp + ?", xp)).
 		Error
 }
 func (r *UserRepository) FindTopByXP(limit int) ([]model.User, error) {

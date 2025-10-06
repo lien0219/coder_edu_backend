@@ -22,13 +22,15 @@ type UserFilter struct {
 
 // UserService 处理用户相关的业务逻辑
 type UserService struct {
-	UserRepo *repository.UserRepository
+	UserRepo    *repository.UserRepository
+	CheckinRepo *repository.CheckinRepository
 }
 
 // NewUserService 创建一个新的用户服务实例
-func NewUserService(userRepo *repository.UserRepository) *UserService {
+func NewUserService(userRepo *repository.UserRepository, checkinRepo *repository.CheckinRepository) *UserService {
 	return &UserService{
-		UserRepo: userRepo,
+		UserRepo:    userRepo,
+		CheckinRepo: checkinRepo,
 	}
 }
 
@@ -184,4 +186,121 @@ func (s *UserService) UpdateUserPoints(userID uint, points int) error {
 	}
 
 	return s.UserRepo.UpdateXP(userID, points)
+}
+
+// 用户签到功能
+func (s *UserService) Checkin(userID uint) (bool, error) {
+	// 检查今天是否已经签到
+	_, err := s.CheckinRepo.FindByUserAndDate(userID, time.Now())
+	if err == nil {
+		// 今天已经签到
+		return false, nil
+	}
+
+	// 创建新的签到记录
+	checkin := &model.Checkin{
+		UserID:     userID,
+		CheckinAt:  time.Now(),
+		StreakDays: 1,
+	}
+
+	// 检查用户最近的签到记录，更新连续签到天数
+	latestCheckin, err := s.CheckinRepo.FindLatestByUser(userID)
+	if err == nil {
+		// 检查是否是连续签到（昨天）
+		yesterday := time.Now().Add(-24 * time.Hour)
+		if latestCheckin.CheckinAt.Year() == yesterday.Year() &&
+			latestCheckin.CheckinAt.Month() == yesterday.Month() &&
+			latestCheckin.CheckinAt.Day() == yesterday.Day() {
+			// 连续签到，增加连续签到天数
+			checkin.StreakDays = latestCheckin.StreakDays + 1
+		}
+	}
+
+	// 保存签到记录
+	err = s.CheckinRepo.Create(checkin)
+	if err != nil {
+		return false, err
+	}
+
+	// 计算签到积分
+	points := calculateCheckinPoints(checkin.StreakDays)
+
+	// 更新用户积分
+	err = s.UpdateUserPoints(userID, points)
+	if err != nil {
+		// 积分更新失败不应影响签到成功状态，但应记录错误
+		// 在实际应用中应该添加日志记录
+	}
+
+	return true, nil
+}
+
+// calculateCheckinPoints 根据连续签到天数计算应得积分
+// 规则：签到一天加5积分，连续签到一周加100积分，以此类推
+func calculateCheckinPoints(streakDays int) int {
+	// 基础积分：每天5积分
+	basePoints := 5
+
+	// 连续签到周数奖励（一周=7天）
+	// 整周部分：每整周奖励100积分
+	weeks := streakDays / 7
+	weekBonus := weeks * 100
+
+	// 剩余天数部分：每天5积分
+	remainingDays := streakDays % 7
+	remainingPoints := remainingDays * basePoints
+
+	// 总积分
+	totalPoints := weekBonus + remainingPoints
+
+	return totalPoints
+}
+
+// 检查用户当天是否已签到
+func (s *UserService) IsCheckedInToday(userID uint) (bool, error) {
+	_, err := s.CheckinRepo.FindByUserAndDate(userID, time.Now())
+	if err == nil {
+		return true, nil
+	}
+	return false, nil
+}
+
+// 获取用户的签到统计信息
+func (s *UserService) GetCheckinStats(userID uint) (map[string]interface{}, error) {
+	// 检查今天是否已签到
+	isCheckedInToday, err := s.IsCheckedInToday(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取总签到次数
+	checkinCount, err := s.CheckinRepo.GetCheckinCountByUser(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取连续签到天数和对应的积分
+	streakDays := 0
+	streakPoints := 0
+	latestCheckin, err := s.CheckinRepo.FindLatestByUser(userID)
+	if err == nil {
+		streakDays = latestCheckin.StreakDays
+		streakPoints = calculateCheckinPoints(streakDays)
+	}
+
+	// 获取用户当前积分
+	user, err := s.UserRepo.FindByID(userID)
+	currentPoints := 0
+	if err == nil {
+		currentPoints = user.XP
+	}
+
+	return map[string]interface{}{
+		"isCheckedInToday": isCheckedInToday,
+		"totalCheckins":    checkinCount,
+		"currentStreak":    streakDays,
+		"streakPoints":     streakPoints,
+		"currentPoints":    currentPoints,
+	}, nil
 }

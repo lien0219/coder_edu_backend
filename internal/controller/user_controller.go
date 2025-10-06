@@ -345,3 +345,78 @@ func (c *UserController) UpdateUserPoints(ctx *gin.Context) {
 	updatedUser, _ := c.UserService.GetUserByID(uint(id))
 	util.Success(ctx, updatedUser)
 }
+
+// 学习签到
+// @Summary 用户学习签到
+// @Description 用户每日学习签到，同一天只能签到一次
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} util.Response{data=map[string]interface{}}
+// @Failure 400 {object} util.Response "请求参数错误"
+// @Failure 401 {object} util.Response "未授权"
+// @Router /api/users/checkin [post]
+func (c *UserController) Checkin(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	success, err := c.UserService.Checkin(user.UserID)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	if success {
+		// 获取用户签到统计信息，包含最新的积分信息
+		stats, err := c.UserService.GetCheckinStats(user.UserID)
+		if err != nil {
+			// 如果获取统计信息失败，仍返回签到成功，但不包含统计数据
+			util.Success(ctx, gin.H{"success": true, "message": "签到成功"})
+			return
+		}
+
+		// 获取当前用户信息，包含最新的积分
+		updatedUser, err := c.UserService.GetUserByID(user.UserID)
+		if err == nil {
+			stats["currentPoints"] = updatedUser.XP
+		}
+
+		util.Success(ctx, gin.H{
+			"success": true,
+			"message": "签到成功",
+			"stats":   stats,
+		})
+	} else {
+		util.Success(ctx, gin.H{"success": false, "message": "今天已经签到过了"})
+	}
+}
+
+// 获取签到统计信息
+// @Summary 获取用户签到统计信息
+// @Description 获取用户的签到统计信息，包括今天是否签到、总签到次数和当前连续签到天数
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} util.Response{data=map[string]interface{}}
+// @Failure 401 {object} util.Response "未授权"
+// @Router /api/users/checkin/stats [get]
+func (c *UserController) GetCheckinStats(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	stats, err := c.UserService.GetCheckinStats(user.UserID)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, stats)
+}

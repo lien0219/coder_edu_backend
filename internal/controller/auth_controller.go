@@ -10,10 +10,14 @@ import (
 
 type AuthController struct {
 	AuthService *service.AuthService
+	UserService *service.UserService
 }
 
-func NewAuthController(authService *service.AuthService) *AuthController {
-	return &AuthController{AuthService: authService}
+func NewAuthController(authService *service.AuthService, userService *service.UserService) *AuthController {
+	return &AuthController{
+		AuthService: authService,
+		UserService: userService,
+	}
 }
 
 // RegisterRequest defines model for registration
@@ -114,14 +118,22 @@ func (c *AuthController) GetProfile(ctx *gin.Context) {
 		return
 	}
 
+	// 用户签到状态
+	isCheckedInToday, err := c.UserService.IsCheckedInToday(user.ID)
+	if err != nil {
+		// 如果出错，默认设置为未签到
+		isCheckedInToday = false
+	}
+
 	profile := gin.H{
-		"id":        user.ID,
-		"name":      user.Name,
-		"email":     user.Email,
-		"role":      user.Role,
-		"xp":        user.XP,
-		"language":  user.Language,
-		"createdAt": user.CreatedAt,
+		"id":               user.ID,
+		"name":             user.Name,
+		"email":            user.Email,
+		"role":             user.Role,
+		"xp":               user.XP,
+		"language":         user.Language,
+		"createdAt":        user.CreatedAt,
+		"isCheckedInToday": isCheckedInToday,
 	}
 
 	util.Success(ctx, profile)

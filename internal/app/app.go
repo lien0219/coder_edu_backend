@@ -70,6 +70,7 @@ func NewApp(cfg *config.Config) *App {
 	exerciseCategoryRepo := repository.NewExerciseCategoryRepository(db)
 	exerciseQuestionRepo := repository.NewExerciseQuestionRepository(db)
 	exerciseSubmissionRepo := repository.NewExerciseSubmissionRepository(db)
+	checkinRepo := repository.NewCheckinRepository(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	contentService := service.NewContentService(resourceRepo, cfg)
@@ -79,7 +80,7 @@ func NewApp(cfg *config.Config) *App {
 	achievementService := service.NewAchievementService(achievementRepo, userRepo, goalRepo)
 	communityService := service.NewCommunityService(postRepo, nil, questionRepo, answerRepo, userRepo)
 	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo)
-	userService := service.NewUserService(userRepo)
+	userService := service.NewUserService(userRepo, checkinRepo)
 	cProgrammingResService := service.NewCProgrammingResourceService(
 		cProgrammingResRepo,
 		exerciseCategoryRepo,
@@ -89,7 +90,7 @@ func NewApp(cfg *config.Config) *App {
 		db,
 	)
 
-	authController := controller.NewAuthController(authService)
+	authController := controller.NewAuthController(authService, userService)
 	contentController := controller.NewContentController(contentService)
 	motivationController := controller.NewMotivationController(motivationService)
 	dashboardController := controller.NewDashboardController(dashboardService)
@@ -199,6 +200,9 @@ func NewApp(cfg *config.Config) *App {
 		auth.GET("/c-programming/resources/:id/articles", cProgrammingResController.GetArticlesByResourceID)
 
 		auth.GET("/c-programming/exercises/users/:userID/questions/:questionID/submission", cProgrammingResController.CheckUserSubmittedQuestion)
+
+		auth.POST("/users/checkin", userController.Checkin)
+		auth.GET("/users/checkin/stats", userController.GetCheckinStats)
 	}
 
 	admin := router.Group("/api/admin")

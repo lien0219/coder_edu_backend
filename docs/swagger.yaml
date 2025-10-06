@@ -2667,6 +2667,64 @@ paths:
       summary: 更新用户积分
       tags:
       - 更新用户积分
+  /api/users/checkin:
+    post:
+      consumes:
+      - application/json
+      description: 用户每日学习签到，同一天只能签到一次
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 用户学习签到
+      tags:
+      - 用户管理
+  /api/users/checkin/stats:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户的签到统计信息，包括今天是否签到、总签到次数和当前连续签到天数
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 获取用户签到统计信息
+      tags:
+      - 用户管理
   /health:
     get:
       description: 检查服务状态

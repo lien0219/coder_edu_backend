@@ -71,6 +71,7 @@ func NewApp(cfg *config.Config) *App {
 	exerciseQuestionRepo := repository.NewExerciseQuestionRepository(db)
 	exerciseSubmissionRepo := repository.NewExerciseSubmissionRepository(db)
 	checkinRepo := repository.NewCheckinRepository(db)
+	resourceCompletionRepo := repository.NewResourceCompletionRepository(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	contentService := service.NewContentService(resourceRepo, cfg)
@@ -87,6 +88,13 @@ func NewApp(cfg *config.Config) *App {
 		exerciseQuestionRepo,
 		exerciseSubmissionRepo,
 		resourceRepo,
+		resourceCompletionRepo,
+		db,
+	)
+	learningGoalService := service.NewLearningGoalService(
+		goalRepo,
+		cProgrammingResRepo,
+		cProgrammingResService,
 		db,
 	)
 
@@ -100,6 +108,7 @@ func NewApp(cfg *config.Config) *App {
 	analyticsController := controller.NewAnalyticsController(analyticsService)
 	userController := controller.NewUserController(userService)
 	cProgrammingResController := controller.NewCProgrammingResourceController(cProgrammingResService, contentService)
+	learningGoalController := controller.NewLearningGoalController(learningGoalService)
 
 	// 监控
 	monitoring.Init()
@@ -203,6 +212,22 @@ func NewApp(cfg *config.Config) *App {
 
 		auth.POST("/users/checkin", userController.Checkin)
 		auth.GET("/users/checkin/stats", userController.GetCheckinStats)
+
+		// 资源进度相关路由
+		auth.GET("/c-programming/resource-progress/:resourceId", cProgrammingResController.GetResourceModuleWithProgress)
+		auth.POST("/c-programming/resource-progress/:resourceId/completion", cProgrammingResController.UpdateResourceCompletionStatus)
+		auth.GET("/c-programming/resource-progress/unfinished", cProgrammingResController.GetUnfinishedResourceModules)
+		auth.GET("/c-programming/resource-progress/all", cProgrammingResController.GetAllResourceModulesWithProgress)
+
+		// 学习目标相关路由
+		auth.GET("/learning-goals/resources", learningGoalController.GetRecommendedResourceModules)
+		auth.GET("/learning-goals", learningGoalController.GetUserGoals)
+		auth.GET("/learning-goals/type", learningGoalController.GetUserGoalsByType)
+		auth.POST("/learning-goals", learningGoalController.CreateGoal)
+		auth.GET("/learning-goals/:id", learningGoalController.GetGoalByID)
+		auth.PUT("/learning-goals/:id", learningGoalController.UpdateGoal)
+		auth.DELETE("/learning-goals/:id", learningGoalController.DeleteGoal)
+		auth.GET("/learning-goals/:id/details", learningGoalController.GetGoalDetails)
 	}
 
 	admin := router.Group("/api/admin")

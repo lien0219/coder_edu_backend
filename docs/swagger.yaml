@@ -251,6 +251,29 @@ definitions:
     required:
     - content
     type: object
+  service.CreateGoalRequest:
+    properties:
+      description:
+        maxLength: 1000
+        type: string
+      goalType:
+        enum:
+        - short_term
+        - long_term
+        type: string
+      resourceModuleId:
+        type: integer
+      targetDate:
+        type: string
+      title:
+        maxLength: 255
+        type: string
+    required:
+    - goalType
+    - resourceModuleId
+    - targetDate
+    - title
+    type: object
   service.GoalRequest:
     properties:
       description:
@@ -331,6 +354,24 @@ definitions:
     required:
     - answer
     - user_id
+    type: object
+  service.UpdateGoalRequest:
+    properties:
+      description:
+        maxLength: 1000
+        type: string
+      goalType:
+        enum:
+        - short_term
+        - long_term
+        type: string
+      resourceModuleId:
+        type: integer
+      targetDate:
+        type: string
+      title:
+        maxLength: 255
+        type: string
     type: object
   util.Response:
     properties:
@@ -1859,6 +1900,102 @@ paths:
       summary: 检查用户是否答过特定题目
       tags:
       - C语言编程资源
+  /api/c-programming/resource-progress/{resourceId}:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定资源模块的详细信息，包括视频、文章、练习题的完成状态和进度
+      parameters:
+      - description: 资源模块ID
+        in: path
+        name: resourceId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取带进度的资源模块
+      tags:
+      - C语言编程资源
+  /api/c-programming/resource-progress/{resourceId}/completion:
+    post:
+      consumes:
+      - application/json
+      description: 更新用户对特定资源的完成状态
+      parameters:
+      - description: 资源ID
+        in: path
+        name: resourceId
+        required: true
+        type: integer
+      - description: 完成状态对象
+        in: body
+        name: completion
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新资源完成状态
+      tags:
+      - C语言编程资源
+  /api/c-programming/resource-progress/all:
+    get:
+      consumes:
+      - application/json
+      description: 获取所有资源模块的详细信息，包括视频、文章、练习题的完成状态和进度
+      parameters:
+      - description: 是否只获取启用的资源分类
+        in: query
+        name: enabled
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取所有带进度的资源模块
+      tags:
+      - C语言编程资源
+  /api/c-programming/resource-progress/unfinished:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定数量的未完成资源模块数据（有视频/文章未看完或练习题未做完）
+      parameters:
+      - description: 要获取的资源模块数量，默认3个，最多3个
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取未完成的资源模块列表
+      tags:
+      - C语言编程资源
   /api/c-programming/resources:
     get:
       consumes:
@@ -2338,6 +2475,185 @@ paths:
       summary: 获取今日任务
       tags:
       - 仪表盘
+  /api/learning-goals:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户的所有学习目标
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取所有学习目标
+      tags:
+      - 学习目标
+    post:
+      consumes:
+      - application/json
+      description: 创建新的学习目标
+      parameters:
+      - description: 学习目标信息
+        in: body
+        name: goal
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateGoalRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建学习目标
+      tags:
+      - 学习目标
+  /api/learning-goals/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除学习目标
+      parameters:
+      - description: 目标ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除学习目标
+      tags:
+      - 学习目标
+    get:
+      consumes:
+      - application/json
+      description: 获取特定ID的学习目标详情
+      parameters:
+      - description: 目标ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取特定ID的学习目标
+      tags:
+      - 学习目标
+    put:
+      consumes:
+      - application/json
+      description: 更新学习目标信息
+      parameters:
+      - description: 目标ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 学习目标更新信息
+        in: body
+        name: goal
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateGoalRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新学习目标
+      tags:
+      - 学习目标
+  /api/learning-goals/{id}/details:
+    get:
+      consumes:
+      - application/json
+      description: 获取学习目标详情，包括关联资源模块的详细进度
+      parameters:
+      - description: 目标ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取学习目标详情（含资源模块进度）
+      tags:
+      - 学习目标
+  /api/learning-goals/resources:
+    get:
+      consumes:
+      - application/json
+      description: 获取所有可用于学习目标的推荐资源模块
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取推荐资源模块
+      tags:
+      - 学习目标
+  /api/learning-goals/type:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户特定类型的学习目标（短期或长期）
+      parameters:
+      - description: 目标类型
+        enum:
+        - short_term
+        - long_term
+        in: query
+        name: type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取特定类型的学习目标
+      tags:
+      - 学习目标
   /api/learning/in-class:
     get:
       consumes:

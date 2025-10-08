@@ -24,37 +24,3 @@ func (r *AchievementRepository) FindByUserID(userID uint) ([]model.Achievement, 
 	}
 	return achievements, nil
 }
-
-type GoalRepository struct {
-	DB *gorm.DB
-}
-
-func NewGoalRepository(db *gorm.DB) *GoalRepository {
-	return &GoalRepository{DB: db}
-}
-
-func (r *GoalRepository) FindByUserID(userID uint) ([]model.Goal, error) {
-	var goals []model.Goal
-	err := r.DB.Where("user_id = ?", userID).Order("created_at desc").Find(&goals).Error
-	if err != nil {
-		return nil, err
-	}
-	return goals, nil
-}
-
-func (r *GoalRepository) FindByIDAndUserID(goalID, userID uint) (*model.Goal, error) {
-	var goal model.Goal
-	err := r.DB.Where("id = ? AND user_id = ?", goalID, userID).First(&goal).Error
-	if err != nil {
-		return nil, err
-	}
-	return &goal, nil
-}
-
-func (r *GoalRepository) Create(goal *model.Goal) error {
-	return r.DB.Create(goal).Error
-}
-
-func (r *GoalRepository) Update(goal *model.Goal) error {
-	return r.DB.Save(goal).Error
-}

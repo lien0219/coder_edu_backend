@@ -1277,3 +1277,155 @@ func (c *CProgrammingResourceController) CheckUserSubmittedQuestion(ctx *gin.Con
 		"isSubmitted": isSubmitted,
 	})
 }
+
+// @Summary 获取带进度的资源模块
+// @Description 获取指定资源模块的详细信息，包括视频、文章、练习题的完成状态和进度
+// @Tags C语言编程资源
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param resourceId path int true "资源模块ID"
+// @Success 200 {object} util.Response
+// @Router /api/c-programming/resource-progress/{resourceId} [get]
+func (c *CProgrammingResourceController) GetResourceModuleWithProgress(ctx *gin.Context) {
+	// 获取当前用户
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	// 获取资源ID
+	resourceIDStr := ctx.Param("resourceId")
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		util.BadRequest(ctx, "Invalid resource ID")
+		return
+	}
+
+	// 获取带进度的资源模块
+	resourceModule, err := c.Service.GetResourceModuleWithProgress(uint(resourceID), user.UserID)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, resourceModule)
+}
+
+// @Summary 获取未完成的资源模块列表
+// @Description 获取指定数量的未完成资源模块数据（有视频/文章未看完或练习题未做完）
+// @Tags C语言编程资源
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param limit query int false "要获取的资源模块数量，默认3个，最多3个"
+// @Success 200 {object} util.Response
+// @Router /api/c-programming/resource-progress/unfinished [get]
+func (c *CProgrammingResourceController) GetUnfinishedResourceModules(ctx *gin.Context) {
+	// 获取当前用户
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	// 获取查询参数limit，默认为3，最多3个
+	limitStr := ctx.DefaultQuery("limit", "3")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 3
+	} else if limit > 3 {
+		limit = 3
+	}
+
+	// 调用服务层获取未完成的资源模块
+	modules, err := c.Service.GetUnfinishedResourceModules(user.UserID, limit)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, modules)
+}
+
+// @Summary 更新资源完成状态
+// @Description 更新用户对特定资源的完成状态
+// @Tags C语言编程资源
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param resourceId path int true "资源ID"
+// @Param completion body object true "完成状态对象" schema: {"completed": "boolean"}
+// @Success 200 {object} util.Response
+// @Router /api/c-programming/resource-progress/{resourceId}/completion [post]
+func (c *CProgrammingResourceController) UpdateResourceCompletionStatus(ctx *gin.Context) {
+	// 获取当前用户
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	// 获取资源ID
+	resourceIDStr := ctx.Param("resourceId")
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		util.BadRequest(ctx, "Invalid resource ID")
+		return
+	}
+
+	// 解析请求体
+	var req struct {
+		Completed bool `json:"completed" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
+	// 更新资源完成状态
+	err = c.Service.UpdateResourceCompletionStatus(user.UserID, uint(resourceID), req.Completed)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, gin.H{"message": "Resource completion status updated"})
+}
+
+// @Summary 获取所有带进度的资源模块
+// @Description 获取所有资源模块的详细信息，包括视频、文章、练习题的完成状态和进度
+// @Tags C语言编程资源
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param enabled query boolean false "是否只获取启用的资源分类"
+// @Success 200 {object} util.Response
+// @Router /api/c-programming/resource-progress/all [get]
+func (c *CProgrammingResourceController) GetAllResourceModulesWithProgress(ctx *gin.Context) {
+	// 获取当前用户
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	// 获取查询参数
+	enabledStr := ctx.Query("enabled")
+	var enabled *bool
+	if enabledStr != "" {
+		val := enabledStr == "true"
+		enabled = &val
+	}
+
+	// 调用服务层方法
+	resourceModules, err := c.Service.GetAllResourceModulesWithProgress(user.UserID, enabled)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, resourceModules)
+}

@@ -3,19 +3,46 @@ package service
 import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"math/rand"
+	"time"
 
 	"gorm.io/gorm"
 )
 
-// CProgrammingResourceService 处理C语言编程资源分类模块的业务逻辑
+// ResourceWithCompletionStatus 带用户完成状态的资源
+type ResourceWithCompletionStatus struct {
+	model.Resource
+	IsCompleted bool `json:"isCompleted"`
+}
 
+// ResourceModuleWithProgress 带进度的资源模块
+type ResourceModuleWithProgress struct {
+	model.CProgrammingResource
+	Videos           []ResourceWithCompletionStatus  `json:"videos"`
+	Articles         []ResourceWithCompletionStatus  `json:"articles"`
+	ExerciseCategory []ExerciseCategoryWithQuestions `json:"exerciseCategories"`
+	Progress         float64                         `json:"progress"`
+	IsCompleted      bool                            `json:"isCompleted"`
+	Status           string                          `json:"status"` // 状态字段："completed", "not_started", "in_progress"
+}
+
+// ExerciseCategoryWithQuestions 带题目状态的练习分类
+type ExerciseCategoryWithQuestions struct {
+	model.ExerciseCategory
+	Questions   []QuestionWithUserStatus `json:"questions"`
+	IsCompleted bool                     `json:"isCompleted"`
+	Status      string                   `json:"status"`
+}
+
+// CProgrammingResourceService 处理C语言编程资源分类模块的业务逻辑
 type CProgrammingResourceService struct {
-	Repo           *repository.CProgrammingResourceRepository
-	CategoryRepo   *repository.ExerciseCategoryRepository
-	QuestionRepo   *repository.ExerciseQuestionRepository
-	SubmissionRepo *repository.ExerciseSubmissionRepository
-	ResourceRepo   *repository.ResourceRepository
-	DB             *gorm.DB
+	Repo                   *repository.CProgrammingResourceRepository
+	CategoryRepo           *repository.ExerciseCategoryRepository
+	QuestionRepo           *repository.ExerciseQuestionRepository
+	SubmissionRepo         *repository.ExerciseSubmissionRepository
+	ResourceRepo           *repository.ResourceRepository
+	ResourceCompletionRepo *repository.ResourceCompletionRepository
+	DB                     *gorm.DB
 }
 
 func NewCProgrammingResourceService(
@@ -24,15 +51,17 @@ func NewCProgrammingResourceService(
 	questionRepo *repository.ExerciseQuestionRepository,
 	submissionRepo *repository.ExerciseSubmissionRepository,
 	resourceRepo *repository.ResourceRepository,
+	resourceCompletionRepo *repository.ResourceCompletionRepository,
 	db *gorm.DB,
 ) *CProgrammingResourceService {
 	return &CProgrammingResourceService{
-		Repo:           repo,
-		CategoryRepo:   categoryRepo,
-		QuestionRepo:   questionRepo,
-		SubmissionRepo: submissionRepo,
-		ResourceRepo:   resourceRepo,
-		DB:             db,
+		Repo:                   repo,
+		CategoryRepo:           categoryRepo,
+		QuestionRepo:           questionRepo,
+		SubmissionRepo:         submissionRepo,
+		ResourceRepo:           resourceRepo,
+		ResourceCompletionRepo: resourceCompletionRepo,
+		DB:                     db,
 	}
 }
 
@@ -389,4 +418,253 @@ func (s *CProgrammingResourceService) CheckUserSubmittedQuestion(userID, questio
 	}
 	// 如果记录存在且答案正确，则表示已提交
 	return submission.IsCorrect, nil
+}
+
+//获取带进度的资源模块
+
+func (s *CProgrammingResourceService) GetResourceModuleWithProgress(resourceID, userID uint) (*ResourceModuleWithProgress, error) {
+	// 获取资源模块信息
+	resource, err := s.Repo.FindByID(resourceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 构建结果对象
+	result := &ResourceModuleWithProgress{
+		CProgrammingResource: *resource,
+		Videos:               []ResourceWithCompletionStatus{},
+		Articles:             []ResourceWithCompletionStatus{},
+		ExerciseCategory:     []ExerciseCategoryWithQuestions{},
+	}
+
+	// 计算总进度
+	totalItems := 0
+	completedItems := 0
+
+	// 获取并添加视频状态
+	videos, err := s.GetAllVideosByResourceID(resourceID)
+	if err == nil {
+		videoIDs := make([]uint, len(videos))
+		for i, video := range videos {
+			videoIDs[i] = video.ID
+		}
+
+		// 获取视频完成状态
+		videoCompletions, _ := s.ResourceCompletionRepo.GetUserResourceCompletions(userID, videoIDs)
+
+		// 添加带状态的视频
+		for _, video := range videos {
+			isCompleted := videoCompletions[video.ID]
+			result.Videos = append(result.Videos, ResourceWithCompletionStatus{
+				Resource:    video,
+				IsCompleted: isCompleted,
+			})
+
+			totalItems++
+			if isCompleted {
+				completedItems++
+			}
+		}
+	}
+
+	// 获取并添加文章状态
+	articles, err := s.GetAllArticlesByResourceID(resourceID)
+	if err == nil {
+		articleIDs := make([]uint, len(articles))
+		for i, article := range articles {
+			articleIDs[i] = article.ID
+		}
+
+		// 获取文章完成状态
+		articleCompletions, _ := s.ResourceCompletionRepo.GetUserResourceCompletions(userID, articleIDs)
+
+		// 添加带状态的文章
+		for _, article := range articles {
+			isCompleted := articleCompletions[article.ID]
+			result.Articles = append(result.Articles, ResourceWithCompletionStatus{
+				Resource:    article,
+				IsCompleted: isCompleted,
+			})
+
+			totalItems++
+			if isCompleted {
+				completedItems++
+			}
+		}
+	}
+
+	// 获取并添加练习分类和题目状态
+	categories, err := s.GetCategoriesByResourceID(resourceID)
+	if err == nil {
+		for _, category := range categories {
+			// 获取分类下的所有题目
+			questions, _, err := s.QuestionRepo.FindQuestionsByCategoryIDWithPagination(category.ID, 1, 1000) // 获取所有题目
+			if err != nil {
+				continue
+			}
+
+			categoryWithQuestions := ExerciseCategoryWithQuestions{
+				ExerciseCategory: category,
+				Questions:        []QuestionWithUserStatus{},
+				IsCompleted:      true, // 默认为已完成，如有未完成的题目则设为false
+				Status:           "completed",
+			}
+
+			var categoryCompletedItems = 0
+
+			// 添加题目状态
+			for _, question := range questions {
+				isSubmitted := false
+				if userID > 0 {
+					submission, err := s.SubmissionRepo.FindByUserAndQuestion(userID, question.ID)
+					if err == nil && submission.IsCorrect {
+						isSubmitted = true
+					} else if err != nil || !submission.IsCorrect {
+						// 只有在确定题目未完成时才设置分类未完成
+						categoryWithQuestions.IsCompleted = false
+					}
+				} else {
+					categoryWithQuestions.IsCompleted = false
+				}
+
+				categoryWithQuestions.Questions = append(categoryWithQuestions.Questions, QuestionWithUserStatus{
+					ExerciseQuestion: question,
+					IsSubmitted:      isSubmitted,
+				})
+
+				if isSubmitted {
+					categoryCompletedItems++
+				}
+
+				totalItems++
+
+				if isSubmitted {
+					completedItems++
+				}
+			}
+
+			if len(questions) == 0 {
+				categoryWithQuestions.Status = "not_started"
+			} else if categoryCompletedItems == len(questions) {
+				categoryWithQuestions.Status = "completed"
+			} else if categoryCompletedItems == 0 {
+				categoryWithQuestions.Status = "not_started"
+			} else {
+				categoryWithQuestions.Status = "in_progress"
+			}
+
+			result.ExerciseCategory = append(result.ExerciseCategory, categoryWithQuestions)
+		}
+	}
+
+	// 计算进度百分比
+	if totalItems > 0 {
+		result.Progress = float64(completedItems) / float64(totalItems) * 100
+	} else {
+		result.Progress = 0
+	}
+
+	// 判断模块是否完全完成
+	result.IsCompleted = totalItems > 0 && completedItems == totalItems
+
+	// 设置三种状态
+	if totalItems == 0 {
+		result.Status = "not_started" // 没有项目时视为未开始
+	} else if completedItems == totalItems {
+		result.Status = "completed" // 所有项目都已完成
+	} else if completedItems == 0 {
+		result.Status = "not_started" // 有项目但没有完成的，视为未开始
+	} else {
+		result.Status = "in_progress" // 部分完成，视为进行中
+	}
+
+	return result, nil
+}
+
+// 更新资源完成状态
+func (s *CProgrammingResourceService) UpdateResourceCompletionStatus(userID, resourceID uint, completed bool) error {
+	return s.ResourceCompletionRepo.UpdateCompletionStatus(userID, resourceID, completed)
+}
+
+// GetUnfinishedResourceModules 获取未完成的资源模块列表（带进度）
+func (s *CProgrammingResourceService) GetUnfinishedResourceModules(userID uint, limit int) ([]*ResourceModuleWithProgress, error) {
+	// 1. 获取所有资源模块
+	allResources, _, err := s.GetResources(1, 1000, nil) // 获取所有启用的资源模块
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. 筛选出未完成的资源模块
+	var unfinishedModules []*ResourceModuleWithProgress
+
+	for _, resource := range allResources {
+		module, err := s.GetResourceModuleWithProgress(resource.ID, userID)
+		if err != nil {
+			continue
+		}
+
+		// 检查是否有未完成的内容（视频、文章或练习题）
+		hasUnfinishedVideos := false
+		for _, video := range module.Videos {
+			if !video.IsCompleted {
+				hasUnfinishedVideos = true
+				break
+			}
+		}
+
+		hasUnfinishedArticles := false
+		for _, article := range module.Articles {
+			if !article.IsCompleted {
+				hasUnfinishedArticles = true
+				break
+			}
+		}
+
+		hasUnfinishedExercises := false
+		for _, category := range module.ExerciseCategory {
+			if !category.IsCompleted {
+				hasUnfinishedExercises = true
+				break
+			}
+		}
+
+		// 只要有任一类型的未完成内容，就加入结果集
+		if hasUnfinishedVideos || hasUnfinishedArticles || hasUnfinishedExercises {
+			unfinishedModules = append(unfinishedModules, module)
+		}
+	}
+
+	// 3. 随机选择指定数量的模块（最多3个）
+	if len(unfinishedModules) > limit {
+		// 使用随机数打乱顺序
+		rand.Seed(time.Now().UnixNano())
+		rand.Shuffle(len(unfinishedModules), func(i, j int) {
+			unfinishedModules[i], unfinishedModules[j] = unfinishedModules[j], unfinishedModules[i]
+		})
+		// 返回前limit个结果
+		unfinishedModules = unfinishedModules[:limit]
+	}
+
+	return unfinishedModules, nil
+}
+
+// GetAllResourceModulesWithProgress 获取所有带进度的资源模块
+func (s *CProgrammingResourceService) GetAllResourceModulesWithProgress(userID uint, enabled *bool) ([]*ResourceModuleWithProgress, error) {
+	// 获取所有资源模块
+	resources, _, err := s.Repo.FindAll(1, 1000, "", enabled, "order", "asc")
+	if err != nil {
+		return nil, err
+	}
+
+	// 为每个资源模块获取进度信息
+	var result []*ResourceModuleWithProgress
+	for _, resource := range resources {
+		module, err := s.GetResourceModuleWithProgress(resource.ID, userID)
+		if err != nil {
+			continue
+		}
+		result = append(result, module)
+	}
+
+	return result, nil
 }

@@ -89,6 +89,7 @@ func NewApp(cfg *config.Config) *App {
 		exerciseSubmissionRepo,
 		resourceRepo,
 		resourceCompletionRepo,
+		goalRepo,
 		db,
 	)
 	learningGoalService := service.NewLearningGoalService(

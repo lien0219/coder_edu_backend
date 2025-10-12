@@ -1142,7 +1142,14 @@ func (c *CProgrammingResourceController) GetResourcesWithAllContent(ctx *gin.Con
 		enabled = &val
 	}
 
-	resourcesWithContent, total, err := c.Service.GetResourcesWithAllContent(enabled, page, limit)
+	// 获取当前用户ID
+	user := util.GetUserFromContext(ctx)
+	var userID uint = 0
+	if user != nil {
+		userID = user.UserID
+	}
+
+	resourcesWithContent, total, err := c.Service.GetResourcesWithAllContent(enabled, page, limit, userID)
 	if err != nil {
 		util.InternalServerError(ctx)
 		return

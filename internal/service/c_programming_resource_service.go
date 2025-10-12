@@ -42,6 +42,7 @@ type CProgrammingResourceService struct {
 	SubmissionRepo         *repository.ExerciseSubmissionRepository
 	ResourceRepo           *repository.ResourceRepository
 	ResourceCompletionRepo *repository.ResourceCompletionRepository
+	GoalRepo               *repository.GoalRepository
 	DB                     *gorm.DB
 }
 
@@ -52,6 +53,7 @@ func NewCProgrammingResourceService(
 	submissionRepo *repository.ExerciseSubmissionRepository,
 	resourceRepo *repository.ResourceRepository,
 	resourceCompletionRepo *repository.ResourceCompletionRepository,
+	goalRepo *repository.GoalRepository,
 	db *gorm.DB,
 ) *CProgrammingResourceService {
 	return &CProgrammingResourceService{
@@ -61,6 +63,7 @@ func NewCProgrammingResourceService(
 		SubmissionRepo:         submissionRepo,
 		ResourceRepo:           resourceRepo,
 		ResourceCompletionRepo: resourceCompletionRepo,
+		GoalRepo:               goalRepo,
 		DB:                     db,
 	}
 }
@@ -251,7 +254,7 @@ func (s *CProgrammingResourceService) GetAllQuestionsByCategoryID(categoryID uin
 }
 
 // GetResourcesWithAllContent 获取所有资源分类及其完整内容（支持分页）
-func (s *CProgrammingResourceService) GetResourcesWithAllContent(enabled *bool, page, limit int) ([]map[string]interface{}, int, error) {
+func (s *CProgrammingResourceService) GetResourcesWithAllContent(enabled *bool, page, limit int, userID uint) ([]map[string]interface{}, int, error) {
 	// 获取分页的资源分类
 	resources, total, err := s.Repo.FindAll(page, limit, "", enabled, "order", "asc")
 	if err != nil {
@@ -271,6 +274,16 @@ func (s *CProgrammingResourceService) GetResourcesWithAllContent(enabled *bool, 
 			"createdAt":   resource.CreatedAt,
 			"updatedAt":   resource.UpdatedAt,
 		}
+
+		// 检查当前用户是否有与该资源模块关联的学习目标
+		hasLearningGoal := false
+		if userID > 0 && s.GoalRepo != nil {
+			goals, err := s.GoalRepo.FindByUserIDAndResourceModuleID(userID, resource.ID)
+			if err == nil && len(goals) > 0 {
+				hasLearningGoal = true
+			}
+		}
+		resourceMap["hasLearningGoal"] = hasLearningGoal
 
 		// 获取所有视频
 		videos, err := s.GetAllVideosByResourceID(resource.ID)

@@ -57,6 +57,9 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		&model.ExerciseSubmission{},
 		&model.Checkin{},
 		&model.ResourceCompletion{},
+		&model.TeacherWeeklyTask{},
+		&model.TaskItem{},
+		&model.DailyTaskCompletion{},
 	)
 
 	if err != nil {

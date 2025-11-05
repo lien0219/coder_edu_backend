@@ -31,6 +31,27 @@ definitions:
     - password
     - role
     type: object
+  controller.SetWeeklyTaskRequest:
+    properties:
+      resourceModuleId:
+        type: integer
+      taskItems:
+        items:
+          $ref: '#/definitions/model.TaskItem'
+        type: array
+    required:
+    - resourceModuleId
+    - taskItems
+    type: object
+  controller.UpdateTaskCompletionRequest:
+    properties:
+      isCompleted:
+        type: boolean
+      progress:
+        type: number
+      resourceCompleted:
+        type: boolean
+    type: object
   controller.UpdateUserRequest:
     properties:
       disabled:
@@ -209,6 +230,44 @@ definitions:
     - Video
     - Article
     - Worksheet
+  model.TaskItem:
+    properties:
+      contentType:
+        description: '"video", "article", "exercise"'
+        type: string
+      createdAt:
+        type: string
+      dayOfWeek:
+        $ref: '#/definitions/model.Weekday'
+      description:
+        type: string
+      exerciseId:
+        description: 练习题ID
+        type: integer
+      id:
+        type: integer
+      itemType:
+        $ref: '#/definitions/model.TaskItemType'
+      resourceId:
+        description: 视频或文章ID
+        type: integer
+      title:
+        type: string
+      updatedAt:
+        type: string
+      weeklyTaskId:
+        type: integer
+    type: object
+  model.TaskItemType:
+    enum:
+    - video
+    - article
+    - exercise
+    type: string
+    x-enum-varnames:
+    - TaskItemVideo
+    - TaskItemArticle
+    - TaskItemExercise
   model.User:
     properties:
       createdAt:
@@ -244,6 +303,24 @@ definitions:
     - Student
     - Teacher
     - Admin
+  model.Weekday:
+    enum:
+    - monday
+    - tuesday
+    - wednesday
+    - thursday
+    - friday
+    - saturday
+    - sunday
+    type: string
+    x-enum-varnames:
+    - Monday
+    - Tuesday
+    - Wednesday
+    - Thursday
+    - Friday
+    - Saturday
+    - Sunday
   service.AnswerRequest:
     properties:
       content:
@@ -2944,6 +3021,230 @@ paths:
       summary: 按模块类型获取资源
       tags:
       - 内容
+  /api/tasks/{taskItemId}/completion:
+    post:
+      consumes:
+      - application/json
+      description: 更新指定任务的完成状态和进度
+      parameters:
+      - description: 任务项ID
+        in: path
+        name: taskItemId
+        required: true
+        type: integer
+      - description: 任务完成状态更新请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateTaskCompletionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新任务完成状态
+      tags:
+      - 任务管理
+  /api/tasks/today:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前用户今天需要完成的学习任务列表
+      parameters:
+      - description: 资源分类ID
+        in: query
+        name: resourceModuleId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取今天的学习任务
+      tags:
+      - 任务管理
+  /api/teacher/tasks/weekly:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前老师的历史和当前所有周任务列表，支持分页和搜索
+      parameters:
+      - default: 1
+        description: 页码，默认1
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量，默认10，最大100
+        in: query
+        name: limit
+        type: integer
+      - description: 搜索关键词（按资源模块名称）
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "403":
+          description: 权限不足
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取老师的周任务列表
+      tags:
+      - 任务管理
+    post:
+      consumes:
+      - application/json
+      description: 老师为特定资源分类设置一周的学习任务
+      parameters:
+      - description: 周任务设置请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.SetWeeklyTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "403":
+          description: 权限不足
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 老师设置周任务
+      tags:
+      - 任务管理
+  /api/teacher/tasks/weekly/{taskId}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除指定的周任务及其所有任务项
+      parameters:
+      - description: 周任务ID
+        in: path
+        name: taskId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "403":
+          description: 权限不足
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: 任务不存在或无权删除
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除周任务
+      tags:
+      - 任务管理
   /api/users/{id}/points:
     post:
       consumes:

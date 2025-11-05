@@ -98,6 +98,12 @@ func NewApp(cfg *config.Config) *App {
 		cProgrammingResService,
 		db,
 	)
+	taskService := service.NewTaskService(
+		taskRepo,
+		resourceRepo,
+		exerciseQuestionRepo,
+		cProgrammingResRepo,
+	)
 
 	authController := controller.NewAuthController(authService, userService)
 	contentController := controller.NewContentController(contentService)
@@ -110,6 +116,7 @@ func NewApp(cfg *config.Config) *App {
 	userController := controller.NewUserController(userService)
 	cProgrammingResController := controller.NewCProgrammingResourceController(cProgrammingResService, contentService)
 	learningGoalController := controller.NewLearningGoalController(learningGoalService)
+	taskController := controller.NewTaskController(taskService)
 
 	// 监控
 	monitoring.Init()
@@ -229,6 +236,22 @@ func NewApp(cfg *config.Config) *App {
 		auth.PUT("/learning-goals/:id", learningGoalController.UpdateGoal)
 		auth.DELETE("/learning-goals/:id", learningGoalController.DeleteGoal)
 		auth.GET("/learning-goals/:id/details", learningGoalController.GetGoalDetails)
+
+		// 学生获取今天任务
+		auth.GET("/tasks/today", taskController.GetTodayTasks)
+		// 更新任务完成状态
+		auth.POST("/tasks/:taskItemId/completion", taskController.UpdateTaskCompletion)
+	}
+
+	teacher := auth.Group("/teacher")
+	teacher.Use(middleware.RoleMiddleware(model.Teacher, model.Admin))
+	{
+		// 周任务
+		teacher.POST("/tasks/weekly", taskController.SetWeeklyTask)
+		// 获取周任务列表
+		teacher.GET("/tasks/weekly", taskController.GetWeeklyTasks)
+		// 删除周任务
+		teacher.DELETE("/tasks/weekly/:taskId", taskController.DeleteWeeklyTask)
 	}
 
 	admin := router.Group("/api/admin")

@@ -49,20 +49,25 @@ func RoleMiddleware(roles ...model.UserRole) gin.HandlerFunc {
 			return
 		}
 
+		// fmt.Printf("用户角色: '%s' (长度: %d), 允许的角色列表: %v\n", user.Role, len(user.Role), roles)
+
 		hasRole := false
 		for _, role := range roles {
-			if user.Role == role {
+			// fmt.Printf("比较角色: 用户角色 '%s' vs 允许角色 '%s'\n", user.Role, role)
+			if string(user.Role) == string(role) {
 				hasRole = true
+				// fmt.Printf("角色匹配成功: %s\n", role)
 				break
 			}
 		}
 
 		if !hasRole {
+			// fmt.Printf("角色验证失败: 用户角色 '%s' 不在允许的角色列表 %v 中\n", user.Role, roles)
 			util.Forbidden(c)
 			c.Abort()
 			return
 		}
-
+		// fmt.Printf("角色验证成功，允许访问\n")
 		c.Next()
 	}
 }

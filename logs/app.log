@@ -1254,3 +1254,10 @@
 {"level":"INFO","time":"2025-10-12T11:26:44.432+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}
 {"level":"INFO","time":"2025-10-12T11:26:46.784+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}
 {"level":"INFO","time":"2025-10-12T11:32:05.519+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-11-02T22:47:32.689+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}
+{"level":"FATAL","time":"2025-11-02T22:47:32.806+0800","caller":"app/app.go:49","msg":"Failed to initialize database","error":"Error 1824 (HY000): Failed to open the referenced table 'learning_modules'","stacktrace":"coder_edu_backend/internal/app.NewApp\n\tD:/project/golang/coder_edu_backend/internal/app/app.go:49\nmain.main\n\tD:/project/golang/coder_edu_backend/main.go:36\nruntime.main\n\tD:/g/go/src/runtime/proc.go:283"}
+{"level":"INFO","time":"2025-11-02T22:50:50.660+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}
+{"level":"FATAL","time":"2025-11-02T22:50:50.696+0800","caller":"app/app.go:49","msg":"Failed to initialize database","error":"Error 1824 (HY000): Failed to open the referenced table 'learning_modules'","stacktrace":"coder_edu_backend/internal/app.NewApp\n\tD:/project/golang/coder_edu_backend/internal/app/app.go:49\nmain.main\n\tD:/project/golang/coder_edu_backend/main.go:36\nruntime.main\n\tD:/g/go/src/runtime/proc.go:283"}
+{"level":"INFO","time":"2025-11-02T23:05:20.624+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-11-02T23:12:40.827+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-11-03T21:17:59.339+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}

@@ -212,6 +212,53 @@ func (c *TaskController) GetWeeklyTasks(ctx *gin.Context) {
 	})
 }
 
+// GetCurrentWeekTask godoc
+// @Summary 获取当前周任务
+// @Description 获取当前老师本周的任务，可选择指定资源分类ID
+// @Tags 任务管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param resourceModuleId query int false "资源分类ID"
+// @Success 200 {object} util.Response{data=map[string]interface{}} "成功"
+// @Failure 403 {object} util.Response "权限不足"
+// @Failure 404 {object} util.Response "当前周任务不存在"
+// @Failure 500 {object} util.Response "服务器内部错误"
+// @Router /api/teacher/tasks/weekly/current [get]
+func (c *TaskController) GetCurrentWeekTask(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil || (user.Role != model.Teacher && user.Role != model.Admin) {
+		util.Forbidden(ctx)
+		return
+	}
+
+	// 获取资源分类ID查询参数
+	var resourceModuleID uint
+	resourceModuleIDStr := ctx.Query("resourceModuleId")
+	if resourceModuleIDStr != "" {
+		id, err := strconv.ParseUint(resourceModuleIDStr, 10, 32)
+		if err != nil {
+			util.BadRequest(ctx, "资源分类ID无效")
+			return
+		}
+		resourceModuleID = uint(id)
+	}
+
+	task, err := c.TaskService.GetCurrentWeekTask(user.UserID, resourceModuleID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			util.Error(ctx, http.StatusNotFound, "当前周任务不存在")
+			return
+		}
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, gin.H{
+		"task": task,
+	})
+}
+
 // DeleteWeeklyTask godoc
 // @Summary 删除周任务
 // @Description 删除指定的周任务及其所有任务项

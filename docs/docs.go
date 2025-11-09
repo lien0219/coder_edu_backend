@@ -4395,6 +4395,73 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/teacher/tasks/weekly/current": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取当前老师本周的任务，可选择指定资源分类ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理"
+                ],
+                "summary": "获取当前周任务",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资源分类ID",
+                        "name": "resourceModuleId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "当前周任务不存在",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/teacher/tasks/weekly/{taskId}": {
             "delete": {
                 "security": [

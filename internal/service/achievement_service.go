@@ -96,7 +96,7 @@ func (s *AchievementService) GetLeaderboard(limit int) ([]LeaderboardEntry, erro
 			Rank:   i + 1,
 			User:   user.Name,
 			XP:     user.XP,
-			Avatar: "", // 可以添加头像URL
+			Avatar: "",
 		}
 	}
 
@@ -135,7 +135,7 @@ func (s *AchievementService) UpdateGoalProgress(userID uint, goalID uint, progre
 		goal.Status = model.GoalCompleted
 
 		// 奖励XP
-		xpReward := 50 // 根据目标难度可以调整
+		xpReward := 50
 		err = s.UserRepo.UpdateXP(userID, xpReward)
 		if err != nil {
 			return err

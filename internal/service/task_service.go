@@ -47,7 +47,7 @@ func (s *TaskService) SetWeeklyTask(teacherID, resourceModuleID uint, taskItems 
 	weekEnd := weekStart.AddDate(0, 0, 6)
 
 	// 检查是否已有本周任务
-	existingTask, err := s.TaskRepo.GetWeeklyTaskByTeacherAndDate(teacherID, today)
+	existingTask, err := s.TaskRepo.GetWeeklyTaskByTeacherAndDate(teacherID, resourceModuleID, today)
 	var weeklyTask *model.TeacherWeeklyTask
 
 	if err == nil {
@@ -215,6 +215,23 @@ func (s *TaskService) GetWeeklyTasks(teacherID uint, page, limit int, search str
 	}
 
 	return s.TaskRepo.GetWeeklyTasksWithPagination(teacherID, page, limit, search)
+}
+
+// GetCurrentWeekTask 获取当前周任务
+func (s *TaskService) GetCurrentWeekTask(teacherID uint, resourceModuleID uint) (*model.TeacherWeeklyTask, error) {
+	// 使用当前日期获取本周任务，并可选按资源分类ID筛选
+	task, err := s.TaskRepo.GetWeeklyTaskByTeacherAndDate(teacherID, resourceModuleID, time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	// 确保返回的任务包含正确的资源模块名称
+	resourceModule, err := s.ResourceModuleRepo.FindByID(task.ResourceModuleID)
+	if err == nil && resourceModule != nil {
+		task.ResourceModuleName = resourceModule.Name
+	}
+
+	return task, nil
 }
 
 // DeleteWeeklyTask 删除周任务

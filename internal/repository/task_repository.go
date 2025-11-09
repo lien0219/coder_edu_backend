@@ -68,11 +68,25 @@ func (r *TaskRepository) FindTransferTasks(userID uint) ([]*model.Task, error) {
 
 // CreateWeeklyTask 创建周任务
 func (r *TaskRepository) CreateWeeklyTask(task *model.TeacherWeeklyTask) error {
-	return r.DB.Create(task).Error
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(task).Error; err != nil {
+			return err
+		}
+
+		for i := range task.TaskItems {
+			taskItem := &task.TaskItems[i]
+			taskItem.WeeklyTaskID = task.ID
+			if err := tx.Create(taskItem).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
-// GetWeeklyTaskByTeacherAndDate 根据老师ID和日期获取周任务
-func (r *TaskRepository) GetWeeklyTaskByTeacherAndDate(teacherID uint, date time.Time) (*model.TeacherWeeklyTask, error) {
+// GetWeeklyTaskByTeacherAndDate 根据老师ID、资源分类ID和日期获取周任务
+func (r *TaskRepository) GetWeeklyTaskByTeacherAndDate(teacherID uint, resourceModuleID uint, date time.Time) (*model.TeacherWeeklyTask, error) {
 	var task model.TeacherWeeklyTask
 	// 计算本周的开始和结束日期
 	weekday := int(date.Weekday())
@@ -82,14 +96,42 @@ func (r *TaskRepository) GetWeeklyTaskByTeacherAndDate(teacherID uint, date time
 	weekStart := date.AddDate(0, 0, -(weekday - 1))
 	weekEnd := weekStart.AddDate(0, 0, 6)
 
-	err := r.DB.Preload("TaskItems").Where("teacher_id = ? AND week_start_date = ? AND week_end_date = ?",
-		teacherID, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02")).First(&task).Error
+	query := r.DB.Preload("TaskItems").Where("teacher_id = ? AND week_start_date = ? AND week_end_date = ?",
+		teacherID, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02"))
+	
+	// 如果提供了资源分类ID，则添加到查询条件中
+	if resourceModuleID > 0 {
+		query = query.Where("resource_module_id = ?", resourceModuleID)
+	}
+	
+	err := query.First(&task).Error
 	return &task, err
 }
 
 // UpdateWeeklyTask 更新周任务
 func (r *TaskRepository) UpdateWeeklyTask(task *model.TeacherWeeklyTask) error {
-	return r.DB.Save(task).Error
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(task).Error; err != nil {
+			return err
+		}
+
+		for i := range task.TaskItems {
+			taskItem := &task.TaskItems[i]
+			taskItem.WeeklyTaskID = task.ID
+
+			if taskItem.ID > 0 {
+				if err := tx.Save(taskItem).Error; err != nil {
+					return err
+				}
+			} else {
+				if err := tx.Create(taskItem).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
 }
 
 // CreateDailyTaskCompletion 创建每日任务完成记录

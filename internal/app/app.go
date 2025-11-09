@@ -250,6 +250,8 @@ func NewApp(cfg *config.Config) *App {
 		teacher.POST("/tasks/weekly", taskController.SetWeeklyTask)
 		// 获取周任务列表
 		teacher.GET("/tasks/weekly", taskController.GetWeeklyTasks)
+		// 获取当前周任务
+		teacher.GET("/tasks/weekly/current", taskController.GetCurrentWeekTask)
 		// 删除周任务
 		teacher.DELETE("/tasks/weekly/:taskId", taskController.DeleteWeeklyTask)
 	}

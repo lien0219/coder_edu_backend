@@ -5,8 +5,10 @@ import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -21,11 +23,16 @@ func NewTaskController(taskService *service.TaskService) *TaskController {
 	return &TaskController{TaskService: taskService}
 }
 
+// TaskModuleGroup 定义单个资源模块的任务组
+type TaskModuleGroup struct {
+	ResourceModuleID uint             `json:"resourceModuleId" binding:"required"`
+	TaskItems        []model.TaskItem `json:"taskItems" binding:"required"`
+}
+
 // SetWeeklyTaskRequest 定义周任务设置请求模型
 // swagger:model SetWeeklyTaskRequest
 type SetWeeklyTaskRequest struct {
-	ResourceModuleID uint             `json:"resourceModuleId" binding:"required"`
-	TaskItems        []model.TaskItem `json:"taskItems" binding:"required"`
+	WeeklyTasks []TaskModuleGroup `json:"weekly_tasks" binding:"required"`
 }
 
 // GetWeeklyTasksRequest 定义获取周任务列表请求参数
@@ -63,14 +70,46 @@ func (c *TaskController) SetWeeklyTask(ctx *gin.Context) {
 		return
 	}
 
-	weeklyTask, err := c.TaskService.SetWeeklyTask(user.UserID, request.ResourceModuleID, request.TaskItems)
-	if err != nil {
-		util.BadRequest(ctx, err.Error())
+	// 先按资源模块ID分组，合并同一模块的所有任务项
+	moduleTaskMap := make(map[uint][]model.TaskItem)
+	for _, taskGroup := range request.WeeklyTasks {
+		moduleTaskMap[taskGroup.ResourceModuleID] = append(moduleTaskMap[taskGroup.ResourceModuleID], taskGroup.TaskItems...)
+	}
+
+	// 处理多个资源模块的周任务
+	results := make([]interface{}, 0, len(moduleTaskMap))
+	errors := make([]string, 0)
+	successCount := 0
+
+	for resourceModuleID, allTaskItems := range moduleTaskMap {
+		weeklyTask, err := c.TaskService.SetWeeklyTask(user.UserID, resourceModuleID, allTaskItems)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("模块%d: %s", resourceModuleID, err.Error()))
+			continue // 继续处理其他模块，不中断整个流程
+		}
+		results = append(results, weeklyTask)
+		successCount++
+	}
+
+	// 如果全部失败，返回错误
+	if successCount == 0 && len(errors) > 0 {
+		util.BadRequest(ctx, fmt.Sprintf("所有模块创建失败: %s", strings.Join(errors, "; ")))
+		return
+	}
+
+	// 部分成功的情况
+	if len(errors) > 0 {
+		util.Success(ctx, gin.H{
+			"tasks":        results,
+			"warning":      fmt.Sprintf("部分模块创建失败: %s", strings.Join(errors, "; ")),
+			"successCount": successCount,
+			"totalCount":   len(request.WeeklyTasks),
+		})
 		return
 	}
 
 	util.Success(ctx, gin.H{
-		"task": weeklyTask,
+		"tasks": results,
 	})
 }
 
@@ -95,13 +134,17 @@ func (c *TaskController) GetTodayTasks(ctx *gin.Context) {
 	}
 
 	resourceModuleIDStr := ctx.Query("resourceModuleId")
-	resourceModuleID, err := strconv.ParseUint(resourceModuleIDStr, 10, 32)
-	if err != nil {
-		util.BadRequest(ctx, "资源分类ID无效")
-		return
+	var resourceModuleID uint
+	if resourceModuleIDStr != "" {
+		parsedID, err := strconv.ParseUint(resourceModuleIDStr, 10, 32)
+		if err != nil {
+			util.BadRequest(ctx, "资源分类ID无效")
+			return
+		}
+		resourceModuleID = uint(parsedID)
 	}
 
-	tasks, err := c.TaskService.GetTodayTasks(user.UserID, uint(resourceModuleID))
+	tasks, err := c.TaskService.GetTodayTasks(user.UserID, resourceModuleID)
 	if err != nil {
 		util.InternalServerError(ctx)
 		return
@@ -214,7 +257,7 @@ func (c *TaskController) GetWeeklyTasks(ctx *gin.Context) {
 
 // GetCurrentWeekTask godoc
 // @Summary 获取当前周任务
-// @Description 获取当前老师本周的任务，可选择指定资源分类ID
+// @Description 获取当前老师本周的任务，可选择指定资源分类ID。如果不指定资源分类ID，返回所有模块的一周任务
 // @Tags 任务管理
 // @Accept json
 // @Produce json
@@ -227,7 +270,8 @@ func (c *TaskController) GetWeeklyTasks(ctx *gin.Context) {
 // @Router /api/teacher/tasks/weekly/current [get]
 func (c *TaskController) GetCurrentWeekTask(ctx *gin.Context) {
 	user := util.GetUserFromContext(ctx)
-	if user == nil || (user.Role != model.Teacher && user.Role != model.Admin) {
+	// 允许 Teacher / Admin / Student 访问当前周任务（student 可查看）
+	if user == nil || (user.Role != model.Teacher && user.Role != model.Admin && user.Role != model.Student) {
 		util.Forbidden(ctx)
 		return
 	}
@@ -247,16 +291,72 @@ func (c *TaskController) GetCurrentWeekTask(ctx *gin.Context) {
 	task, err := c.TaskService.GetCurrentWeekTask(user.UserID, resourceModuleID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			util.Error(ctx, http.StatusNotFound, "当前周任务不存在")
+			util.Success(ctx, gin.H{
+				"task": nil,
+			})
 			return
 		}
 		util.InternalServerError(ctx)
 		return
 	}
 
-	util.Success(ctx, gin.H{
-		"task": task,
-	})
+	// 如果获取到所有模块的任务，按模块分组返回
+	if resourceModuleID == 0 {
+		// 按资源模块ID分组任务项
+		moduleGroups := make(map[uint][]model.TaskItem)
+		for _, item := range task.TaskItems {
+			// 获取任务项对应的资源模块ID
+			var weeklyTask model.TeacherWeeklyTask
+			if err := c.TaskService.TaskRepo.DB.First(&weeklyTask, item.WeeklyTaskID).Error; err == nil {
+				moduleGroups[weeklyTask.ResourceModuleID] = append(moduleGroups[weeklyTask.ResourceModuleID], item)
+			}
+		}
+
+		// 构建分组返回结果
+		groups := make([]map[string]interface{}, 0)
+		for moduleID, items := range moduleGroups {
+			// 获取模块信息
+			resourceModule, err := c.TaskService.ResourceModuleRepo.FindByID(moduleID)
+			moduleName := "未知模块"
+			if err == nil && resourceModule != nil {
+				moduleName = resourceModule.Name
+			}
+
+			fmt.Printf("[DEBUG] 控制器分组 - 模块ID: %d, 模块名称: %s, 任务项数量: %d\n", moduleID, moduleName, len(items))
+
+			// 按星期几分组显示
+			dayGroups := make(map[string][]model.TaskItem)
+			for _, item := range items {
+				dayGroups[string(item.DayOfWeek)] = append(dayGroups[string(item.DayOfWeek)], item)
+			}
+
+			fmt.Printf("[DEBUG] 模块 %d 按星期几分组:\n", moduleID)
+			for day, dayItems := range dayGroups {
+				fmt.Printf("[DEBUG]   %s: %d 个任务项\n", day, len(dayItems))
+			}
+
+			groups = append(groups, map[string]interface{}{
+				"resourceModuleId":   moduleID,
+				"resourceModuleName": moduleName,
+				"taskItems":          items,
+				"dayGroups":          dayGroups, // 添加按天分组信息
+			})
+		}
+
+		util.Success(ctx, gin.H{
+			"task": map[string]interface{}{
+				"weekStartDate":  task.WeekStartDate,
+				"weekEndDate":    task.WeekEndDate,
+				"groups":         groups,
+				"totalTaskItems": len(task.TaskItems), // 添加总任务项数量
+			},
+		})
+	} else {
+		// 返回单个模块的任务
+		util.Success(ctx, gin.H{
+			"task": task,
+		})
+	}
 }
 
 // DeleteWeeklyTask godoc

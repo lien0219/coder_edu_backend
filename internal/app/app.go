@@ -82,6 +82,13 @@ func NewApp(cfg *config.Config) *App {
 	communityService := service.NewCommunityService(postRepo, nil, questionRepo, answerRepo, userRepo)
 	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo)
 	userService := service.NewUserService(userRepo, checkinRepo)
+	taskService := service.NewTaskService(
+		taskRepo,
+		resourceRepo,
+		exerciseQuestionRepo,
+		cProgrammingResRepo,
+		goalRepo,
+	)
 	cProgrammingResService := service.NewCProgrammingResourceService(
 		cProgrammingResRepo,
 		exerciseCategoryRepo,
@@ -90,6 +97,8 @@ func NewApp(cfg *config.Config) *App {
 		resourceRepo,
 		resourceCompletionRepo,
 		goalRepo,
+		taskRepo,
+		taskService,
 		db,
 	)
 	learningGoalService := service.NewLearningGoalService(
@@ -97,12 +106,6 @@ func NewApp(cfg *config.Config) *App {
 		cProgrammingResRepo,
 		cProgrammingResService,
 		db,
-	)
-	taskService := service.NewTaskService(
-		taskRepo,
-		resourceRepo,
-		exerciseQuestionRepo,
-		cProgrammingResRepo,
 	)
 
 	authController := controller.NewAuthController(authService, userService)
@@ -125,7 +128,7 @@ func NewApp(cfg *config.Config) *App {
 
 	router.Use(security.CORS())
 	router.Use(security.Secure())
-	router.Use(security.RateLimiter(300, time.Minute)) // 每分钟300次请求
+	router.Use(security.RateLimiter(1000, time.Minute)) // 每分钟1000次请求
 
 	// 初始化分布式追踪
 	if cfg.Tracing.Enabled {
@@ -244,7 +247,8 @@ func NewApp(cfg *config.Config) *App {
 	}
 
 	teacher := auth.Group("/teacher")
-	teacher.Use(middleware.RoleMiddleware(model.Teacher, model.Admin))
+	// 允许 Teacher / Admin / Student 访问教师相关的周任务接口（暂时放宽校验）
+	teacher.Use(middleware.RoleMiddleware(model.Teacher, model.Admin, model.Student))
 	{
 		// 周任务
 		teacher.POST("/tasks/weekly", taskController.SetWeeklyTask)

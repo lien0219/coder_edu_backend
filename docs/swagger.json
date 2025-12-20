@@ -4396,7 +4396,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前老师本周的任务，可选择指定资源分类ID",
+                "description": "获取当前老师本周的任务，可选择指定资源分类ID。如果不指定资源分类ID，返回所有模块的一周任务",
                 "consumes": [
                     "application/json"
                 ],
@@ -4760,6 +4760,20 @@
             }
         },
         "controller.SetWeeklyTaskRequest": {
+            "type": "object",
+            "required": [
+                "weekly_tasks"
+            ],
+            "properties": {
+                "weekly_tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/controller.TaskModuleGroup"
+                    }
+                }
+            }
+        },
+        "controller.TaskModuleGroup": {
             "type": "object",
             "required": [
                 "resourceModuleId",

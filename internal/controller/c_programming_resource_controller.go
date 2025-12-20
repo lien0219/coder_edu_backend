@@ -1,12 +1,14 @@
 package controller
 
 import (
+	"coder_edu_backend/internal/config"
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -1227,6 +1229,17 @@ func (c *CProgrammingResourceController) SubmitExerciseAnswerPublic(ctx *gin.Con
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		util.BadRequest(ctx, err.Error())
 		return
+	}
+
+	if req.UserID == 0 {
+		authHeader := ctx.GetHeader("Authorization")
+		if authHeader != "" {
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+			cfg := ctx.MustGet("config").(*config.Config)
+			if claims, err := util.ParseJWT(tokenString, cfg.JWT.Secret); err == nil && claims != nil {
+				req.UserID = claims.UserID
+			}
+		}
 	}
 
 	isCorrect, err := c.Service.SubmitExerciseAnswer(uint(questionID), req)

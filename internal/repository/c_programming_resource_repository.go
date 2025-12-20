@@ -2,6 +2,7 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -93,6 +94,12 @@ func (r *CProgrammingResourceRepository) FindAll(page, limit int, search string,
 	// 分页功能
 	offset := (page - 1) * limit
 	err = query.Offset(offset).Limit(limit).Find(&resources).Error
+
+	// 添加调试信息
+	fmt.Printf("[DEBUG] CProgrammingResourceRepository.FindAll - 找到 %d 个资源模块:\n", len(resources))
+	for i, res := range resources {
+		fmt.Printf("[DEBUG] 资源[%d] - ID: %d, 名称: %s\n", i, res.ID, res.Name)
+	}
 
 	return resources, int(total), err
 }

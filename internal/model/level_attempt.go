@@ -15,6 +15,8 @@ type LevelAttempt struct {
 	EndedAt          *time.Time `json:"endedAt,omitempty"`
 	TotalTimeSeconds int        `json:"totalTimeSeconds"`
 	PerQuestionTimes string     `gorm:"type:json" json:"perQuestionTimes"`
+	NeedsManual      bool       `gorm:"default:false" json:"needsManual"`
+	VersionID        uint       `gorm:"index" json:"versionId"` // 记录挑战开始时使用的版本快照
 }
 
 func (LevelAttempt) TableName() string {

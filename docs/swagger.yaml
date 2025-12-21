@@ -395,6 +395,73 @@ definitions:
     required:
     - content
     type: object
+  service.LevelCreateRequest:
+    properties:
+      abilityIds:
+        items:
+          type: integer
+        type: array
+      allowPause:
+        type: boolean
+      attemptLimit:
+        type: integer
+      availableFrom:
+        type: string
+      availableTo:
+        type: string
+      basePoints:
+        type: integer
+      coverUrl:
+        type: string
+      description:
+        type: string
+      difficulty:
+        type: string
+      estimatedMinutes:
+        type: integer
+      isPublished:
+        type: boolean
+      knowledgeTagIds:
+        items:
+          type: integer
+        type: array
+      levelType:
+        type: string
+      passingScore:
+        type: integer
+      questions:
+        items:
+          $ref: '#/definitions/service.LevelQuestionRequest'
+        type: array
+      title:
+        type: string
+      visibleScope:
+        type: string
+      visibleTo:
+        items:
+          type: integer
+        type: array
+    required:
+    - title
+    type: object
+  service.LevelQuestionRequest:
+    properties:
+      content: {}
+      correctAnswer: {}
+      explanation:
+        type: string
+      manualGrading:
+        type: boolean
+      options: {}
+      points:
+        type: integer
+      questionType:
+        type: string
+      scoringRule:
+        type: string
+      weight:
+        type: integer
+    type: object
   service.PostRequest:
     properties:
       content:
@@ -439,7 +506,6 @@ definitions:
         type: integer
     required:
     - answer
-    - user_id
     type: object
   service.UpdateGoalRequest:
     properties:
@@ -3118,6 +3184,556 @@ paths:
       summary: 获取今天的学习任务
       tags:
       - 任务管理
+  /api/teacher/levels:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 列表关卡
+      tags:
+      - 关卡管理
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关卡信息
+        in: body
+        name: level
+        required: true
+        schema:
+          $ref: '#/definitions/service.LevelCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建关卡
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}:
+    get:
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取关卡详情
+      tags:
+      - 关卡管理
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 关卡信息
+        in: body
+        name: level
+        required: true
+        schema:
+          $ref: '#/definitions/service.LevelCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新关卡
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}/attempts/{attemptId}/grade:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 尝试ID
+        in: path
+        name: attemptId
+        required: true
+        type: integer
+      - description: scores [{questionId, score, comment}]
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师对尝试进行人工评分
+      tags:
+      - 评分
+  /api/teacher/levels/{id}/attempts/{attemptId}/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 尝试ID
+        in: path
+        name: attemptId
+        required: true
+        type: integer
+      - description: answers and perQuestionTimes
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 提交关卡挑战
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}/attempts/pending-grading:
+    get:
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 列出需人工评分的尝试（按关卡）
+      tags:
+      - 评分
+  /api/teacher/levels/{id}/attempts/start:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 开始关卡挑战
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}/attempts/stats:
+    get:
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 开始时间 RFC3339
+        in: query
+        name: start
+        type: string
+      - description: 结束时间 RFC3339
+        in: query
+        name: end
+        type: string
+      - description: 学生ID
+        in: query
+        name: studentId
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取关卡尝试统计
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}/publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: publish:bool
+        in: body
+        name: action
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 发布/下架关卡
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}/questions:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 题目信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.LevelQuestionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 新增题目到关卡
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}/schedule_publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: scheduledAt RFC3339 or null to cancel
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 设置定时发布
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}/upload/attachment:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: 附件文件
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 上传关卡题目附件（教师）
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}/upload/cover:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: 封面文件
+        in: formData
+        name: cover
+        required: true
+        type: file
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 上传关卡封面（教师）
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}/versions:
+    get:
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取关卡版本列表
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}/versions/{versionId}/rollback:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 版本ID
+        in: path
+        name: versionId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 回滚到某个版本
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{id}/visibility:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: visibleScope, visibleTo
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新关卡可见范围（全班/class/specific）及特定学生列表
+      tags:
+      - 关卡管理
+  /api/teacher/levels/{levelId}/questions/{qid}:
+    delete:
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 题目ID
+        in: path
+        name: qid
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除题目
+      tags:
+      - 关卡管理
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 题目ID
+        in: path
+        name: qid
+        required: true
+        type: integer
+      - description: 题目信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.LevelQuestionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新关卡题目
+      tags:
+      - 关卡管理
+  /api/teacher/levels/bulk:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: ids, updates
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 批量更新关卡字段（上限/积分/发布等）
+      tags:
+      - 关卡管理
+  /api/teacher/levels/bulk/publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: ids, publish
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 批量发布/下架关卡
+      tags:
+      - 关卡管理
   /api/teacher/tasks/weekly:
     get:
       consumes:

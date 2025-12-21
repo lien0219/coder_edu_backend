@@ -69,6 +69,8 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		&model.KnowledgeTag{},
 		&model.LevelKnowledge{},
 		&model.LevelAttemptQuestionTime{},
+		&model.LevelAttemptAnswer{},
+		&model.LevelAttemptQuestionScore{},
 	)
 
 	if err != nil {

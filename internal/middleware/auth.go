@@ -54,6 +54,11 @@ func RoleMiddleware(roles ...model.UserRole) gin.HandlerFunc {
 		hasRole := false
 		for _, role := range roles {
 			// fmt.Printf("比较角色: 用户角色 '%s' vs 允许角色 '%s'\n", user.Role, role)
+			// 允许管理员拥有所有教师权限：管理员直接放行
+			if string(user.Role) == string(model.Admin) {
+				hasRole = true
+				break
+			}
 			if string(user.Role) == string(role) {
 				hasRole = true
 				// fmt.Printf("角色匹配成功: %s\n", role)

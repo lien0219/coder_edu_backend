@@ -128,7 +128,7 @@ func NewApp(cfg *config.Config) *App {
 
 	router.Use(security.CORS())
 	router.Use(security.Secure())
-	router.Use(security.RateLimiter(1000, time.Minute)) // 每分钟1000次请求
+	router.Use(security.RateLimiter(100000, time.Minute)) // 每分钟100000次请求
 
 	// 初始化分布式追踪
 	if cfg.Tracing.Enabled {

@@ -25,3 +25,4 @@
 {"level":"INFO","time":"2025-12-21T13:39:40.040+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}
 {"level":"INFO","time":"2025-12-21T13:39:57.636+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}
 {"level":"INFO","time":"2025-12-21T13:40:10.346+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2025-12-21T13:40:16.040+0800","caller":"app/app.go:45","msg":"Logger initialized successfully"}

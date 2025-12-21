@@ -10,6 +10,8 @@ type LevelQuestion struct {
 	Options       string `gorm:"type:json" json:"options"`    // 选择题选项（JSON array）
 	CorrectAnswer string `gorm:"type:json" json:"correctAnswer"`
 	Points        int    `gorm:"default:0" json:"points"`
+	Weight        int    `gorm:"default:1" json:"weight"`            // 权重，默认1
+	ManualGrading bool   `gorm:"default:false" json:"manualGrading"` // 是否需要人工评分
 	Order         int    `gorm:"default:0" json:"order"`
 	ScoringRule   string `gorm:"type:text" json:"scoringRule"` // 自定义评分规则或权重
 	Explanation   string `gorm:"type:text" json:"explanation"` // 答案解析

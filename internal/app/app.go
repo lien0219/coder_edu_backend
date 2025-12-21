@@ -1,7 +1,6 @@
 package app
 
 import (
-	"coder_edu_backend/docs"
 	"coder_edu_backend/internal/config"
 	"coder_edu_backend/internal/controller"
 	"coder_edu_backend/internal/middleware"
@@ -18,7 +17,7 @@ import (
 	"strconv"
 	"time"
 
-	_ "coder_edu_backend/docs"
+	"coder_edu_backend/docs"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -72,6 +71,7 @@ func NewApp(cfg *config.Config) *App {
 	exerciseSubmissionRepo := repository.NewExerciseSubmissionRepository(db)
 	checkinRepo := repository.NewCheckinRepository(db)
 	resourceCompletionRepo := repository.NewResourceCompletionRepository(db)
+	levelRepo := repository.NewLevelRepository(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	contentService := service.NewContentService(resourceRepo, cfg)
@@ -101,6 +101,7 @@ func NewApp(cfg *config.Config) *App {
 		taskService,
 		db,
 	)
+	levelService := service.NewLevelService(levelRepo, db)
 	learningGoalService := service.NewLearningGoalService(
 		goalRepo,
 		cProgrammingResRepo,
@@ -120,6 +121,8 @@ func NewApp(cfg *config.Config) *App {
 	cProgrammingResController := controller.NewCProgrammingResourceController(cProgrammingResService, contentService)
 	learningGoalController := controller.NewLearningGoalController(learningGoalService)
 	taskController := controller.NewTaskController(taskService)
+	levelController := controller.NewLevelController(levelService, contentService)
+	gradeController := controller.NewGradeController(levelService)
 
 	// 监控
 	monitoring.Init()
@@ -154,6 +157,15 @@ func NewApp(cfg *config.Config) *App {
 		c.Set("config", cfg)
 		c.Next()
 	})
+
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		for range ticker.C {
+			if err := levelService.ProcessScheduledPublishes(); err != nil {
+				logger.Log.Error("scheduled publish error", zap.Error(err))
+			}
+		}
+	}()
 
 	router.GET("/metrics", monitoring.PrometheusHandler())
 
@@ -210,6 +222,10 @@ func NewApp(cfg *config.Config) *App {
 		auth.POST("/analytics/session/start", analyticsController.StartSession)
 		auth.POST("/analytics/session/:sessionId/end", analyticsController.EndSession)
 
+		// 关卡挑战（学生）
+		auth.POST("/levels/:id/attempts/start", levelController.StartAttempt)
+		auth.POST("/attempts/:id/submit", levelController.SubmitAttempt)
+
 		auth.GET("/c-programming/resources", cProgrammingResController.GetResources)
 		auth.GET("/c-programming/resources/full", cProgrammingResController.GetResourcesWithAllContent)
 		auth.GET("/c-programming/resources/:id", cProgrammingResController.GetResourceByID)
@@ -258,6 +274,30 @@ func NewApp(cfg *config.Config) *App {
 		teacher.GET("/tasks/weekly/current", taskController.GetCurrentWeekTask)
 		// 删除周任务
 		teacher.DELETE("/tasks/weekly/:taskId", taskController.DeleteWeeklyTask)
+		// 关卡管理
+		teacher.POST("/levels", levelController.CreateLevel)
+		teacher.GET("/levels", levelController.ListLevels)
+		teacher.GET("/levels/:id", levelController.GetLevel)
+		teacher.PUT("/levels/:id", levelController.UpdateLevel)
+		teacher.POST("/levels/:id/publish", levelController.PublishLevel)
+		teacher.POST("/levels/bulk", levelController.BulkUpdate)
+		teacher.GET("/levels/:id/versions", levelController.GetVersions)
+		teacher.POST("/levels/:id/versions/:versionId/rollback", levelController.RollbackVersion)
+		// question management
+		teacher.POST("/levels/:id/questions", levelController.CreateQuestion)
+		teacher.PUT("/levels/:id/questions/:qid", levelController.UpdateQuestion)
+		teacher.DELETE("/levels/:id/questions/:qid", levelController.DeleteQuestion)
+		// grading
+		teacher.GET("/levels/:id/attempts/pending-grading", gradeController.ListPendingGrading)
+		teacher.POST("/levels/:id/attempts/:attemptId/grade", gradeController.GradeAttempt)
+		// attempts stats
+		teacher.GET("/levels/:id/attempts/stats", levelController.GetAttemptStats)
+		// attempts
+		teacher.POST("/levels/:id/attempts/start", levelController.StartAttempt)
+		teacher.POST("/levels/:id/attempts/:attemptId/submit", levelController.SubmitAttempt)
+		// visibility & scheduling
+		teacher.PUT("/levels/:id/visibility", levelController.UpdateVisibility)
+		teacher.POST("/levels/:id/schedule_publish", levelController.SchedulePublish)
 	}
 
 	admin := router.Group("/api/admin")

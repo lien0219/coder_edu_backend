@@ -23,9 +23,7 @@ type Level struct {
 	BasePoints       int    `gorm:"default:0" json:"basePoints"`
 	AllowPause       bool   `gorm:"default:true" json:"allowPause"`
 
-	LevelType     string     `gorm:"size:100" json:"levelType"`  // 关卡类型（预设或自建）
-	Abilities     string     `gorm:"type:json" json:"abilities"` // JSON array of ability identifiers (至少1个)
-	Knowledge     string     `gorm:"type:json" json:"knowledge"` // 关联知识点标签（JSON array）
+	LevelType     string     `gorm:"size:100" json:"levelType"` // 关卡类型
 	IsPublished   bool       `gorm:"default:false" json:"isPublished"`
 	PublishedAt   *time.Time `json:"publishedAt,omitempty"`
 	VisibleScope  string     `gorm:"size:50;default:'all'" json:"visibleScope"` // all/class/specific

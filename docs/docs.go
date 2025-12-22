@@ -3339,6 +3339,30 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/knowledge-tags": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "获取知识点标签列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/learning-goals": {
             "get": {
                 "security": [

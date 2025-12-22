@@ -2627,6 +2627,20 @@ paths:
       summary: 获取今日任务
       tags:
       - 仪表盘
+  /api/knowledge-tags:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取知识点标签列表
+      tags:
+      - 知识点
   /api/learning-goals:
     get:
       consumes:

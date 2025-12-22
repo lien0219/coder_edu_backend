@@ -99,5 +99,22 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		}
 	}
 
+	// 默认知识点标签（如果为空则插入一些常用知识点）
+	var ktCount int64
+	db.Model(&model.KnowledgeTag{}).Count(&ktCount)
+	if ktCount == 0 {
+		defaultTags := []model.KnowledgeTag{
+			{Code: "array", Name: "数组", Description: "数组与索引", Enabled: true},
+			{Code: "loop", Name: "循环", Description: "for/while 循环", Enabled: true},
+			{Code: "pointer", Name: "指针", Description: "指针与地址访问", Enabled: true},
+			{Code: "recursion", Name: "递归", Description: "递归与分治", Enabled: true},
+			{Code: "sort", Name: "排序", Description: "常见排序算法", Enabled: true},
+			{Code: "search", Name: "查找", Description: "线性/二分查找", Enabled: true},
+		}
+		for _, t := range defaultTags {
+			db.Create(&t)
+		}
+	}
+
 	return db, nil
 }

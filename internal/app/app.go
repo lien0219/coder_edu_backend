@@ -72,6 +72,7 @@ func NewApp(cfg *config.Config) *App {
 	checkinRepo := repository.NewCheckinRepository(db)
 	resourceCompletionRepo := repository.NewResourceCompletionRepository(db)
 	levelRepo := repository.NewLevelRepository(db)
+	knowledgeTagRepo := repository.NewKnowledgeTagRepository(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	contentService := service.NewContentService(resourceRepo, cfg)
@@ -102,6 +103,8 @@ func NewApp(cfg *config.Config) *App {
 		db,
 	)
 	levelService := service.NewLevelService(levelRepo, db)
+	knowledgeTagService := service.NewKnowledgeTagService(knowledgeTagRepo)
+	knowledgeTagController := controller.NewKnowledgeTagController(knowledgeTagService)
 	learningGoalService := service.NewLearningGoalService(
 		goalRepo,
 		cProgrammingResRepo,
@@ -191,6 +194,8 @@ func NewApp(cfg *config.Config) *App {
 	{
 		auth.GET("/profile", authController.GetProfile)
 		auth.GET("/resources", contentController.GetResources)
+		// 知识点标签列表
+		auth.GET("/knowledge-tags", knowledgeTagController.ListTags)
 
 		auth.GET("/dashboard", dashboardController.GetDashboard)
 		auth.GET("/dashboard/today-tasks", dashboardController.GetTodayTasks)

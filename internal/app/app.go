@@ -82,7 +82,7 @@ func NewApp(cfg *config.Config) *App {
 	achievementService := service.NewAchievementService(achievementRepo, userRepo, goalRepo)
 	communityService := service.NewCommunityService(postRepo, nil, questionRepo, answerRepo, userRepo)
 	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo)
-	userService := service.NewUserService(userRepo, checkinRepo)
+	userService := service.NewUserServiceWithDB(userRepo, checkinRepo, db)
 	taskService := service.NewTaskService(
 		taskRepo,
 		resourceRepo,
@@ -228,8 +228,15 @@ func NewApp(cfg *config.Config) *App {
 		auth.POST("/analytics/session/:sessionId/end", analyticsController.EndSession)
 
 		// 关卡挑战（学生）
+		auth.GET("/levels/student", levelController.GetStudentLevels)
+		auth.GET("/levels/student/:id", levelController.GetStudentLevelDetail)
+		auth.GET("/levels/student/:id/questions", levelController.GetStudentLevelQuestions)
 		auth.POST("/levels/:id/attempts/start", levelController.StartAttempt)
+		auth.POST("/levels/:id/attempts/:attemptId/submit", levelController.BatchSubmitAnswers)
 		auth.POST("/attempts/:id/submit", levelController.SubmitAttempt)
+		auth.GET("/levels/ranking", levelController.GetLevelRanking)
+		auth.GET("/users/:userId/level-total-score", levelController.GetUserLevelTotalScore)
+		auth.GET("/users/:userId/level-stats", levelController.GetUserLevelStats)
 
 		auth.GET("/c-programming/resources", cProgrammingResController.GetResources)
 		auth.GET("/c-programming/resources/full", cProgrammingResController.GetResourcesWithAllContent)
@@ -244,6 +251,7 @@ func NewApp(cfg *config.Config) *App {
 
 		auth.POST("/users/checkin", userController.Checkin)
 		auth.GET("/users/checkin/stats", userController.GetCheckinStats)
+		auth.GET("/users/stats", userController.GetUserStats)
 
 		// 资源进度相关路由
 		auth.GET("/c-programming/resource-progress/:resourceId", cProgrammingResController.GetResourceModuleWithProgress)
@@ -284,7 +292,9 @@ func NewApp(cfg *config.Config) *App {
 		teacher.GET("/levels", levelController.ListLevels)
 		teacher.GET("/levels/:id", levelController.GetLevel)
 		teacher.PUT("/levels/:id", levelController.UpdateLevel)
+		teacher.DELETE("/levels/:id", levelController.DeleteLevel)
 		teacher.POST("/levels/:id/publish", levelController.PublishLevel)
+		teacher.POST("/levels/bulk/publish", levelController.BulkPublish)
 		teacher.POST("/levels/bulk", levelController.BulkUpdate)
 		teacher.GET("/levels/:id/versions", levelController.GetVersions)
 		teacher.POST("/levels/:id/versions/:versionId/rollback", levelController.RollbackVersion)

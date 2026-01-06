@@ -101,7 +101,7 @@ func (c *LevelController) ListLevels(ctx *gin.Context) {
 			limit = v
 		}
 	}
-	levels, total, err := c.LevelService.LevelRepo.ListByCreator(user.UserID, page, limit)
+	levels, total, err := c.LevelService.ListLevelsFull(user.UserID, page, limit)
 	if err != nil {
 		util.InternalServerError(ctx)
 		return
@@ -469,6 +469,218 @@ func (c *LevelController) DeleteQuestion(ctx *gin.Context) {
 	util.Success(ctx, gin.H{"deleted": qid})
 }
 
+// @Summary 删除关卡
+// @Tags 关卡管理
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "关卡ID"
+// @Success 200 {object} util.Response
+// @Router /api/teacher/levels/{id} [delete]
+func (c *LevelController) DeleteLevel(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+	levelStr := ctx.Param("id")
+	levelID, err := strconv.Atoi(levelStr)
+	if err != nil {
+		util.BadRequest(ctx, "invalid level id")
+		return
+	}
+	if err := c.LevelService.DeleteLevel(user.UserID, uint(levelID)); err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+	util.Success(ctx, gin.H{"deleted": levelID})
+}
+
+// @Summary 获取学生端关卡列表
+// @Description 获取学生可访问的关卡列表，支持搜索、筛选和分页
+// @Tags 关卡管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param search query string false "搜索关键词（关卡名称或描述）"
+// @Param difficulty query string false "难度筛选" Enums(easy,medium,hard,all)
+// @Param status query string false "状态筛选" Enums(not_started,in_progress,completed,all)
+// @Param page query int false "页码" default(1)
+// @Param limit query int false "每页数量" default(9)
+// @Success 200 {object} util.Response
+// @Router /api/levels/student [get]
+func (c *LevelController) GetStudentLevels(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	// 获取查询参数
+	search := ctx.Query("search")
+	difficulty := ctx.Query("difficulty")
+	status := ctx.Query("status")
+
+	page := 1
+	limit := 9 // 默认一页9条数据
+
+	if p := ctx.Query("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+
+	if l := ctx.Query("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	// 获取关卡列表
+	levels, total, err := c.LevelService.ListLevelsForStudent(user.UserID, search, difficulty, status, page, limit)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, gin.H{
+		"items": levels,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
+// @Summary 获取学生端关卡详情
+// @Description 获取学生可访问的关卡详细信息，包括题目信息（不含答案）
+// @Tags 关卡管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "关卡ID"
+// @Success 200 {object} util.Response
+// @Router /api/levels/student/{id} [get]
+func (c *LevelController) GetStudentLevelDetail(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	levelStr := ctx.Param("id")
+	levelID, err := strconv.Atoi(levelStr)
+	if err != nil {
+		util.BadRequest(ctx, "invalid level id")
+		return
+	}
+
+	levelDetail, err := c.LevelService.GetStudentLevelDetail(user.UserID, uint(levelID))
+	if err != nil {
+		if err.Error() == "level not found" || err.Error() == "level not accessible" ||
+			err.Error() == "level not yet available" || err.Error() == "level no longer available" {
+			util.NotFound(ctx)
+		} else {
+			util.InternalServerError(ctx)
+		}
+		return
+	}
+
+	util.Success(ctx, levelDetail)
+}
+
+// @Summary 获取学生端关卡题目列表
+// @Description 获取学生可访问的关卡所有题目列表
+// @Tags 关卡管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "关卡ID"
+// @Success 200 {object} util.Response
+// @Router /api/levels/student/{id}/questions [get]
+func (c *LevelController) GetStudentLevelQuestions(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	levelStr := ctx.Param("id")
+	levelID, err := strconv.Atoi(levelStr)
+	if err != nil {
+		util.BadRequest(ctx, "invalid level id")
+		return
+	}
+
+	questions, err := c.LevelService.GetStudentLevelQuestions(user.UserID, uint(levelID))
+	if err != nil {
+		if err.Error() == "level not found" || err.Error() == "level not accessible" ||
+			err.Error() == "level not yet available" || err.Error() == "level no longer available" {
+			util.NotFound(ctx)
+		} else {
+			util.InternalServerError(ctx)
+		}
+		return
+	}
+
+	util.Success(ctx, gin.H{
+		"items": questions,
+		"total": len(questions),
+	})
+}
+
+// @Summary 批量提交关卡答案
+// @Description 一次性提交关卡的所有或部分问题答案，支持部分提交
+// @Tags 关卡管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param levelId path int true "关卡ID"
+// @Param attemptId path int true "尝试ID"
+// @Param body body map[string]interface{} true "答案提交请求" "{"answers": [{"questionId": 1, "answer": "答案"}]}"
+// @Success 200 {object} util.Response
+// @Router /api/levels/{levelId}/attempts/{attemptId}/submit [post]
+func (c *LevelController) BatchSubmitAnswers(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	levelStr := ctx.Param("id")
+	levelID, err := strconv.Atoi(levelStr)
+	if err != nil {
+		util.BadRequest(ctx, "invalid level id")
+		return
+	}
+
+	attemptStr := ctx.Param("attemptId")
+	attemptID, err := strconv.Atoi(attemptStr)
+	if err != nil {
+		util.BadRequest(ctx, "invalid attempt id")
+		return
+	}
+
+	// 使用map接收JSON数据
+	var req map[string]interface{}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
+	result, err := c.LevelService.BatchSubmitAnswers(user.UserID, uint(levelID), uint(attemptID), req)
+	if err != nil {
+		if err.Error() == "level not found" || err.Error() == "level not accessible" ||
+			err.Error() == "level not yet available" || err.Error() == "level no longer available" ||
+			err.Error() == "attempt not found" {
+			util.NotFound(ctx)
+		} else {
+			util.InternalServerError(ctx)
+		}
+		return
+	}
+
+	util.Success(ctx, result)
+}
+
 // @Summary 获取关卡尝试统计
 // @Tags 关卡管理
 // @Produce json
@@ -527,20 +739,40 @@ func (c *LevelController) GetAttemptStats(ctx *gin.Context) {
 // @Success 200 {object} util.Response
 // @Router /api/teacher/levels/bulk/publish [post]
 func (c *LevelController) BulkPublish(ctx *gin.Context) {
+	fmt.Printf("DEBUG: BulkPublish endpoint called\n")
+
 	user := util.GetUserFromContext(ctx)
 	if user == nil {
+		fmt.Printf("DEBUG: User is nil - unauthorized\n")
 		util.Unauthorized(ctx)
 		return
 	}
+
+	// Debug: log user info
+	fmt.Printf("DEBUG: User ID: %d, Role: %s, Email: %s\n", user.UserID, user.Role, user.Email)
+
+	// Check if user has permission (teacher or admin)
+	if user.Role != model.Teacher && user.Role != model.Admin {
+		fmt.Printf("DEBUG: User role '%s' not authorized\n", user.Role)
+		util.Error(ctx, 403, "only teachers and admins can bulk publish levels")
+		return
+	}
+
 	var body struct {
 		IDs     []uint `json:"ids" binding:"required"`
 		Publish bool   `json:"publish"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
+		fmt.Printf("DEBUG: JSON binding error: %v\n", err)
 		util.BadRequest(ctx, err.Error())
 		return
 	}
+
+	// Debug: log request body
+	fmt.Printf("DEBUG: Bulk publish request - IDs: %v, Publish: %v\n", body.IDs, body.Publish)
+
 	if err := c.LevelService.BulkPublish(user.UserID, body.IDs, body.Publish); err != nil {
+		fmt.Printf("DEBUG: Bulk publish error: %v\n", err)
 		util.InternalServerError(ctx)
 		return
 	}
@@ -628,12 +860,14 @@ func (c *LevelController) UpdateVisibility(ctx *gin.Context) {
 }
 
 // @Summary 开始关卡挑战
+// @Description 开始关卡挑战，创建尝试记录
 // @Tags 关卡管理
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param id path int true "关卡ID"
 // @Success 200 {object} util.Response
+// @Router /api/levels/{id}/attempts/start [post]
 // @Router /api/teacher/levels/{id}/attempts/start [post]
 func (c *LevelController) StartAttempt(ctx *gin.Context) {
 	user := util.GetUserFromContext(ctx)
@@ -698,4 +932,82 @@ func (c *LevelController) SubmitAttempt(ctx *gin.Context) {
 		return
 	}
 	util.Success(ctx, attempt)
+}
+
+// @Summary 获取关卡挑战排行榜
+// @Description 获取学生关卡挑战总得分排行榜，所有角色都可以访问
+// @Tags 关卡管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param limit query int false "限制返回数量，默认返回全部"
+// @Success 200 {object} util.Response
+// @Router /api/levels/ranking [get]
+func (c *LevelController) GetLevelRanking(ctx *gin.Context) {
+	// 获取查询参数
+	limitStr := ctx.DefaultQuery("limit", "0")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 0 {
+		limit = 0 // 0表示不限制
+	}
+
+	rankings, err := c.LevelService.GetLevelRanking(limit)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, rankings)
+}
+
+// @Summary 获取用户关卡挑战总积分
+// @Description 获取单个用户的关卡挑战获得的总积分，所有角色都可以访问
+// @Tags 关卡管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param userId path int true "用户ID"
+// @Success 200 {object} util.Response
+// @Router /api/users/{userId}/level-total-score [get]
+func (c *LevelController) GetUserLevelTotalScore(ctx *gin.Context) {
+	userIDStr := ctx.Param("userId")
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		util.BadRequest(ctx, "invalid user id")
+		return
+	}
+
+	totalScore, err := c.LevelService.GetUserLevelTotalScore(uint(userID))
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, gin.H{"userId": userID, "totalScore": totalScore})
+}
+
+// @Summary 获取用户关卡挑战统计数据
+// @Description 获取用户的关卡挑战综合统计数据，包括本周时长、成功率、解决挑战数和总积分
+// @Tags 关卡管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param userId path int true "用户ID"
+// @Success 200 {object} util.Response
+// @Router /api/users/{userId}/level-stats [get]
+func (c *LevelController) GetUserLevelStats(ctx *gin.Context) {
+	userIDStr := ctx.Param("userId")
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		util.BadRequest(ctx, "invalid user id")
+		return
+	}
+
+	stats, err := c.LevelService.GetUserLevelStats(uint(userID))
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, stats)
 }

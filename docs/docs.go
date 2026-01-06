@@ -3819,6 +3819,281 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/levels/ranking": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取学生关卡挑战总得分排行榜，所有角色都可以访问",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "关卡管理"
+                ],
+                "summary": "获取关卡挑战排行榜",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "限制返回数量，默认返回全部",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/levels/student": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取学生可访问的关卡列表，支持搜索、筛选和分页",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "关卡管理"
+                ],
+                "summary": "获取学生端关卡列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "搜索关键词（关卡名称或描述）",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "easy",
+                            "medium",
+                            "hard",
+                            "all"
+                        ],
+                        "type": "string",
+                        "description": "难度筛选",
+                        "name": "difficulty",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "not_started",
+                            "in_progress",
+                            "completed",
+                            "all"
+                        ],
+                        "type": "string",
+                        "description": "状态筛选",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 9,
+                        "description": "每页数量",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/levels/student/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取学生可访问的关卡详细信息，包括题目信息（不含答案）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "关卡管理"
+                ],
+                "summary": "获取学生端关卡详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "关卡ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/levels/student/{id}/questions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取学生可访问的关卡所有题目列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "关卡管理"
+                ],
+                "summary": "获取学生端关卡题目列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "关卡ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/levels/{id}/attempts/start": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "开始关卡挑战，创建尝试记录",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "关卡管理"
+                ],
+                "summary": "开始关卡挑战",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "关卡ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/levels/{levelId}/attempts/{attemptId}/submit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "一次性提交关卡的所有或部分问题答案，支持部分提交",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "关卡管理"
+                ],
+                "summary": "批量提交关卡答案",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "关卡ID",
+                        "name": "levelId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "尝试ID",
+                        "name": "attemptId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "答案提交请求",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/login": {
             "post": {
                 "description": "验证用户身份并返回JWT令牌",
@@ -4496,6 +4771,37 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "关卡管理"
+                ],
+                "summary": "删除关卡",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "关卡ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
             }
         },
         "/api/teacher/levels/{id}/attempts/pending-grading": {
@@ -4538,6 +4844,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "开始关卡挑战，创建尝试记录",
                 "consumes": [
                     "application/json"
                 ],
@@ -5544,6 +5851,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/stats": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "获取用户的活跃天数、关卡平均分、总学习时长和关卡完成个数",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户管理"
+                ],
+                "summary": "获取用户统计数据",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/service.UserStatsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "未授权",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/{id}/points": {
             "post": {
                 "description": "根据用户ID更新积分，可为正可为负",
@@ -5600,6 +5953,80 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "用户不存在",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{userId}/level-stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取用户的关卡挑战综合统计数据，包括本周时长、成功率、解决挑战数和总积分",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "关卡管理"
+                ],
+                "summary": "获取用户关卡挑战统计数据",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "用户ID",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{userId}/level-total-score": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取单个用户的关卡挑战获得的总积分，所有角色都可以访问",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "关卡管理"
+                ],
+                "summary": "获取用户关卡挑战总积分",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "用户ID",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/util.Response"
                         }
@@ -6148,6 +6575,14 @@ const docTemplate = `{
                 }
             }
         },
+        "service.FlexibleTime": {
+            "type": "object",
+            "properties": {
+                "time.Time": {
+                    "type": "string"
+                }
+            }
+        },
         "service.GoalRequest": {
             "type": "object",
             "required": [
@@ -6220,10 +6655,10 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "availableFrom": {
-                    "type": "string"
+                    "$ref": "#/definitions/service.FlexibleTime"
                 },
                 "availableTo": {
-                    "type": "string"
+                    "$ref": "#/definitions/service.FlexibleTime"
                 },
                 "basePoints": {
                     "type": "integer"
@@ -6392,6 +6827,27 @@ const docTemplate = `{
                 "title": {
                     "type": "string",
                     "maxLength": 255
+                }
+            }
+        },
+        "service.UserStatsResponse": {
+            "type": "object",
+            "properties": {
+                "activeDays": {
+                    "description": "活跃天数（连续签到天数）",
+                    "type": "integer"
+                },
+                "levelAverageScore": {
+                    "description": "关卡挑战平均分",
+                    "type": "number"
+                },
+                "levelCompletionCount": {
+                    "description": "关卡挑战完成个数",
+                    "type": "integer"
+                },
+                "totalLearningDuration": {
+                    "description": "总学习时长（分钟）",
+                    "type": "integer"
                 }
             }
         },

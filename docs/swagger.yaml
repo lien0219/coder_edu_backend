@@ -360,6 +360,11 @@ definitions:
     - targetDate
     - title
     type: object
+  service.FlexibleTime:
+    properties:
+      time.Time:
+        type: string
+    type: object
   service.GoalRequest:
     properties:
       description:
@@ -406,9 +411,9 @@ definitions:
       attemptLimit:
         type: integer
       availableFrom:
-        type: string
+        $ref: '#/definitions/service.FlexibleTime'
       availableTo:
-        type: string
+        $ref: '#/definitions/service.FlexibleTime'
       basePoints:
         type: integer
       coverUrl:
@@ -524,6 +529,21 @@ definitions:
       title:
         maxLength: 255
         type: string
+    type: object
+  service.UserStatsResponse:
+    properties:
+      activeDays:
+        description: 活跃天数（连续签到天数）
+        type: integer
+      levelAverageScore:
+        description: 关卡挑战平均分
+        type: number
+      levelCompletionCount:
+        description: 关卡挑战完成个数
+        type: integer
+      totalLearningDuration:
+        description: 总学习时长（分钟）
+        type: integer
     type: object
   util.Response:
     properties:
@@ -2924,6 +2944,182 @@ paths:
       summary: 提交测验答案
       tags:
       - 学习模块
+  /api/levels/{id}/attempts/start:
+    post:
+      consumes:
+      - application/json
+      description: 开始关卡挑战，创建尝试记录
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 开始关卡挑战
+      tags:
+      - 关卡管理
+  /api/levels/{levelId}/attempts/{attemptId}/submit:
+    post:
+      consumes:
+      - application/json
+      description: 一次性提交关卡的所有或部分问题答案，支持部分提交
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: levelId
+        required: true
+        type: integer
+      - description: 尝试ID
+        in: path
+        name: attemptId
+        required: true
+        type: integer
+      - description: 答案提交请求
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 批量提交关卡答案
+      tags:
+      - 关卡管理
+  /api/levels/ranking:
+    get:
+      consumes:
+      - application/json
+      description: 获取学生关卡挑战总得分排行榜，所有角色都可以访问
+      parameters:
+      - description: 限制返回数量，默认返回全部
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取关卡挑战排行榜
+      tags:
+      - 关卡管理
+  /api/levels/student:
+    get:
+      consumes:
+      - application/json
+      description: 获取学生可访问的关卡列表，支持搜索、筛选和分页
+      parameters:
+      - description: 搜索关键词（关卡名称或描述）
+        in: query
+        name: search
+        type: string
+      - description: 难度筛选
+        enum:
+        - easy
+        - medium
+        - hard
+        - all
+        in: query
+        name: difficulty
+        type: string
+      - description: 状态筛选
+        enum:
+        - not_started
+        - in_progress
+        - completed
+        - all
+        in: query
+        name: status
+        type: string
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 9
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取学生端关卡列表
+      tags:
+      - 关卡管理
+  /api/levels/student/{id}:
+    get:
+      consumes:
+      - application/json
+      description: 获取学生可访问的关卡详细信息，包括题目信息（不含答案）
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取学生端关卡详情
+      tags:
+      - 关卡管理
+  /api/levels/student/{id}/questions:
+    get:
+      consumes:
+      - application/json
+      description: 获取学生可访问的关卡所有题目列表
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取学生端关卡题目列表
+      tags:
+      - 关卡管理
   /api/login:
     post:
       consumes:
@@ -3246,6 +3442,25 @@ paths:
       tags:
       - 关卡管理
   /api/teacher/levels/{id}:
+    delete:
+      parameters:
+      - description: 关卡ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除关卡
+      tags:
+      - 关卡管理
     get:
       parameters:
       - description: 关卡ID
@@ -3382,6 +3597,7 @@ paths:
     post:
       consumes:
       - application/json
+      description: 开始关卡挑战，创建尝试记录
       parameters:
       - description: 关卡ID
         in: path
@@ -3963,6 +4179,52 @@ paths:
       summary: 更新用户积分
       tags:
       - 更新用户积分
+  /api/users/{userId}/level-stats:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户的关卡挑战综合统计数据，包括本周时长、成功率、解决挑战数和总积分
+      parameters:
+      - description: 用户ID
+        in: path
+        name: userId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取用户关卡挑战统计数据
+      tags:
+      - 关卡管理
+  /api/users/{userId}/level-total-score:
+    get:
+      consumes:
+      - application/json
+      description: 获取单个用户的关卡挑战获得的总积分，所有角色都可以访问
+      parameters:
+      - description: 用户ID
+        in: path
+        name: userId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取用户关卡挑战总积分
+      tags:
+      - 关卡管理
   /api/users/checkin:
     post:
       consumes:
@@ -4019,6 +4281,32 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: 获取用户签到统计信息
+      tags:
+      - 用户管理
+  /api/users/stats:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户的活跃天数、关卡平均分、总学习时长和关卡完成个数
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.UserStatsResponse'
+              type: object
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 获取用户统计数据
       tags:
       - 用户管理
   /health:

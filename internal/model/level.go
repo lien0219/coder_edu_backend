@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const (
 	LevelDifficultyEasy   = "easy"
@@ -23,14 +26,14 @@ type Level struct {
 	BasePoints       int    `gorm:"default:0" json:"basePoints"`
 	AllowPause       bool   `gorm:"default:true" json:"allowPause"`
 
-	LevelType          string     `gorm:"size:100" json:"levelType"` // 关卡类型
-	IsPublished        bool       `gorm:"default:false" json:"isPublished"`
-	PublishedAt        *time.Time `json:"publishedAt,omitempty"`
-	ScheduledPublishAt *time.Time `json:"scheduledPublishAt,omitempty"`              // 定时发布时间
-	VisibleScope       string     `gorm:"size:50;default:'all'" json:"visibleScope"` // all/class/specific
-	VisibleTo          string     `gorm:"type:json" json:"visibleTo"`                // 当为 specific 时，存放学生ID数组
-	AvailableFrom      *time.Time `json:"availableFrom,omitempty"`
-	AvailableTo        *time.Time `json:"availableTo,omitempty"`
+	LevelType          string          `gorm:"size:100" json:"levelType"` // 关卡类型
+	IsPublished        bool            `gorm:"default:false" json:"isPublished"`
+	PublishedAt        *time.Time      `json:"publishedAt,omitempty"`
+	ScheduledPublishAt *time.Time      `json:"scheduledPublishAt,omitempty"`              // 定时发布时间
+	VisibleScope       string          `gorm:"size:50;default:'all'" json:"visibleScope"` // all/class/specific
+	VisibleTo          json.RawMessage `gorm:"type:json" json:"visibleTo"`                // 当为 specific 时，存放学生ID数组
+	AvailableFrom      *time.Time      `json:"availableFrom,omitempty"`
+	AvailableTo        *time.Time      `json:"availableTo,omitempty"`
 
 	CurrentVersion uint `gorm:"default:0" json:"currentVersion"`
 }

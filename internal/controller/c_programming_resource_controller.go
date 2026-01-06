@@ -739,12 +739,18 @@ func convertMapKeysToSnakeCase(input map[string]interface{}) map[string]interfac
 	result := make(map[string]interface{})
 
 	for key, value := range input {
-		// 对于viewCount特殊处理
-		if key == "viewCount" {
+		switch key {
+		case "viewCount":
 			result["view_count"] = value
-			continue
+		case "resource_id", "resourceId":
+			result["module_id"] = value
+		case "moduleType":
+			result["module_type"] = value
+		case "uploaderId":
+			result["uploader_id"] = value
+		default:
+			result[key] = value
 		}
-		result[key] = value
 	}
 
 	return result
@@ -760,8 +766,23 @@ func (c *CProgrammingResourceController) UpdateContentItem(ctx *gin.Context, con
 
 			// 过滤不需要更新的字段，但保留duration和thumbnail等视频相关字段
 			filteredData := make(map[string]interface{})
+			// 定义model.Resource中存在的有效字段（蛇形命名）
+			validFields := map[string]bool{
+				"title":       true,
+				"description": true,
+				"url":         true,
+				"module_id":   true,
+				"module_type": true,
+				"view_count":  true,
+				"duration":    true,
+				"size":        true,
+				"format":      true,
+				"thumbnail":   true,
+				"points":      true,
+			}
+
 			for key, value := range videoData {
-				if key != "created_at" && key != "updated_at" && key != "order" {
+				if validFields[key] {
 					filteredData[key] = value
 				}
 			}
@@ -776,10 +797,26 @@ func (c *CProgrammingResourceController) UpdateContentItem(ctx *gin.Context, con
 		var articleData map[string]interface{}
 		if a, ok := updateData.(map[string]interface{}); ok {
 			articleData = convertMapKeysToSnakeCase(a)
-			// 过滤不需要更新的字段
+
+			// 特殊处理文章内容：将 content 映射到 description
+			if content, ok := articleData["content"]; ok {
+				articleData["description"] = content
+				delete(articleData, "content")
+			}
+
+			// 过滤不需要更新的字段和无效字段
+			validFields := map[string]bool{
+				"title":       true,
+				"description": true,
+				"module_id":   true,
+				"module_type": true,
+				"view_count":  true,
+				"points":      true,
+			}
+
 			filteredData := make(map[string]interface{})
 			for key, value := range articleData {
-				if key != "created_at" && key != "updated_at" {
+				if validFields[key] {
 					filteredData[key] = value
 				}
 			}

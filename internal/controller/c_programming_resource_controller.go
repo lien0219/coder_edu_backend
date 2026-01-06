@@ -828,14 +828,72 @@ func (c *CProgrammingResourceController) UpdateContentItem(ctx *gin.Context, con
 			Updates(articleData).Error
 
 	case "exercise-category":
+		var categoryData map[string]interface{}
+		if c, ok := updateData.(map[string]interface{}); ok {
+			categoryData = convertMapKeysToSnakeCase(c)
+
+			// 特殊处理资源ID映射：将 resource_id/module_id 映射到 c_programming_res_id
+			if resID, ok := categoryData["module_id"]; ok {
+				categoryData["c_programming_res_id"] = resID
+				delete(categoryData, "module_id")
+			}
+
+			// 过滤不需要更新的字段和无效字段
+			validFields := map[string]bool{
+				"name":                 true,
+				"description":          true,
+				"order":                true,
+				"c_programming_res_id": true,
+			}
+
+			filteredData := make(map[string]interface{})
+			for key, value := range categoryData {
+				if validFields[key] {
+					filteredData[key] = value
+				}
+			}
+			categoryData = filteredData
+		} else {
+			categoryData = make(map[string]interface{})
+		}
+
 		return c.Service.CategoryRepo.DB.Model(&model.ExerciseCategory{}).
 			Where("id = ?", itemID).
-			Updates(updateData).Error
+			Updates(categoryData).Error
 
 	case "question":
+		var questionData map[string]interface{}
+		if q, ok := updateData.(map[string]interface{}); ok {
+			questionData = convertMapKeysToSnakeCase(q)
+
+			// 过滤不需要更新的字段和无效字段
+			validFields := map[string]bool{
+				"category_id":    true,
+				"title":          true,
+				"description":    true,
+				"difficulty":     true,
+				"hint":           true,
+				"solution_code":  true,
+				"question_type":  true,
+				"options":        true,
+				"correct_answer": true,
+				"points":         true,
+			}
+
+			filteredData := make(map[string]interface{})
+			for key, value := range questionData {
+				if validFields[key] {
+					filteredData[key] = value
+				}
+			}
+			questionData = filteredData
+		} else {
+			questionData = make(map[string]interface{})
+		}
+
 		return c.Service.QuestionRepo.DB.Model(&model.ExerciseQuestion{}).
 			Where("id = ?", itemID).
-			Updates(updateData).Error
+			Updates(questionData).Error
 
 	default:
 		return fmt.Errorf("unsupported content type")

@@ -71,6 +71,20 @@ func (r *UserRepository) UpdateXP(userID uint, xp int) error {
 		UpdateColumn("xp", gorm.Expr("xp + ?", xp)).
 		Error
 }
+
+func (r *UserRepository) UpdateLastLogin(userID uint) error {
+	return r.DB.Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("last_login", time.Now()).
+		Error
+}
+
+func (r *UserRepository) UpdateLastSeen(userID uint) error {
+	return r.DB.Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("last_seen", time.Now()).
+		Error
+}
 func (r *UserRepository) FindTopByXP(limit int) ([]model.User, error) {
 	var users []model.User
 	err := r.DB.Order("xp DESC").Limit(limit).Find(&users).Error

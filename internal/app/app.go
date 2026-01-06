@@ -190,7 +190,7 @@ func NewApp(cfg *config.Config) *App {
 	}
 
 	auth := router.Group("/api")
-	auth.Use(middleware.AuthMiddleware())
+	auth.Use(middleware.AuthMiddleware(), middleware.ActivityMiddleware(userRepo))
 	{
 		auth.GET("/profile", authController.GetProfile)
 		auth.GET("/resources", contentController.GetResources)

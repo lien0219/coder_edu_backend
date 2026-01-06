@@ -76,3 +76,18 @@ func RoleMiddleware(roles ...model.UserRole) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+type UserActivityRepo interface {
+	UpdateLastSeen(userID uint) error
+}
+
+func ActivityMiddleware(repo UserActivityRepo) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims := util.GetUserFromContext(c)
+		if claims != nil {
+			// 异步更新，不阻塞主流程
+			go repo.UpdateLastSeen(claims.UserID)
+		}
+		c.Next()
+	}
+}

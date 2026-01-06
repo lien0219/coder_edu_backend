@@ -783,3 +783,4 @@
 {"level":"INFO","time":"2026-01-06T22:59:51.209+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
 {"level":"INFO","time":"2026-01-06T22:59:53.331+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
 {"level":"INFO","time":"2026-01-06T23:00:05.265+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2026-01-06T23:00:07.175+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}

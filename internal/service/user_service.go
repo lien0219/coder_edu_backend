@@ -65,9 +65,9 @@ func (s *UserService) GetUsers(page, pageSize int, filter UserFilter) ([]model.U
 	}
 
 	if filter.Status == "online" {
-		query = query.Where("last_login > ?", time.Now().Add(-24*time.Hour))
+		query = query.Where("last_seen > ?", time.Now().Add(-5*time.Minute))
 	} else if filter.Status == "offline" {
-		query = query.Where("last_login <= ?", time.Now().Add(-24*time.Hour))
+		query = query.Where("last_seen <= ?", time.Now().Add(-5*time.Minute))
 	} else if filter.Status == "disabled" {
 		query = query.Where("disabled = ?", true)
 	}

@@ -54,6 +54,10 @@ func (s *AuthService) Login(email, password string) (string, error) {
 		return "", errors.New("invalid credentials")
 	}
 
+	// 更新最后登录时间
+	_ = s.UserRepo.UpdateLastLogin(user.ID)
+	_ = s.UserRepo.UpdateLastSeen(user.ID)
+
 	return util.GenerateJWT(user, s.Cfg.JWT.Secret, 72)
 }
 

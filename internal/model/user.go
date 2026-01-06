@@ -24,8 +24,7 @@ type User struct {
 	Language  string    `gorm:"size:10;default:'en'"`
 	Disabled  bool      `gorm:"default:false"`
 	LastLogin time.Time `gorm:"default:CURRENT_TIMESTAMP(3)"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	LastSeen  time.Time `gorm:"default:CURRENT_TIMESTAMP(3)"`
 }
 
 func (User) TableName() string {

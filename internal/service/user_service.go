@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // UserFilter 定义用户筛选条件
@@ -24,6 +25,15 @@ type UserFilter struct {
 type UserService struct {
 	UserRepo    *repository.UserRepository
 	CheckinRepo *repository.CheckinRepository
+	DB          *gorm.DB
+}
+
+// UserStatsResponse 用户统计数据响应
+type UserStatsResponse struct {
+	ActiveDays            int     `json:"activeDays"`            // 活跃天数（连续签到天数）
+	LevelAverageScore     float64 `json:"levelAverageScore"`     // 关卡挑战平均分
+	TotalLearningDuration int     `json:"totalLearningDuration"` // 总学习时长（分钟）
+	LevelCompletionCount  int     `json:"levelCompletionCount"`  // 关卡挑战完成个数
 }
 
 // NewUserService 创建一个新的用户服务实例
@@ -31,6 +41,15 @@ func NewUserService(userRepo *repository.UserRepository, checkinRepo *repository
 	return &UserService{
 		UserRepo:    userRepo,
 		CheckinRepo: checkinRepo,
+	}
+}
+
+// NewUserServiceWithDB 创建一个新的用户服务实例（包含数据库连接）
+func NewUserServiceWithDB(userRepo *repository.UserRepository, checkinRepo *repository.CheckinRepository, db *gorm.DB) *UserService {
+	return &UserService{
+		UserRepo:    userRepo,
+		CheckinRepo: checkinRepo,
+		DB:          db,
 	}
 }
 
@@ -303,4 +322,59 @@ func (s *UserService) GetCheckinStats(userID uint) (map[string]interface{}, erro
 		"streakPoints":     streakPoints,
 		"currentPoints":    currentPoints,
 	}, nil
+}
+
+// GetUserStats 获取用户的统计数据
+func (s *UserService) GetUserStats(userID uint) (*UserStatsResponse, error) {
+	if s.DB == nil {
+		return nil, errors.New("database connection not available")
+	}
+
+	response := &UserStatsResponse{}
+
+	// 1. 获取活跃天数（连续签到天数）
+	streakDays := 0
+	latestCheckin, err := s.CheckinRepo.FindLatestByUser(userID)
+	if err == nil {
+		streakDays = latestCheckin.StreakDays
+	}
+	response.ActiveDays = streakDays
+
+	// 2. 获取关卡挑战平均分
+	var averageScore float64
+	scoreQuery := `
+		SELECT COALESCE(AVG(score), 0) as avg_score
+		FROM level_attempts
+		WHERE user_id = ? AND ended_at IS NOT NULL AND score > 0
+	`
+	if err := s.DB.Raw(scoreQuery, userID).Scan(&averageScore).Error; err != nil {
+		return nil, err
+	}
+	response.LevelAverageScore = averageScore
+
+	// 3. 获取总学习时长（从learning_logs表获取总duration，单位为分钟）
+	var totalDuration int
+	durationQuery := `
+		SELECT COALESCE(SUM(duration), 0) as total_duration
+		FROM learning_logs
+		WHERE user_id = ?
+	`
+	if err := s.DB.Raw(durationQuery, userID).Scan(&totalDuration).Error; err != nil {
+		return nil, err
+	}
+	response.TotalLearningDuration = totalDuration
+
+	// 4. 获取关卡挑战完成个数（成功完成的关卡数量）
+	var completionCount int
+	completionQuery := `
+		SELECT COUNT(*) as completion_count
+		FROM level_attempts
+		WHERE user_id = ? AND success = true
+	`
+	if err := s.DB.Raw(completionQuery, userID).Scan(&completionCount).Error; err != nil {
+		return nil, err
+	}
+	response.LevelCompletionCount = completionCount
+
+	return response, nil
 }

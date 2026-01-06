@@ -420,3 +420,29 @@ func (c *UserController) GetCheckinStats(ctx *gin.Context) {
 
 	util.Success(ctx, stats)
 }
+
+// GetUserStats 获取用户统计数据
+// @Summary 获取用户统计数据
+// @Description 获取用户的活跃天数、关卡平均分、总学习时长和关卡完成个数
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} util.Response{data=service.UserStatsResponse}
+// @Failure 401 {object} util.Response "未授权"
+// @Router /api/users/stats [get]
+func (c *UserController) GetUserStats(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	stats, err := c.UserService.GetUserStats(user.UserID)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, stats)
+}

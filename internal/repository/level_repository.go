@@ -143,3 +143,105 @@ func (r *LevelRepository) BulkSetPublished(ids []uint, publish bool, publishAt *
 	}
 	return r.DB.Model(&model.Level{}).Where("id IN ?", ids).Updates(updates).Error
 }
+
+func (r *LevelRepository) DeleteLevel(id uint) error {
+	tx := r.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 1. 删除尝试答案记录
+	if err := tx.Where("attempt_id IN (SELECT id FROM level_attempts WHERE level_id = ?)", id).Delete(&model.LevelAttemptAnswer{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 2. 删除尝试题目分数记录
+	if err := tx.Where("attempt_id IN (SELECT id FROM level_attempts WHERE level_id = ?)", id).Delete(&model.LevelAttemptQuestionScore{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 3. 删除尝试题目时间记录
+	if err := tx.Where("attempt_id IN (SELECT id FROM level_attempts WHERE level_id = ?)", id).Delete(&model.LevelAttemptQuestionTime{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 4. 删除尝试记录
+	if err := tx.Where("level_id = ?", id).Delete(&model.LevelAttempt{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 5. 删除关卡题目
+	if err := tx.Where("level_id = ?", id).Delete(&model.LevelQuestion{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 6. 删除关卡能力要求
+	if err := tx.Where("level_id = ?", id).Delete(&model.LevelAbility{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 7. 删除关卡知识点
+	if err := tx.Where("level_id = ?", id).Delete(&model.LevelKnowledge{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 8. 删除关卡版本记录
+	if err := tx.Where("level_id = ?", id).Delete(&model.LevelVersion{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 9. 最后删除关卡本身
+	if err := tx.Delete(&model.Level{}, id).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit().Error
+}
+
+func (r *LevelRepository) ListLevelsForStudent(userID uint, search string, difficulty string, page, limit int) ([]model.Level, int, error) {
+	var levels []model.Level
+	var total int64
+
+	query := r.DB.Model(&model.Level{}).Where("is_published = ?", true)
+
+	// 可见性筛选
+	query = query.Where("visible_scope = ? OR (visible_scope = ? AND JSON_CONTAINS(visible_to, JSON_QUOTE(?)))",
+		"all", "specific", userID)
+
+	// 时间范围筛选 - 如果老师或管理员没有指定特定学生（visible_scope为"all"），则显示所有已发布关卡
+	// 如果指定了特定学生（visible_scope为"specific"），则需要满足时间范围要求
+	now := time.Now()
+	query = query.Where("visible_scope = ? OR ((available_from IS NULL OR available_from <= ?) AND (available_to IS NULL OR available_to >= ?))",
+		"all", now, now)
+
+	// 搜索条件
+	if search != "" {
+		query = query.Where("title LIKE ? OR description LIKE ?", "%"+search+"%", "%"+search+"%")
+	}
+
+	// 难度筛选
+	if difficulty != "" && difficulty != "all" {
+		query = query.Where("difficulty = ?", difficulty)
+	}
+
+	// 获取总数
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// 分页查询
+	offset := (page - 1) * limit
+	err := query.Order("created_at desc").Offset(offset).Limit(limit).Find(&levels).Error
+	return levels, int(total), err
+}

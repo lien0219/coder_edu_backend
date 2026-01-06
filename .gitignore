@@ -5,6 +5,7 @@
 *.out
 /tmp/
 /logs/
+*.log
 /.idea/
 *.iml
 *.suo
@@ -21,3 +22,6 @@ Dockerfile.prod
 /docs/
 /api/swagger/
 /scripts/
+/icons/
+/thumbnails/
+/videos/

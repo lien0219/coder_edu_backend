@@ -50,3 +50,23 @@ type SkillRadar struct {
 	KnowledgeCoverage []int    `json:"knowledgeCoverage"` // 0-100
 	ProblemSolving    []int    `json:"problemSolving"`    // 0-100
 }
+
+// AbilityRadarData 能力雷达图单项数据
+type AbilityRadarData struct {
+	Name  string `json:"name"`
+	Value int    `json:"value"`
+}
+
+// AttemptCurveData 关卡尝试曲线单项数据
+type AttemptCurveData struct {
+	AttemptIndex int    `json:"attemptIndex"` // 第几次尝试
+	Score        int    `json:"score"`        // 分数
+	Date         string `json:"date"`         // 尝试日期
+}
+
+// LevelCurveResponse 关卡尝试趋势响应
+type LevelCurveResponse struct {
+	LevelID    uint               `json:"levelId"`
+	LevelTitle string             `json:"levelTitle"`
+	Attempts   []AttemptCurveData `json:"attempts"`
+}

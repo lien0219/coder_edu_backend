@@ -2083,6 +2083,34 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/analytics/abilities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取用户的六维能力评估数据（问题解决、批判性思维等）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "分析"
+                ],
+                "summary": "获取能力评估雷达图",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/analytics/challenges/weekly": {
             "get": {
                 "security": [
@@ -2113,6 +2141,49 @@ const docTemplate = `{
                         "type": "string",
                         "description": "指定周 (格式: YYYY-WW, 例如 2026-02)",
                         "name": "week",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/analytics/levels/{levelId}/curve": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取用户在特定关卡中的多次尝试得分变化趋势",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "分析"
+                ],
+                "summary": "获取关卡挑战曲线",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "关卡ID (不传则取最近一次尝试的关卡)",
+                        "name": "levelId",
+                        "in": "path"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "返回最近几次尝试 (默认10)",
+                        "name": "limit",
                         "in": "query"
                     }
                 ],
@@ -3852,6 +3923,31 @@ const docTemplate = `{
                         }
                     }
                 ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/levels/basic-info": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取系统中所有关卡的ID和标题，通常用于下拉选择器等场景",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "关卡管理"
+                ],
+                "summary": "获取所有关卡的基础信息(ID和名称)",
                 "responses": {
                     "200": {
                         "description": "OK",

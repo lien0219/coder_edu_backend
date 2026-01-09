@@ -82,7 +82,7 @@ func NewApp(cfg *config.Config) *App {
 	learningService := service.NewLearningService(moduleRepo, taskRepo, resourceRepo, progressRepo, learningLogRepo, quizRepo, db)
 	achievementService := service.NewAchievementService(achievementRepo, userRepo, goalRepo)
 	communityService := service.NewCommunityService(postRepo, nil, questionRepo, answerRepo, userRepo)
-	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo, levelAttemptRepo)
+	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo, levelAttemptRepo, db)
 	userService := service.NewUserServiceWithDB(userRepo, checkinRepo, db)
 	taskService := service.NewTaskService(
 		taskRepo,
@@ -225,6 +225,8 @@ func NewApp(cfg *config.Config) *App {
 		auth.GET("/analytics/progress", analyticsController.GetProgress)
 		auth.GET("/analytics/challenges/weekly", analyticsController.GetWeeklyChallengeStats)
 		auth.GET("/analytics/skills", analyticsController.GetSkills)
+		auth.GET("/analytics/abilities", analyticsController.GetAbilities)
+		auth.GET("/analytics/levels/:levelId/curve", analyticsController.GetLevelCurve)
 		auth.GET("/analytics/recommendations", analyticsController.GetRecommendations)
 		auth.POST("/analytics/session/start", analyticsController.StartSession)
 		auth.POST("/analytics/session/:sessionId/end", analyticsController.EndSession)
@@ -233,6 +235,7 @@ func NewApp(cfg *config.Config) *App {
 		auth.GET("/levels/student", levelController.GetStudentLevels)
 		auth.GET("/levels/student/:id", levelController.GetStudentLevelDetail)
 		auth.GET("/levels/student/:id/questions", levelController.GetStudentLevelQuestions)
+		auth.GET("/levels/basic-info", levelController.GetAllLevelsBasicInfo)
 		auth.POST("/levels/:id/attempts/start", levelController.StartAttempt)
 		auth.POST("/levels/:id/attempts/:attemptId/submit", levelController.BatchSubmitAnswers)
 		auth.POST("/attempts/:id/submit", levelController.SubmitAttempt)

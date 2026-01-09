@@ -116,5 +116,21 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		}
 	}
 
+	var abCount int64
+	db.Model(&model.Ability{}).Count(&abCount)
+	if abCount == 0 {
+		defaultAbilities := []model.Ability{
+			{Code: "problem_solving", Name: "问题解决", Description: "针对编程任务或算法逻辑的解决能力", Order: 1, Enabled: true},
+			{Code: "critical_thinking", Name: "批判性思维", Description: "对代码逻辑的审视、除错及优化思维", Order: 2, Enabled: true},
+			{Code: "knowledge_transfer", Name: "知识迁移", Description: "将已学语法或概念应用到新场景的能力", Order: 3, Enabled: true},
+			{Code: "self_management", Name: "自我管理", Description: "学习进度的自主掌控与任务分配", Order: 4, Enabled: true},
+			{Code: "self_evaluation", Name: "自我评价", Description: "对自己代码质量或解题思路的评估", Order: 5, Enabled: true},
+			{Code: "self_monitoring", Name: "自我监控", Description: "在编写过程中实时察觉并纠正错误的能力", Order: 6, Enabled: true},
+		}
+		for _, a := range defaultAbilities {
+			db.Create(&a)
+		}
+	}
+
 	return db, nil
 }

@@ -114,3 +114,46 @@ func (r *LevelAttemptRepository) GetWeeklyStats(userID uint, weeks int, specific
 	err := db.Scan(&stats).Error
 	return stats, err
 }
+
+func (r *LevelAttemptRepository) GetAbilityScores(userID uint) (map[uint]float64, error) {
+	type Result struct {
+		AbilityID uint
+		AvgScore  float64
+	}
+	var results []Result
+	err := r.DB.Table("level_attempts att").
+		Select("la.ability_id, AVG(att.score) as avg_score").
+		Joins("JOIN level_abilities la ON att.level_id = la.level_id").
+		Where("att.user_id = ? AND att.success = ? AND att.deleted_at IS NULL", userID, true).
+		Group("la.ability_id").
+		Scan(&results).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	scoreMap := make(map[uint]float64)
+	for _, r := range results {
+		scoreMap[r.AbilityID] = r.AvgScore
+	}
+	return scoreMap, nil
+}
+
+func (r *LevelAttemptRepository) GetLatestAttemptLevelID(userID uint) (uint, error) {
+	var levelID uint
+	err := r.DB.Model(&model.LevelAttempt{}).
+		Where("user_id = ? AND deleted_at IS NULL", userID).
+		Order("started_at DESC").
+		Limit(1).
+		Pluck("level_id", &levelID).Error
+	return levelID, err
+}
+
+func (r *LevelAttemptRepository) GetLevelAttemptsHistory(userID, levelID uint, limit int) ([]model.LevelAttempt, error) {
+	var attempts []model.LevelAttempt
+	err := r.DB.Where("user_id = ? AND level_id = ? AND ended_at IS NOT NULL AND deleted_at IS NULL", userID, levelID).
+		Order("started_at ASC").
+		Limit(limit).
+		Find(&attempts).Error
+	return attempts, err
+}

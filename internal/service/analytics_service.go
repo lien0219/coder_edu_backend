@@ -5,6 +5,8 @@ import (
 	"coder_edu_backend/internal/repository"
 	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type AnalyticsService struct {
@@ -14,6 +16,7 @@ type AnalyticsService struct {
 	LearningLogRepo    *repository.LearningLogRepository
 	RecommendationRepo *repository.RecommendationRepository
 	LevelAttemptRepo   *repository.LevelAttemptRepository
+	DB                 *gorm.DB
 }
 
 func NewAnalyticsService(
@@ -23,6 +26,7 @@ func NewAnalyticsService(
 	learningLogRepo *repository.LearningLogRepository,
 	recommendationRepo *repository.RecommendationRepository,
 	levelAttemptRepo *repository.LevelAttemptRepository,
+	db *gorm.DB,
 ) *AnalyticsService {
 	return &AnalyticsService{
 		ProgressRepo:       progressRepo,
@@ -31,6 +35,7 @@ func NewAnalyticsService(
 		LearningLogRepo:    learningLogRepo,
 		RecommendationRepo: recommendationRepo,
 		LevelAttemptRepo:   levelAttemptRepo,
+		DB:                 db,
 	}
 }
 
@@ -156,6 +161,92 @@ func (s *AnalyticsService) GetSkillAssessments(userID uint) (*model.SkillRadar, 
 		Skills:            skillNames,
 		KnowledgeCoverage: knowledgeCoverage,
 		ProblemSolving:    problemSolving,
+	}, nil
+}
+
+func (s *AnalyticsService) GetAbilityRadar(userID uint) ([]model.AbilityRadarData, error) {
+	// 1. 获取所有启用的能力维度
+	var abilities []model.Ability
+	if err := s.DB.Where("enabled = ?", true).Order("`order` ASC").Find(&abilities).Error; err != nil {
+		return nil, err
+	}
+
+	// 2. 获取用户在各个能力上的平均分
+	scoreMap, err := s.LevelAttemptRepo.GetAbilityScores(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 构建雷达图数据，确保顺序一致且没有数据项显示为 0
+	var radarData []model.AbilityRadarData
+	for _, a := range abilities {
+		score := 0
+		if val, ok := scoreMap[a.ID]; ok {
+			score = int(val)
+		}
+		radarData = append(radarData, model.AbilityRadarData{
+			Name:  a.Name,
+			Value: score,
+		})
+	}
+
+	return radarData, nil
+}
+
+func (s *AnalyticsService) GetLevelLearningCurve(userID, levelID uint, limit int) (*model.LevelCurveResponse, error) {
+	// 1. 如果没有指定 levelID，则获取用户最近一次尝试过的关卡
+	if levelID == 0 {
+		latestID, err := s.LevelAttemptRepo.GetLatestAttemptLevelID(userID)
+		if err != nil || latestID == 0 {
+			return nil, fmt.Errorf("no recent attempts found")
+		}
+		levelID = latestID
+	}
+
+	// 2. 获取关卡标题
+	var level model.Level
+	if err := s.DB.First(&level, levelID).Error; err != nil {
+		return nil, err
+	}
+
+	// 3. 获取该关卡的所有尝试记录（获取足够多的记录以便聚合）
+	attempts, err := s.LevelAttemptRepo.GetLevelAttemptsHistory(userID, levelID, 1000)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4. 按天聚合得分（取当天最高分）
+	dayScores := make(map[string]int)
+	for _, a := range attempts {
+		dateStr := a.StartedAt.Format("2006-01-02")
+		if a.Score > dayScores[dateStr] {
+			dayScores[dateStr] = a.Score
+		}
+	}
+
+	// 5. 从今天起往前推 limit 天，填充数据
+	var curve []model.AttemptCurveData
+	now := time.Now()
+	for i := limit - 1; i >= 0; i-- {
+		date := now.AddDate(0, 0, -i)
+		dateStr := date.Format("2006-01-02")
+
+		score := 0
+		if s, ok := dayScores[dateStr]; ok {
+			score = s
+		}
+
+		curve = append(curve, model.AttemptCurveData{
+			AttemptIndex: limit - i, // 序号从 1 到 limit
+			Score:        score,
+			Date:         dateStr,
+		})
+	}
+
+	return &model.LevelCurveResponse{
+		LevelID:    levelID,
+		LevelTitle: level.Title,
+		Attempts:   curve,
 	}, nil
 }
 

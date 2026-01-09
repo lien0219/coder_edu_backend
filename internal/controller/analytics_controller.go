@@ -91,6 +91,64 @@ func (c *AnalyticsController) GetSkills(ctx *gin.Context) {
 	util.Success(ctx, skills)
 }
 
+// @Summary 获取能力评估雷达图
+// @Description 获取用户的六维能力评估数据（问题解决、批判性思维等）
+// @Tags 分析
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} util.Response
+// @Router /api/analytics/abilities [get]
+func (c *AnalyticsController) GetAbilities(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	abilities, err := c.AnalyticsService.GetAbilityRadar(user.UserID)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, abilities)
+}
+
+// @Summary 获取关卡挑战曲线
+// @Description 获取用户在特定关卡中的多次尝试得分变化趋势
+// @Tags 分析
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param levelId path int false "关卡ID (不传则取最近一次尝试的关卡)"
+// @Param limit query int false "返回最近几次尝试 (默认10)" default(10)
+// @Success 200 {object} util.Response
+// @Router /api/analytics/levels/{levelId}/curve [get]
+func (c *AnalyticsController) GetLevelCurve(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	levelIDStr := ctx.Param("levelId")
+	var levelID int
+	if levelIDStr != "" && levelIDStr != "0" {
+		levelID, _ = strconv.Atoi(levelIDStr)
+	}
+
+	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "10"))
+
+	curve, err := c.AnalyticsService.GetLevelLearningCurve(user.UserID, uint(levelID), limit)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, curve)
+}
+
 // @Summary 获取个性化建议
 // @Description 获取基于用户学习数据的个性化建议
 // @Tags 分析

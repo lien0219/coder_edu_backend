@@ -960,6 +960,22 @@ func (c *LevelController) GetLevelRanking(ctx *gin.Context) {
 	util.Success(ctx, rankings)
 }
 
+// @Summary 获取所有关卡的基础信息(ID和名称)
+// @Description 获取系统中所有关卡的ID和标题，通常用于下拉选择器等场景
+// @Tags 关卡管理
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} util.Response
+// @Router /api/levels/basic-info [get]
+func (c *LevelController) GetAllLevelsBasicInfo(ctx *gin.Context) {
+	infos, err := c.LevelService.GetAllLevelsBasicInfo()
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+	util.Success(ctx, infos)
+}
+
 // @Summary 获取用户关卡挑战总积分
 // @Description 获取单个用户的关卡挑战获得的总积分，所有角色都可以访问
 // @Tags 关卡管理

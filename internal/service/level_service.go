@@ -208,6 +208,12 @@ type StudentLevelDetailResponse struct {
 	CreatedAt time.Time                 `json:"createdAt"`
 }
 
+// LevelBasicInfo 关卡基础信息响应结构体
+type LevelBasicInfo struct {
+	ID    uint   `json:"id"`
+	Title string `json:"title"`
+}
+
 // UserInfo 用户信息结构体
 type UserInfo struct {
 	ID       uint   `json:"id"`
@@ -690,6 +696,22 @@ func (s *LevelService) RollbackToVersion(editorID uint, levelID uint, versionID 
 		}
 		return nil
 	})
+}
+
+func (s *LevelService) GetAllLevelsBasicInfo() ([]LevelBasicInfo, error) {
+	levels, err := s.LevelRepo.GetAllLevelsBasicInfo()
+	if err != nil {
+		return nil, err
+	}
+
+	var basicInfos []LevelBasicInfo
+	for _, level := range levels {
+		basicInfos = append(basicInfos, LevelBasicInfo{
+			ID:    level.ID,
+			Title: level.Title,
+		})
+	}
+	return basicInfos, nil
 }
 
 // StartAttempt 创建并开始一次关卡挑战

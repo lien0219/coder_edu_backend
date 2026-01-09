@@ -44,6 +44,12 @@ func (r *LevelRepository) ListByCreator(creatorID uint, page, limit int) ([]mode
 	return levels, int(total), err
 }
 
+func (r *LevelRepository) GetAllLevelsBasicInfo() ([]model.Level, error) {
+	var levels []model.Level
+	err := r.DB.Model(&model.Level{}).Select("id, title").Order("id asc").Find(&levels).Error
+	return levels, err
+}
+
 func (r *LevelRepository) BulkUpdate(ids []uint, updates map[string]interface{}) error {
 	if len(ids) == 0 {
 		return nil

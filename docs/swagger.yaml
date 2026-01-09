@@ -1852,6 +1852,23 @@ paths:
       summary: 更新视频内容（仅管理员）
       tags:
       - C语言编程资源
+  /api/analytics/abilities:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户的六维能力评估数据（问题解决、批判性思维等）
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取能力评估雷达图
+      tags:
+      - 分析
   /api/analytics/challenges/weekly:
     get:
       consumes:
@@ -1877,6 +1894,33 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取每周挑战统计
+      tags:
+      - 分析
+  /api/analytics/levels/{levelId}/curve:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户在特定关卡中的多次尝试得分变化趋势
+      parameters:
+      - description: 关卡ID (不传则取最近一次尝试的关卡)
+        in: path
+        name: levelId
+        type: integer
+      - default: 10
+        description: 返回最近几次尝试 (默认10)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取关卡挑战曲线
       tags:
       - 分析
   /api/analytics/overview:
@@ -3029,6 +3073,21 @@ paths:
       security:
       - BearerAuth: []
       summary: 批量提交关卡答案
+      tags:
+      - 关卡管理
+  /api/levels/basic-info:
+    get:
+      description: 获取系统中所有关卡的ID和标题，通常用于下拉选择器等场景
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取所有关卡的基础信息(ID和名称)
       tags:
       - 关卡管理
   /api/levels/ranking:

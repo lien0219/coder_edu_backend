@@ -72,6 +72,7 @@ func NewApp(cfg *config.Config) *App {
 	checkinRepo := repository.NewCheckinRepository(db)
 	resourceCompletionRepo := repository.NewResourceCompletionRepository(db)
 	levelRepo := repository.NewLevelRepository(db)
+	levelAttemptRepo := repository.NewLevelAttemptRepository(db)
 	knowledgeTagRepo := repository.NewKnowledgeTagRepository(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
@@ -81,7 +82,7 @@ func NewApp(cfg *config.Config) *App {
 	learningService := service.NewLearningService(moduleRepo, taskRepo, resourceRepo, progressRepo, learningLogRepo, quizRepo, db)
 	achievementService := service.NewAchievementService(achievementRepo, userRepo, goalRepo)
 	communityService := service.NewCommunityService(postRepo, nil, questionRepo, answerRepo, userRepo)
-	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo)
+	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo, levelAttemptRepo)
 	userService := service.NewUserServiceWithDB(userRepo, checkinRepo, db)
 	taskService := service.NewTaskService(
 		taskRepo,
@@ -222,6 +223,7 @@ func NewApp(cfg *config.Config) *App {
 
 		auth.GET("/analytics/overview", analyticsController.GetOverview)
 		auth.GET("/analytics/progress", analyticsController.GetProgress)
+		auth.GET("/analytics/challenges/weekly", analyticsController.GetWeeklyChallengeStats)
 		auth.GET("/analytics/skills", analyticsController.GetSkills)
 		auth.GET("/analytics/recommendations", analyticsController.GetRecommendations)
 		auth.POST("/analytics/session/start", analyticsController.StartSession)

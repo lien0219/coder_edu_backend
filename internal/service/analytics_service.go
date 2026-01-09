@@ -3,6 +3,7 @@ package service
 import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"fmt"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type AnalyticsService struct {
 	SkillRepo          *repository.SkillRepository
 	LearningLogRepo    *repository.LearningLogRepository
 	RecommendationRepo *repository.RecommendationRepository
+	LevelAttemptRepo   *repository.LevelAttemptRepository
 }
 
 func NewAnalyticsService(
@@ -20,6 +22,7 @@ func NewAnalyticsService(
 	skillRepo *repository.SkillRepository,
 	learningLogRepo *repository.LearningLogRepository,
 	recommendationRepo *repository.RecommendationRepository,
+	levelAttemptRepo *repository.LevelAttemptRepository,
 ) *AnalyticsService {
 	return &AnalyticsService{
 		ProgressRepo:       progressRepo,
@@ -27,7 +30,57 @@ func NewAnalyticsService(
 		SkillRepo:          skillRepo,
 		LearningLogRepo:    learningLogRepo,
 		RecommendationRepo: recommendationRepo,
+		LevelAttemptRepo:   levelAttemptRepo,
 	}
+}
+
+func (s *AnalyticsService) GetWeeklyChallengeStats(userID uint, weeks int, specificWeek string) ([]model.ChallengeWeeklyData, error) {
+	stats, err := s.LevelAttemptRepo.GetWeeklyStats(userID, weeks, specificWeek)
+	if err != nil {
+		return nil, err
+	}
+
+	// 将查到的数据存入 map 方便查找
+	statsMap := make(map[string]model.ChallengeWeeklyData)
+	for _, s := range stats {
+		statsMap[s.Week] = s
+	}
+
+	var result []model.ChallengeWeeklyData
+	now := time.Now()
+
+	// 如果指定了某周，只返回该周的数据（即使是 0）
+	if specificWeek != "" {
+		if val, ok := statsMap[specificWeek]; ok {
+			result = append(result, val)
+		} else {
+			result = append(result, model.ChallengeWeeklyData{
+				Week:           specificWeek,
+				AverageScore:   0,
+				CompletedCount: 0,
+			})
+		}
+		return result, nil
+	}
+
+	// 否则，返回最近 N 周的数据，缺少的补 0
+	for i := 0; i < weeks; i++ {
+		t := now.AddDate(0, 0, -i*7)
+		year, week := t.ISOWeek()
+		weekStr := fmt.Sprintf("%d-%02d", year, week)
+
+		if val, ok := statsMap[weekStr]; ok {
+			result = append(result, val)
+		} else {
+			result = append(result, model.ChallengeWeeklyData{
+				Week:           weekStr,
+				AverageScore:   0,
+				CompletedCount: 0,
+			})
+		}
+	}
+
+	return result, nil
 }
 
 func (s *AnalyticsService) GetLearningOverview(userID uint) (*model.LearningOverview, error) {

@@ -2083,6 +2083,49 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/analytics/challenges/weekly": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取用户每周的挑战平均分和完成挑战的个数，用于曲线图",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "分析"
+                ],
+                "summary": "获取每周挑战统计",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 8,
+                        "description": "周数 (默认8)",
+                        "name": "weeks",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "指定周 (格式: YYYY-WW, 例如 2026-02)",
+                        "name": "week",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/analytics/overview": {
             "get": {
                 "security": [
@@ -6479,6 +6522,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "lastLogin": {
+                    "type": "string"
+                },
+                "lastSeen": {
                     "type": "string"
                 },
                 "name": {

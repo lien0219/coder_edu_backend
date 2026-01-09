@@ -37,6 +37,13 @@ type LearningProgress struct {
 	Trend string         `json:"trend"` // improving, declining, stable
 }
 
+// ChallengeWeeklyData 挑战周数据
+type ChallengeWeeklyData struct {
+	Week           string  `json:"week"`
+	AverageScore   float64 `json:"averageScore"`
+	CompletedCount int     `json:"completedCount"`
+}
+
 // SkillRadar 技能雷达图
 type SkillRadar struct {
 	Skills            []string `json:"skills"`

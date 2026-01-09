@@ -95,3 +95,22 @@ func (r *LevelAttemptRepository) GetQuestionScores(attemptID uint) ([]model.Leve
 	err := r.DB.Where("attempt_id = ?", attemptID).Find(&scores).Error
 	return scores, err
 }
+
+func (r *LevelAttemptRepository) GetWeeklyStats(userID uint, weeks int, specificWeek string) ([]model.ChallengeWeeklyData, error) {
+	var stats []model.ChallengeWeeklyData
+
+	db := r.DB.Table("level_attempts").
+		Select("DATE_FORMAT(started_at, '%x-%v') as week, AVG(score) as average_score, COUNT(CASE WHEN success = true THEN 1 END) as completed_count").
+		Where("user_id = ? AND ended_at IS NOT NULL AND deleted_at IS NULL", userID).
+		Group("week").
+		Order("week DESC")
+
+	if specificWeek != "" {
+		db = db.Where("DATE_FORMAT(started_at, '%x-%v') = ?", specificWeek)
+	} else {
+		db = db.Limit(weeks)
+	}
+
+	err := db.Scan(&stats).Error
+	return stats, err
+}

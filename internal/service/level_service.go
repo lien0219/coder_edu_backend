@@ -936,15 +936,22 @@ func (s *LevelService) DeleteQuestion(levelID, questionID uint) error {
 
 // GetAttemptStats 返回关卡尝试统计（count, avgScore, avgTime, successRate）
 func (s *LevelService) GetAttemptStats(levelID uint, start *time.Time, end *time.Time, studentID uint) (map[string]interface{}, error) {
-	query := s.DB.Model(&model.LevelAttempt{}).Where("level_id = ?", levelID)
+	query := s.DB.Model(&model.LevelAttempt{}).
+		Joins("JOIN users ON users.id = level_attempts.user_id").
+		Where("level_attempts.level_id = ? AND level_attempts.deleted_at IS NULL", levelID)
+
+	// 如果没有指定具体学生，则默认只统计未禁用的学生
+	if studentID == 0 {
+		query = query.Where("users.disabled = ?", false)
+	} else {
+		query = query.Where("level_attempts.user_id = ?", studentID)
+	}
+
 	if start != nil {
-		query = query.Where("started_at >= ?", *start)
+		query = query.Where("level_attempts.started_at >= ?", *start)
 	}
 	if end != nil {
-		query = query.Where("started_at <= ?", *end)
-	}
-	if studentID > 0 {
-		query = query.Where("user_id = ?", studentID)
+		query = query.Where("level_attempts.started_at <= ?", *end)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -2024,7 +2031,6 @@ type UserLevelStatsResponse struct {
 
 // GetLevelRanking 获取关卡挑战排行榜
 func (s *LevelService) GetLevelRanking(limit int) ([]LevelRankingEntry, error) {
-	// 修复积分计算逻辑：每个关卡只获得一次最高分，防止重复挑战刷分
 	query := `
 		WITH user_level_best_scores AS (
 			SELECT
@@ -2032,7 +2038,7 @@ func (s *LevelService) GetLevelRanking(limit int) ([]LevelRankingEntry, error) {
 				la.level_id,
 				MAX(la.score) as best_score
 			FROM level_attempts la
-			WHERE la.success = true
+			WHERE la.success = true AND la.deleted_at IS NULL
 			GROUP BY la.user_id, la.level_id
 		),
 		user_stats AS (
@@ -2043,7 +2049,7 @@ func (s *LevelService) GetLevelRanking(limit int) ([]LevelRankingEntry, error) {
 				MAX(ulbs.best_score) as max_score
 			FROM users u
 			INNER JOIN user_level_best_scores ulbs ON u.id = ulbs.user_id
-			WHERE u.role = 'student'
+			WHERE u.role = 'student' AND u.deleted_at IS NULL AND u.disabled = false
 			GROUP BY u.id, u.name
 			HAVING SUM(ulbs.best_score) > 0
 		),
@@ -2090,7 +2096,7 @@ func (s *LevelService) GetUserLevelTotalScore(userID uint) (int, error) {
 				la.level_id,
 				MAX(la.score) as best_score
 			FROM level_attempts la
-			WHERE la.success = true AND la.user_id = ?
+			WHERE la.success = true AND la.user_id = ? AND la.deleted_at IS NULL
 			GROUP BY la.user_id, la.level_id
 		)
 		SELECT COALESCE(SUM(best_score), 0) as total_score
@@ -2115,6 +2121,7 @@ func (s *LevelService) GetUserLevelStats(userID uint) (*UserLevelStatsResponse, 
 		WHERE user_id = ?
 			AND YEARWEEK(started_at, 1) = YEARWEEK(NOW(), 1)
 			AND ended_at IS NOT NULL
+			AND deleted_at IS NULL
 	`
 
 	// 计算平均成功率
@@ -2125,14 +2132,14 @@ func (s *LevelService) GetUserLevelStats(userID uint) (*UserLevelStatsResponse, 
 				ELSE ROUND((SUM(CASE WHEN success = true THEN 1 ELSE 0 END) * 100.0) / COUNT(*), 2)
 			END as success_rate
 		FROM level_attempts
-		WHERE user_id = ? AND ended_at IS NOT NULL
+		WHERE user_id = ? AND ended_at IS NOT NULL AND deleted_at IS NULL
 	`
 
 	// 计算已解决的挑战总数（成功完成的关卡数量）
 	solvedChallengesQuery := `
 		SELECT COUNT(DISTINCT level_id) as solved_count
 		FROM level_attempts
-		WHERE user_id = ? AND success = true
+		WHERE user_id = ? AND success = true AND deleted_at IS NULL
 	`
 
 	var weeklyTimeHours float64

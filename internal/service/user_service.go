@@ -345,7 +345,7 @@ func (s *UserService) GetUserStats(userID uint) (*UserStatsResponse, error) {
 	scoreQuery := `
 		SELECT COALESCE(AVG(score), 0) as avg_score
 		FROM level_attempts
-		WHERE user_id = ? AND ended_at IS NOT NULL AND score > 0
+		WHERE user_id = ? AND ended_at IS NOT NULL AND score > 0 AND deleted_at IS NULL
 	`
 	if err := s.DB.Raw(scoreQuery, userID).Scan(&averageScore).Error; err != nil {
 		return nil, err
@@ -357,7 +357,7 @@ func (s *UserService) GetUserStats(userID uint) (*UserStatsResponse, error) {
 	durationQuery := `
 		SELECT COALESCE(SUM(duration), 0) as total_duration
 		FROM learning_logs
-		WHERE user_id = ?
+		WHERE user_id = ? AND deleted_at IS NULL
 	`
 	if err := s.DB.Raw(durationQuery, userID).Scan(&totalDuration).Error; err != nil {
 		return nil, err
@@ -369,7 +369,7 @@ func (s *UserService) GetUserStats(userID uint) (*UserStatsResponse, error) {
 	completionQuery := `
 		SELECT COUNT(*) as completion_count
 		FROM level_attempts
-		WHERE user_id = ? AND success = true
+		WHERE user_id = ? AND success = true AND deleted_at IS NULL
 	`
 	if err := s.DB.Raw(completionQuery, userID).Scan(&completionCount).Error; err != nil {
 		return nil, err

@@ -87,7 +87,7 @@ func (r *UserRepository) UpdateLastSeen(userID uint) error {
 }
 func (r *UserRepository) FindTopByXP(limit int) ([]model.User, error) {
 	var users []model.User
-	err := r.DB.Order("xp DESC").Limit(limit).Find(&users).Error
+	err := r.DB.Where("disabled = ?", false).Order("xp DESC").Limit(limit).Find(&users).Error
 	return users, err
 }
 

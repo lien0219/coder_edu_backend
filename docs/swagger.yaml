@@ -291,6 +291,8 @@ definitions:
         type: string
       lastLogin:
         type: string
+      lastSeen:
+        type: string
       name:
         type: string
       password:
@@ -1850,6 +1852,33 @@ paths:
       summary: 更新视频内容（仅管理员）
       tags:
       - C语言编程资源
+  /api/analytics/challenges/weekly:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户每周的挑战平均分和完成挑战的个数，用于曲线图
+      parameters:
+      - default: 8
+        description: 周数 (默认8)
+        in: query
+        name: weeks
+        type: integer
+      - description: '指定周 (格式: YYYY-WW, 例如 2026-02)'
+        in: query
+        name: week
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取每周挑战统计
+      tags:
+      - 分析
   /api/analytics/overview:
     get:
       consumes:

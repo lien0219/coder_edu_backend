@@ -115,6 +115,35 @@ func (c *AnalyticsController) GetRecommendations(ctx *gin.Context) {
 	util.Success(ctx, recommendations)
 }
 
+// @Summary 获取每周挑战统计
+// @Description 获取用户每周的挑战平均分和完成挑战的个数，用于曲线图
+// @Tags 分析
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param weeks query int false "周数 (默认8)" default(8)
+// @Param week query string false "指定周 (格式: YYYY-WW, 例如 2026-02)"
+// @Success 200 {object} util.Response
+// @Router /api/analytics/challenges/weekly [get]
+func (c *AnalyticsController) GetWeeklyChallengeStats(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	weeks, _ := strconv.Atoi(ctx.DefaultQuery("weeks", "8"))
+	specificWeek := ctx.Query("week")
+
+	stats, err := c.AnalyticsService.GetWeeklyChallengeStats(user.UserID, weeks, specificWeek)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, stats)
+}
+
 // @Summary 记录学习会话
 // @Description 记录用户的学习会话开始
 // @Tags 分析

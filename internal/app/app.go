@@ -74,6 +74,7 @@ func NewApp(cfg *config.Config) *App {
 	levelRepo := repository.NewLevelRepository(db)
 	levelAttemptRepo := repository.NewLevelAttemptRepository(db)
 	knowledgeTagRepo := repository.NewKnowledgeTagRepository(db)
+	suggestionRepo := repository.NewSuggestionRepository(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	contentService := service.NewContentService(resourceRepo, cfg)
@@ -106,6 +107,7 @@ func NewApp(cfg *config.Config) *App {
 	levelService := service.NewLevelService(levelRepo, db)
 	knowledgeTagService := service.NewKnowledgeTagService(knowledgeTagRepo)
 	knowledgeTagController := controller.NewKnowledgeTagController(knowledgeTagService)
+	suggestionService := service.NewSuggestionService(suggestionRepo, levelRepo, levelAttemptRepo)
 	learningGoalService := service.NewLearningGoalService(
 		goalRepo,
 		cProgrammingResRepo,
@@ -127,6 +129,7 @@ func NewApp(cfg *config.Config) *App {
 	taskController := controller.NewTaskController(taskService)
 	levelController := controller.NewLevelController(levelService, contentService)
 	gradeController := controller.NewGradeController(levelService)
+	suggestionController := controller.NewSuggestionController(suggestionService)
 
 	// 监控
 	monitoring.Init()
@@ -278,6 +281,10 @@ func NewApp(cfg *config.Config) *App {
 		auth.GET("/tasks/today", taskController.GetTodayTasks)
 		// 更新任务完成状态
 		auth.POST("/tasks/:taskItemId/completion", taskController.UpdateTaskCompletion)
+
+		// 教师建议（学生）
+		auth.GET("/suggestions", suggestionController.ListStudentSuggestions)
+		auth.POST("/suggestions/:id/complete", suggestionController.CompleteSuggestion)
 	}
 
 	teacher := auth.Group("/teacher")
@@ -310,6 +317,9 @@ func NewApp(cfg *config.Config) *App {
 		// grading
 		teacher.GET("/levels/:id/attempts/pending-grading", gradeController.ListPendingGrading)
 		teacher.POST("/levels/:id/attempts/:attemptId/grade", gradeController.GradeAttempt)
+		// student progress for suggestions
+		teacher.GET("/students/progress", suggestionController.ListStudentsProgress)
+		teacher.GET("/students/:id/progress", suggestionController.GetStudentProgress)
 		// attempts stats
 		teacher.GET("/levels/:id/attempts/stats", levelController.GetAttemptStats)
 		// attempts
@@ -318,6 +328,12 @@ func NewApp(cfg *config.Config) *App {
 		// visibility & scheduling
 		teacher.PUT("/levels/:id/visibility", levelController.UpdateVisibility)
 		teacher.POST("/levels/:id/schedule_publish", levelController.SchedulePublish)
+
+		// 教师建议管理
+		teacher.POST("/suggestions", suggestionController.CreateSuggestion)
+		teacher.PUT("/suggestions/:id", suggestionController.UpdateSuggestion)
+		teacher.GET("/suggestions", suggestionController.ListTeacherSuggestions)
+		teacher.DELETE("/suggestions/:id", suggestionController.DeleteSuggestion)
 	}
 
 	admin := router.Group("/api/admin")

@@ -4533,6 +4533,63 @@
                 }
             }
         },
+        "/api/student/suggestions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "教师建议"
+                ],
+                "summary": "学生获取建议列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/student/suggestions/{id}/complete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "教师建议"
+                ],
+                "summary": "学生完成建议",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "建议ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/tasks/today": {
             "get": {
                 "security": [
@@ -5594,6 +5651,221 @@
                 }
             }
         },
+        "/api/teacher/students/progress": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "教师建议"
+                ],
+                "summary": "教师获取所有学生学习进度列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "每页数量",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/students/{id}/progress": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "教师建议"
+                ],
+                "summary": "教师获取学生学习进度汇总",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "学生ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/suggestions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "教师建议"
+                ],
+                "summary": "教师获取已发布建议列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "教师建议"
+                ],
+                "summary": "教师发布建议",
+                "parameters": [
+                    {
+                        "description": "建议内容",
+                        "name": "suggestion",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.Suggestion"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/suggestions/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "教师建议"
+                ],
+                "summary": "教师编辑建议",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "建议ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "建议内容",
+                        "name": "suggestion",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.Suggestion"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "教师建议"
+                ],
+                "summary": "教师删除建议",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "建议ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/teacher/tasks/weekly": {
             "get": {
                 "security": [
@@ -6537,6 +6809,74 @@
                 "Video",
                 "Article",
                 "Worksheet"
+            ]
+        },
+        "model.Suggestion": {
+            "type": "object",
+            "properties": {
+                "completionTime": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "priority": {
+                    "$ref": "#/definitions/model.SuggestionPriority"
+                },
+                "relatedLevelId": {
+                    "type": "integer"
+                },
+                "status": {
+                    "description": "Virtual field for student side status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.SuggestionStatus"
+                        }
+                    ]
+                },
+                "studentId": {
+                    "description": "0 means for all students",
+                    "type": "integer"
+                },
+                "subtitle": {
+                    "type": "string"
+                },
+                "teacherId": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.SuggestionPriority": {
+            "type": "string",
+            "enum": [
+                "High",
+                "Medium",
+                "Low"
+            ],
+            "x-enum-varnames": [
+                "PriorityHigh",
+                "PriorityMedium",
+                "PriorityLow"
+            ]
+        },
+        "model.SuggestionStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "completed"
+            ],
+            "x-enum-varnames": [
+                "StatusPending",
+                "StatusCompleted"
             ]
         },
         "model.TaskItem": {

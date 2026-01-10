@@ -71,6 +71,8 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		&model.LevelAttemptQuestionTime{},
 		&model.LevelAttemptAnswer{},
 		&model.LevelAttemptQuestionScore{},
+		&model.Suggestion{},
+		&model.SuggestionCompletion{},
 	)
 
 	if err != nil {

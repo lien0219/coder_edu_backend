@@ -239,6 +239,52 @@ definitions:
     - Video
     - Article
     - Worksheet
+  model.Suggestion:
+    properties:
+      completionTime:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: integer
+      priority:
+        $ref: '#/definitions/model.SuggestionPriority'
+      relatedLevelId:
+        type: integer
+      status:
+        allOf:
+        - $ref: '#/definitions/model.SuggestionStatus'
+        description: Virtual field for student side status
+      studentId:
+        description: 0 means for all students
+        type: integer
+      subtitle:
+        type: string
+      teacherId:
+        type: integer
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  model.SuggestionPriority:
+    enum:
+    - High
+    - Medium
+    - Low
+    type: string
+    x-enum-varnames:
+    - PriorityHigh
+    - PriorityMedium
+    - PriorityLow
+  model.SuggestionStatus:
+    enum:
+    - pending
+    - completed
+    type: string
+    x-enum-varnames:
+    - StatusPending
+    - StatusCompleted
   model.TaskItem:
     properties:
       contentType:
@@ -3394,6 +3440,40 @@ paths:
       summary: 按模块类型获取资源
       tags:
       - 内容
+  /api/student/suggestions:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生获取建议列表
+      tags:
+      - 教师建议
+  /api/student/suggestions/{id}/complete:
+    post:
+      parameters:
+      - description: 建议ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生完成建议
+      tags:
+      - 教师建议
   /api/tasks/{taskItemId}/completion:
     post:
       consumes:
@@ -4052,6 +4132,138 @@ paths:
       summary: 批量发布/下架关卡
       tags:
       - 关卡管理
+  /api/teacher/students/{id}/progress:
+    get:
+      parameters:
+      - description: 学生ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师获取学生学习进度汇总
+      tags:
+      - 教师建议
+  /api/teacher/students/progress:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量
+        in: query
+        name: pageSize
+        type: integer
+      - description: 搜索关键词
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师获取所有学生学习进度列表
+      tags:
+      - 教师建议
+  /api/teacher/suggestions:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师获取已发布建议列表
+      tags:
+      - 教师建议
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 建议内容
+        in: body
+        name: suggestion
+        required: true
+        schema:
+          $ref: '#/definitions/model.Suggestion'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师发布建议
+      tags:
+      - 教师建议
+  /api/teacher/suggestions/{id}:
+    delete:
+      parameters:
+      - description: 建议ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师删除建议
+      tags:
+      - 教师建议
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 建议ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 建议内容
+        in: body
+        name: suggestion
+        required: true
+        schema:
+          $ref: '#/definitions/model.Suggestion'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师编辑建议
+      tags:
+      - 教师建议
   /api/teacher/tasks/weekly:
     get:
       consumes:

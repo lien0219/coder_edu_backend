@@ -72,12 +72,12 @@ func (s *AchievementService) GetUserAchievements(userID uint) (*UserAchievements
 	}
 
 	// 计算等级
-	level, nextLevelXP := calculateLevel(user.XP)
+	levelInfo := CalculateLevelInfo(user.XP)
 
 	return &UserAchievements{
 		TotalXP:      user.XP,
-		CurrentLevel: level,
-		NextLevelXP:  nextLevelXP,
+		CurrentLevel: levelInfo.Level,
+		NextLevelXP:  levelInfo.NextLevelXP,
 		Badges:       achievements,
 		Leaderboard:  leaderboard,
 		Goals:        goals,
@@ -143,11 +143,4 @@ func (s *AchievementService) UpdateGoalProgress(userID uint, goalID uint, progre
 	}
 
 	return s.GoalRepo.Update(goal)
-}
-
-func calculateLevel(xp int) (int, int) {
-	// 简单等级计算：每200XP升一级
-	level := xp / 200
-	nextLevelXP := (level + 1) * 200
-	return level, nextLevelXP
 }

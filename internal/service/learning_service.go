@@ -118,7 +118,8 @@ type ReflectionGuide struct {
 }
 
 type LearningLogRequest struct {
-	Content    string   `json:"content" binding:"required"`
+	ID         uint     `json:"id"`
+	Content    string   `json:"content"`
 	Tags       []string `json:"tags"`
 	Insights   []string `json:"insights"`
 	Challenges []string `json:"challenges"`
@@ -304,17 +305,59 @@ func (s *LearningService) GetPostClassContent(userID uint) (*PostClassContent, e
 	}, nil
 }
 
-func (s *LearningService) SubmitLearningLog(userID uint, req LearningLogRequest) error {
-	log := &model.LearningLog{
-		UserID:     userID,
-		Content:    req.Content,
-		Tags:       req.Tags,
-		Insights:   req.Insights,
-		Challenges: req.Challenges,
-		NextSteps:  req.NextSteps,
+func (s *LearningService) SubmitLearningLog(userID uint, req LearningLogRequest) (*model.LearningLog, error) {
+	var log *model.LearningLog
+	var err error
+
+	// 1. 如果没有传 ID 且没有传内容，视为“回显请求”，返回最近的一条日志
+	if req.ID == 0 && req.Content == "" {
+		log, err = s.LearningLogRepo.GetLatest(userID)
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				// 如果从来没写过日志，返回一个基础结构，方便前端初始化
+				return &model.LearningLog{UserID: userID}, nil
+			}
+			return nil, err
+		}
+		return log, nil
 	}
 
-	return s.LearningLogRepo.Create(log)
+	// 2. 如果有 ID，执行更新逻辑
+	if req.ID > 0 {
+		log, err = s.LearningLogRepo.FindByID(req.ID)
+		if err != nil {
+			return nil, err
+		}
+		// 确保日志属于该用户
+		if log.UserID != userID {
+			return nil, gorm.ErrRecordNotFound
+		}
+
+		log.Content = req.Content
+		log.Tags = req.Tags
+		log.Insights = req.Insights
+		log.Challenges = req.Challenges
+		log.NextSteps = req.NextSteps
+
+		err = s.LearningLogRepo.Save(log)
+	} else {
+		// 3. 如果没 ID 但有内容，执行创建逻辑
+		log = &model.LearningLog{
+			UserID:     userID,
+			Content:    req.Content,
+			Tags:       req.Tags,
+			Insights:   req.Insights,
+			Challenges: req.Challenges,
+			NextSteps:  req.NextSteps,
+		}
+		err = s.LearningLogRepo.Create(log)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return log, nil
 }
 
 func (s *LearningService) SubmitQuiz(userID uint, quizID uint, submission QuizSubmission) (*QuizResult, error) {

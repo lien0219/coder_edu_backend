@@ -164,6 +164,52 @@ definitions:
       updatedAt:
         type: string
     type: object
+  model.LearningLog:
+    properties:
+      activity:
+        type: string
+      challenges:
+        description: 挑战字段
+        items:
+          type: string
+        type: array
+      completed:
+        type: boolean
+      content:
+        description: 内容字段
+        type: string
+      createdAt:
+        type: string
+      deletedAt:
+        $ref: '#/definitions/gorm.DeletedAt'
+      duration:
+        type: integer
+      id:
+        type: integer
+      insights:
+        description: 见解字段
+        items:
+          type: string
+        type: array
+      moduleID:
+        type: integer
+      nextSteps:
+        description: 下一步字段
+        items:
+          type: string
+        type: array
+      score:
+        type: integer
+      tags:
+        description: 标签字段
+        items:
+          type: string
+        type: array
+      updatedAt:
+        type: string
+      userID:
+        type: integer
+    type: object
   model.Motivation:
     properties:
       content:
@@ -433,6 +479,8 @@ definitions:
         type: array
       content:
         type: string
+      id:
+        type: integer
       insights:
         items:
           type: string
@@ -513,6 +561,25 @@ definitions:
       scoringRule:
         type: string
       weight:
+        type: integer
+    type: object
+  service.LevelStatus:
+    properties:
+      currentLevelThreshold:
+        description: 当前等级的起始累计分数
+        type: integer
+      currentXp:
+        type: integer
+      level:
+        type: integer
+      nextLevelXp:
+        description: 达到下一级所需的累计总分
+        type: integer
+      progress:
+        description: 当前等级进度百分比 (0-100)
+        type: number
+      xpToNextLevel:
+        description: 距离下一级还差多少分
         type: integer
     type: object
   service.PostRequest:
@@ -2980,7 +3047,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 提交课后学习日志和反思
+      description: 提交或更新学习日志和反思，并回显保存后的数据
       parameters:
       - description: 学习日志内容
         in: body
@@ -2994,7 +3061,12 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/util.Response'
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.LearningLog'
+              type: object
       security:
       - BearerAuth: []
       summary: 提交学习日志
@@ -4581,6 +4653,32 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: 获取用户签到统计信息
+      tags:
+      - 用户管理
+  /api/users/level-status:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户的等级、总XP、下一级所需XP、进度等信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.LevelStatus'
+              type: object
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 获取用户等级状态
       tags:
       - 用户管理
   /api/users/stats:

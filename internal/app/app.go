@@ -260,6 +260,7 @@ func NewApp(cfg *config.Config) *App {
 		auth.POST("/users/checkin", userController.Checkin)
 		auth.GET("/users/checkin/stats", userController.GetCheckinStats)
 		auth.GET("/users/stats", userController.GetUserStats)
+		auth.GET("/users/level-status", userController.GetLevelStatus)
 
 		// 资源进度相关路由
 		auth.GET("/c-programming/resource-progress/:resourceId", cProgrammingResController.GetResourceModuleWithProgress)

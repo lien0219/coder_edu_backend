@@ -89,13 +89,13 @@ func (c *LearningController) GetPostClass(ctx *gin.Context) {
 }
 
 // @Summary 提交学习日志
-// @Description 提交课后学习日志和反思
+// @Description 提交或更新学习日志和反思，并回显保存后的数据
 // @Tags 学习模块
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param log body service.LearningLogRequest true "学习日志内容"
-// @Success 200 {object} util.Response
+// @Success 200 {object} util.Response{data=model.LearningLog}
 // @Router /api/learning/learning-log [post]
 func (c *LearningController) SubmitLearningLog(ctx *gin.Context) {
 	user := util.GetUserFromContext(ctx)
@@ -110,13 +110,13 @@ func (c *LearningController) SubmitLearningLog(ctx *gin.Context) {
 		return
 	}
 
-	err := c.LearningService.SubmitLearningLog(user.UserID, req)
+	log, err := c.LearningService.SubmitLearningLog(user.UserID, req)
 	if err != nil {
 		util.InternalServerError(ctx)
 		return
 	}
 
-	util.Success(ctx, gin.H{"message": "Learning log submitted"})
+	util.Success(ctx, log)
 }
 
 // @Summary 提交测验答案

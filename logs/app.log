@@ -1029,3 +1029,6 @@
 {"level":"INFO","time":"2026-01-11T17:17:12.718+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
 {"level":"INFO","time":"2026-01-11T17:17:53.409+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
 {"level":"INFO","time":"2026-01-11T17:17:55.352+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2026-01-11T17:17:57.411+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2026-01-11T18:54:55.224+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}
+{"level":"INFO","time":"2026-01-11T18:54:57.262+0800","caller":"app/app.go:44","msg":"Logger initialized successfully"}

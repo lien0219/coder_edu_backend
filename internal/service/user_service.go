@@ -5,6 +5,7 @@ import (
 	"coder_edu_backend/internal/repository"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -19,6 +20,16 @@ type UserFilter struct {
 	Search    string
 	StartDate time.Time
 	EndDate   time.Time
+}
+
+// LevelStatus 用户等级状态响应
+type LevelStatus struct {
+	Level                 int     `json:"level"`
+	CurrentXP             int     `json:"currentXp"`
+	NextLevelXP           int     `json:"nextLevelXp"`           // 达到下一级所需的累计总分
+	CurrentLevelThreshold int     `json:"currentLevelThreshold"` // 当前等级的起始累计分数
+	XPToNextLevel         int     `json:"xpToNextLevel"`         // 距离下一级还差多少分
+	Progress              float64 `json:"progress"`              // 当前等级进度百分比 (0-100)
 }
 
 // UserService 处理用户相关的业务逻辑
@@ -377,4 +388,61 @@ func (s *UserService) GetUserStats(userID uint) (*UserStatsResponse, error) {
 	response.LevelCompletionCount = completionCount
 
 	return response, nil
+}
+
+// GetUserLevelStatus 获取用户的等级详细状态
+func (s *UserService) GetUserLevelStatus(userID uint) (*LevelStatus, error) {
+	user, err := s.UserRepo.FindByID(userID)
+	if err != nil {
+		return nil, errors.New("用户不存在")
+	}
+
+	status := CalculateLevelInfo(user.XP)
+	return &status, nil
+}
+
+// CalculateLevelInfo 根据总 XP 计算等级信息
+// 规则：Threshold = 100 * (Level^2 - 1)
+func CalculateLevelInfo(xp int) LevelStatus {
+	if xp < 0 {
+		xp = 0
+	}
+
+	// 计算当前等级: Level = sqrt(XP/100 + 1)
+	level := int(math.Floor(math.Sqrt(float64(xp)/100.0 + 1.0)))
+	if level < 1 {
+		level = 1
+	}
+	if level > 50 {
+		level = 50
+	}
+
+	currentThreshold := 100 * (level*level - 1)
+	nextLevel := level + 1
+	if nextLevel > 50 {
+		nextLevel = 50
+	}
+	nextThreshold := 100 * (nextLevel*nextLevel - 1)
+
+	xpInLevel := xp - currentThreshold
+	neededInLevel := nextThreshold - currentThreshold
+
+	progress := 0.0
+	if neededInLevel > 0 {
+		progress = (float64(xpInLevel) / float64(neededInLevel)) * 100
+		if progress > 100 {
+			progress = 100
+		}
+	} else if level >= 50 {
+		progress = 100
+	}
+
+	return LevelStatus{
+		Level:                 level,
+		CurrentXP:             xp,
+		NextLevelXP:           nextThreshold,
+		CurrentLevelThreshold: currentThreshold,
+		XPToNextLevel:         nextThreshold - xp,
+		Progress:              math.Round(progress*100) / 100, // 保留两位小数
+	}
 }

@@ -446,3 +446,29 @@ func (c *UserController) GetUserStats(ctx *gin.Context) {
 
 	util.Success(ctx, stats)
 }
+
+// GetLevelStatus 获取用户等级详细状态
+// @Summary 获取用户等级状态
+// @Description 获取用户的等级、总XP、下一级所需XP、进度等信息
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} util.Response{data=service.LevelStatus}
+// @Failure 401 {object} util.Response "未授权"
+// @Router /api/users/level-status [get]
+func (c *UserController) GetLevelStatus(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	status, err := c.UserService.GetUserLevelStatus(user.UserID)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, status)
+}

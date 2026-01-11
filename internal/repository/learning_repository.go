@@ -80,6 +80,19 @@ func (r *LearningLogRepository) Create(log *model.LearningLog) error {
 	return r.DB.Create(log).Error
 }
 
+func (r *LearningLogRepository) Save(log *model.LearningLog) error {
+	return r.DB.Save(log).Error
+}
+
+func (r *LearningLogRepository) FindByID(id uint) (*model.LearningLog, error) {
+	var log model.LearningLog
+	err := r.DB.First(&log, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
 type QuizRepository struct {
 	DB *gorm.DB
 }

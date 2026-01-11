@@ -3799,7 +3799,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "提交课后学习日志和反思",
+                "description": "提交或更新学习日志和反思，并回显保存后的数据",
                 "consumes": [
                     "application/json"
                 ],
@@ -3825,7 +3825,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/util.Response"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.LearningLog"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -6262,6 +6274,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/level-status": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "获取用户的等级、总XP、下一级所需XP、进度等信息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户管理"
+                ],
+                "summary": "获取用户等级状态",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/service.LevelStatus"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "未授权",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/stats": {
             "get": {
                 "security": [
@@ -6709,6 +6767,73 @@ const docTemplate = `{
                 }
             }
         },
+        "model.LearningLog": {
+            "type": "object",
+            "properties": {
+                "activity": {
+                    "type": "string"
+                },
+                "challenges": {
+                    "description": "挑战字段",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "completed": {
+                    "type": "boolean"
+                },
+                "content": {
+                    "description": "内容字段",
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "deletedAt": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "duration": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "insights": {
+                    "description": "见解字段",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "moduleID": {
+                    "type": "integer"
+                },
+                "nextSteps": {
+                    "description": "下一步字段",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "score": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "description": "标签字段",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "userID": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.Motivation": {
             "type": "object",
             "properties": {
@@ -7098,6 +7223,9 @@ const docTemplate = `{
                 "content": {
                     "type": "string"
                 },
+                "id": {
+                    "type": "integer"
+                },
                 "insights": {
                     "type": "array",
                     "items": {
@@ -7214,6 +7342,33 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "weight": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.LevelStatus": {
+            "type": "object",
+            "properties": {
+                "currentLevelThreshold": {
+                    "description": "当前等级的起始累计分数",
+                    "type": "integer"
+                },
+                "currentXp": {
+                    "type": "integer"
+                },
+                "level": {
+                    "type": "integer"
+                },
+                "nextLevelXp": {
+                    "description": "达到下一级所需的累计总分",
+                    "type": "integer"
+                },
+                "progress": {
+                    "description": "当前等级进度百分比 (0-100)",
+                    "type": "number"
+                },
+                "xpToNextLevel": {
+                    "description": "距离下一级还差多少分",
                     "type": "integer"
                 }
             }

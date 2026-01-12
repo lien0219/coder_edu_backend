@@ -1,8 +1,15 @@
 package service
 
 import (
+	"bytes"
+	"coder_edu_backend/internal/config"
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"gorm.io/gorm"
@@ -15,6 +22,7 @@ type LearningService struct {
 	ProgressRepo    *repository.ProgressRepository
 	LearningLogRepo *repository.LearningLogRepository
 	QuizRepo        *repository.QuizRepository
+	Config          *config.Config
 	DB              *gorm.DB
 }
 
@@ -25,6 +33,7 @@ func NewLearningService(
 	progressRepo *repository.ProgressRepository,
 	learningLogRepo *repository.LearningLogRepository,
 	quizRepo *repository.QuizRepository,
+	cfg *config.Config,
 	db *gorm.DB,
 ) *LearningService {
 	return &LearningService{
@@ -34,6 +43,7 @@ func NewLearningService(
 		ProgressRepo:    progressRepo,
 		LearningLogRepo: learningLogRepo,
 		QuizRepo:        quizRepo,
+		Config:          cfg,
 		DB:              db,
 	}
 }
@@ -137,26 +147,44 @@ type QuizSubmission struct {
 	Answers map[uint]int `json:"answers"` // questionID -> answerIndex
 }
 
+type CodeExecutionRequest struct {
+	Code string `json:"code"`
+}
+
+type CodeExecutionResponse struct {
+	Output string `json:"output"`
+	Errors string `json:"errors"`
+	Status int    `json:"status"` // 0: success, 1: compilation error, 2: runtime error, 3: timeout
+}
+
+type Judge0Response struct {
+	Stdout        string `json:"stdout"`
+	Stderr        string `json:"stderr"`
+	CompileOutput string `json:"compile_output"`
+	Status        struct {
+		ID          int    `json:"id"`
+		Description string `json:"description"`
+	} `json:"status"`
+	Time   string `json:"time"`
+	Memory int    `json:"memory"`
+}
+
 func (s *LearningService) GetPreClassContent(userID uint) (*PreClassContent, error) {
-	// 获取诊断测试结果
 	diagnostic, err := s.ProgressRepo.GetDiagnosticTest(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取学习目标
 	goals, err := s.ProgressRepo.GetLearningGoals(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取学习路径
 	path, err := s.ModuleRepo.GetLearningPath(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取课前资源
 	resources, err := s.ResourceRepo.FindByModuleType("pre_class")
 	if err != nil {
 		return nil, err
@@ -171,7 +199,6 @@ func (s *LearningService) GetPreClassContent(userID uint) (*PreClassContent, err
 }
 
 func (s *LearningService) GetInClassContent(userID uint) (*InClassContent, error) {
-	// 获取任务链
 	tasks, err := s.TaskRepo.FindByModuleTypeAndUser("in_class", userID)
 	if err != nil {
 		return nil, err
@@ -188,7 +215,6 @@ func (s *LearningService) GetInClassContent(userID uint) (*InClassContent, error
 		}
 	}
 
-	// 获取实时反馈（简化实现）
 	feedback := RealTimeFeedback{
 		Errors: []FeedbackItem{
 			{
@@ -212,7 +238,6 @@ func (s *LearningService) GetInClassContent(userID uint) (*InClassContent, error
 		},
 	}
 
-	// 获取协作消息（简化实现）
 	collaboration := Collaboration{
 		Messages: []ChatMessage{
 			{
@@ -233,7 +258,6 @@ func (s *LearningService) GetInClassContent(userID uint) (*InClassContent, error
 		},
 	}
 
-	// 代码编辑器默认代码
 	codeEditor := CodeEditor{
 		DefaultCode: `#include <stdio.h>
 int main() {
@@ -252,20 +276,17 @@ int main() {
 }
 
 func (s *LearningService) GetPostClassContent(userID uint) (*PostClassContent, error) {
-	// 获取学习日志
 	var journal model.LearningLog
 	err := s.DB.Where("user_id = ?", userID).Order("created_at DESC").First(&journal).Error
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取测验
 	quizzes, err := s.QuizRepo.FindByModuleType("post_class")
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取迁移任务
 	tasks, err := s.TaskRepo.FindTransferTasks(userID)
 	if err != nil {
 		return nil, err
@@ -282,7 +303,6 @@ func (s *LearningService) GetPostClassContent(userID uint) (*PostClassContent, e
 		}
 	}
 
-	// 反思指南问题
 	reflectionGuide := ReflectionGuide{
 		Questions: []string{
 			"你今天学习了哪些新的概念或技能？",
@@ -309,12 +329,10 @@ func (s *LearningService) SubmitLearningLog(userID uint, req LearningLogRequest)
 	var log *model.LearningLog
 	var err error
 
-	// 1. 如果没有传 ID 且没有传内容，视为“回显请求”，返回最近的一条日志
 	if req.ID == 0 && req.Content == "" {
 		log, err = s.LearningLogRepo.GetLatest(userID)
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
-				// 如果从来没写过日志，返回一个基础结构，方便前端初始化
 				return &model.LearningLog{UserID: userID}, nil
 			}
 			return nil, err
@@ -322,13 +340,11 @@ func (s *LearningService) SubmitLearningLog(userID uint, req LearningLogRequest)
 		return log, nil
 	}
 
-	// 2. 如果有 ID，执行更新逻辑
 	if req.ID > 0 {
 		log, err = s.LearningLogRepo.FindByID(req.ID)
 		if err != nil {
 			return nil, err
 		}
-		// 确保日志属于该用户
 		if log.UserID != userID {
 			return nil, gorm.ErrRecordNotFound
 		}
@@ -341,7 +357,6 @@ func (s *LearningService) SubmitLearningLog(userID uint, req LearningLogRequest)
 
 		err = s.LearningLogRepo.Save(log)
 	} else {
-		// 3. 如果没 ID 但有内容，执行创建逻辑
 		log = &model.LearningLog{
 			UserID:     userID,
 			Content:    req.Content,
@@ -361,13 +376,11 @@ func (s *LearningService) SubmitLearningLog(userID uint, req LearningLogRequest)
 }
 
 func (s *LearningService) SubmitQuiz(userID uint, quizID uint, submission QuizSubmission) (*QuizResult, error) {
-	// 获取测验
 	quiz, err := s.QuizRepo.FindByID(quizID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 计算得分
 	score := 0
 	for qid, answer := range submission.Answers {
 		for _, question := range quiz.Questions {
@@ -378,7 +391,6 @@ func (s *LearningService) SubmitQuiz(userID uint, quizID uint, submission QuizSu
 		}
 	}
 
-	// 保存测验结果
 	result := &model.QuizResult{
 		UserID:    userID,
 		QuizID:    quizID,
@@ -399,4 +411,72 @@ func (s *LearningService) SubmitQuiz(userID uint, quizID uint, submission QuizSu
 		Correct: score,
 		Wrong:   len(quiz.Questions) - score,
 	}, nil
+}
+
+func (s *LearningService) RunCode(req CodeExecutionRequest) (*CodeExecutionResponse, error) {
+	encodedCode := base64.StdEncoding.EncodeToString([]byte(req.Code))
+
+	inputData := map[string]interface{}{
+		"source_code": encodedCode,
+		"language_id": 75,
+	}
+	jsonData, _ := json.Marshal(inputData)
+
+	apiKey := s.Config.Judge0.APIKey
+	url := s.Config.Judge0.URL
+	host := s.Config.Judge0.Host
+
+	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-RapidAPI-Key", apiKey)
+	httpReq.Header.Set("X-RapidAPI-Host", host)
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("calling Judge0 API failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Judge0 API returned error: %s", string(body))
+	}
+
+	var jResp Judge0Response
+	if err := json.Unmarshal(body, &jResp); err != nil {
+		return nil, fmt.Errorf("failed to parse Judge0 response: %v", err)
+	}
+
+	stdout, _ := base64.StdEncoding.DecodeString(jResp.Stdout)
+	stderr, _ := base64.StdEncoding.DecodeString(jResp.Stderr)
+	compileOut, _ := base64.StdEncoding.DecodeString(jResp.CompileOutput)
+
+	response := &CodeExecutionResponse{
+		Output: string(stdout),
+		Errors: string(stderr),
+		Status: 0,
+	}
+
+	switch jResp.Status.ID {
+	case 3: // Accepted
+		response.Status = 0
+	case 6: // Compilation Error
+		response.Status = 1
+		response.Errors = string(compileOut)
+	case 5: // Time Limit Exceeded
+		response.Status = 3
+		response.Errors = "执行超时 (Judge0)"
+	default:
+		response.Status = 2
+		if response.Errors == "" {
+			response.Errors = jResp.Status.Description
+		}
+	}
+
+	return response, nil
 }

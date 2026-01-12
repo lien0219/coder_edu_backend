@@ -431,6 +431,21 @@ definitions:
     required:
     - content
     type: object
+  service.CodeExecutionRequest:
+    properties:
+      code:
+        type: string
+    type: object
+  service.CodeExecutionResponse:
+    properties:
+      errors:
+        type: string
+      output:
+        type: string
+      status:
+        description: '0: success, 1: compilation error, 2: runtime error, 3: timeout'
+        type: integer
+    type: object
   service.CreateGoalRequest:
     properties:
       description:
@@ -493,8 +508,6 @@ definitions:
         items:
           type: string
         type: array
-    required:
-    - content
     type: object
   service.LevelCreateRequest:
     properties:
@@ -3133,6 +3146,35 @@ paths:
       security:
       - BearerAuth: []
       summary: 提交测验答案
+      tags:
+      - 学习模块
+  /api/learning/run-code:
+    post:
+      consumes:
+      - application/json
+      description: 运行学生提交的C代码并返回执行结果
+      parameters:
+      - description: 代码内容
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/service.CodeExecutionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.CodeExecutionResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 运行C代码
       tags:
       - 学习模块
   /api/levels/{id}/attempts/start:

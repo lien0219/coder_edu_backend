@@ -157,3 +157,34 @@ func (c *LearningController) SubmitQuiz(ctx *gin.Context) {
 
 	util.Success(ctx, result)
 }
+
+// @Summary 运行C代码
+// @Description 运行学生提交的C代码并返回执行结果
+// @Tags 学习模块
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param req body service.CodeExecutionRequest true "代码内容"
+// @Success 200 {object} util.Response{data=service.CodeExecutionResponse}
+// @Router /api/learning/run-code [post]
+func (c *LearningController) ExecuteCode(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	var req service.CodeExecutionRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
+	result, err := c.LearningService.RunCode(req)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, result)
+}

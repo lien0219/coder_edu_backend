@@ -24,5 +24,10 @@ storage:
   minio_bucket: "coder_edu_backend"
 
 Tracing:
-  Enabled: true
+  Enabled: false
   CollectorEndpoint: http://localhost:8080/api/traces
+
+judge0:
+  api_key: "REDACTED_JUDGE0_KEY"
+  url: "https://judge0-ce.p.rapidapi.com/submissions?wait=true&base64_encoded=true"
+  host: "judge0-ce.p.rapidapi.com"

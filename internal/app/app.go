@@ -80,7 +80,7 @@ func NewApp(cfg *config.Config) *App {
 	contentService := service.NewContentService(resourceRepo, cfg)
 	motivationService := service.NewMotivationService(motivationRepo)
 	dashboardService := service.NewDashboardService(userRepo, taskRepo, resourceRepo, goalRepo, motivationService)
-	learningService := service.NewLearningService(moduleRepo, taskRepo, resourceRepo, progressRepo, learningLogRepo, quizRepo, db)
+	learningService := service.NewLearningService(moduleRepo, taskRepo, resourceRepo, progressRepo, learningLogRepo, quizRepo, cfg, db)
 	achievementService := service.NewAchievementService(achievementRepo, userRepo, goalRepo)
 	communityService := service.NewCommunityService(postRepo, nil, questionRepo, answerRepo, userRepo)
 	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo, levelAttemptRepo, db)
@@ -210,6 +210,7 @@ func NewApp(cfg *config.Config) *App {
 		auth.GET("/learning/post-class", learningController.GetPostClass)
 		auth.POST("/learning/learning-log", learningController.SubmitLearningLog)
 		auth.POST("/learning/quiz/:quizId", learningController.SubmitQuiz)
+		auth.POST("/learning/run-code", learningController.ExecuteCode)
 
 		auth.GET("/achievements", achievementController.GetUserAchievements)
 		auth.GET("/achievements/leaderboard", achievementController.GetLeaderboard)

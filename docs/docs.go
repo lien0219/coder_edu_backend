@@ -3945,6 +3945,57 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/learning/run-code": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "运行学生提交的C代码并返回执行结果",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学习模块"
+                ],
+                "summary": "运行C代码",
+                "parameters": [
+                    {
+                        "description": "代码内容",
+                        "name": "req",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.CodeExecutionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/service.CodeExecutionResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/levels/basic-info": {
             "get": {
                 "security": [
@@ -7150,6 +7201,29 @@ const docTemplate = `{
                 }
             }
         },
+        "service.CodeExecutionRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.CodeExecutionResponse": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "string"
+                },
+                "output": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "0: success, 1: compilation error, 2: runtime error, 3: timeout",
+                    "type": "integer"
+                }
+            }
+        },
         "service.CreateGoalRequest": {
             "type": "object",
             "required": [
@@ -7210,9 +7284,6 @@ const docTemplate = `{
         },
         "service.LearningLogRequest": {
             "type": "object",
-            "required": [
-                "content"
-            ],
             "properties": {
                 "challenges": {
                     "type": "array",

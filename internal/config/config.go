@@ -13,6 +13,7 @@ type Config struct {
 	JWT      JWTConfig
 	Storage  StorageConfig
 	Tracing  TracingConfig
+	Judge0   Judge0Config
 }
 
 type ServerConfig struct {
@@ -46,6 +47,12 @@ type StorageConfig struct {
 type TracingConfig struct {
 	Enabled           bool
 	CollectorEndpoint string
+}
+
+type Judge0Config struct {
+	APIKey string `mapstructure:"api_key"`
+	URL    string
+	Host   string
 }
 
 func LoadConfig(path string) (*Config, error) {

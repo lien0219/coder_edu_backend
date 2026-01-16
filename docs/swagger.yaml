@@ -31,6 +31,17 @@ definitions:
     - password
     - role
     type: object
+  controller.SetRetestRequest:
+    properties:
+      canTake:
+        type: boolean
+      userIds:
+        items:
+          type: integer
+        type: array
+    required:
+    - userIds
+    type: object
   controller.SetWeeklyTaskRequest:
     properties:
       weekly_tasks:
@@ -233,6 +244,13 @@ definitions:
       updatedAt:
         type: string
     type: object
+  model.QuestionAnswer:
+    properties:
+      answer:
+        type: string
+      questionId:
+        type: integer
+    type: object
   model.Resource:
     properties:
       createdAt:
@@ -371,6 +389,8 @@ definitions:
     - TaskItemExercise
   model.User:
     properties:
+      canTakeAssessment:
+        type: boolean
       createdAt:
         type: string
       disabled:
@@ -431,6 +451,53 @@ definitions:
     required:
     - content
     type: object
+  service.AssessmentQuestionRequest:
+    properties:
+      answer:
+        type: string
+      assessmentId:
+        description: 可选，用于后续扩展
+        type: integer
+      content:
+        type: string
+      explanation:
+        type: string
+      options:
+        items:
+          type: integer
+        type: array
+      order:
+        type: integer
+      points:
+        type: integer
+      questionType:
+        type: string
+      title:
+        type: string
+    required:
+    - content
+    - questionType
+    type: object
+  service.AssessmentRequest:
+    properties:
+      description:
+        type: string
+      timeLimit:
+        type: integer
+      title:
+        type: string
+    required:
+    - title
+    type: object
+  service.AssessmentSubmissionRequest:
+    properties:
+      answers:
+        items:
+          $ref: '#/definitions/model.QuestionAnswer'
+        type: array
+      assessmentId:
+        type: integer
+    type: object
   service.CodeExecutionRequest:
     properties:
       code:
@@ -485,6 +552,15 @@ definitions:
     required:
     - targetValue
     - title
+    type: object
+  service.GradeSubmissionRequest:
+    properties:
+      feedback:
+        type: string
+      recommendedLevel:
+        type: integer
+      score:
+        type: integer
     type: object
   service.LearningLogRequest:
     properties:
@@ -2174,6 +2250,57 @@ paths:
       summary: 获取技能评估
       tags:
       - 分析
+  /api/assessments/questions:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生端：获取学前测试题目列表
+      tags:
+      - 学前测试评估
+  /api/assessments/result:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生端：获取自己的评估状态和结果
+      tags:
+      - 学前测试评估
+  /api/assessments/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 答案信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.AssessmentSubmissionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生端：提交学前测试答案
+      tags:
+      - 学前测试评估
   /api/c-programming/categories/{categoryId}/questions:
     get:
       consumes:
@@ -3676,6 +3803,303 @@ paths:
       summary: 获取今天的学习任务
       tags:
       - 任务管理
+  /api/teacher/assessments:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取评估列表
+      tags:
+      - 学前测试评估
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 评估信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.AssessmentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建评估
+      tags:
+      - 学前测试评估
+  /api/teacher/assessments/{id}:
+    get:
+      parameters:
+      - description: 评估ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取评估详情
+      tags:
+      - 学前测试评估
+  /api/teacher/assessments/questions:
+    get:
+      parameters:
+      - description: 评估ID
+        in: query
+        name: assessmentId
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取测试题列表
+      tags:
+      - 学前测试评估
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 题目信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.AssessmentQuestionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建测试题
+      tags:
+      - 学前测试评估
+  /api/teacher/assessments/questions/{id}:
+    delete:
+      parameters:
+      - description: 题目ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除测试题
+      tags:
+      - 学前测试评估
+    get:
+      parameters:
+      - description: 题目ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取测试题详情
+      tags:
+      - 学前测试评估
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 题目ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 题目信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.AssessmentQuestionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新测试题
+      tags:
+      - 学前测试评估
+  /api/teacher/assessments/retest:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 重测设置信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.SetRetestRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师端：设置学生是否可以重测
+      tags:
+      - 学前测试评估
+  /api/teacher/assessments/submissions:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - description: 状态
+        in: query
+        name: status
+        type: string
+      - description: 学生姓名
+        in: query
+        name: name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师端：获取提交列表
+      tags:
+      - 学前测试评估
+  /api/teacher/assessments/submissions/{id}:
+    delete:
+      parameters:
+      - description: 提交ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师端：删除提交记录
+      tags:
+      - 学前测试评估
+    get:
+      parameters:
+      - description: 提交ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师端：获取提交详情（用于审核）
+      tags:
+      - 学前测试评估
+  /api/teacher/assessments/submissions/{id}/grade:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 提交ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: '评分信息 (recommendedLevel: 1-基础, 2-初级, 3-中级, 4-高级)'
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.GradeSubmissionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 教师端：评分提交
+      tags:
+      - 学前测试评估
   /api/teacher/levels:
     get:
       parameters:

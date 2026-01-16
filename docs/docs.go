@@ -2400,6 +2400,92 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/assessments/questions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "学生端：获取学前测试题目列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/assessments/result": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "学生端：获取自己的评估状态和结果",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/assessments/submit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "学生端：提交学前测试答案",
+                "parameters": [
+                    {
+                        "description": "答案信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.AssessmentSubmissionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/c-programming/categories/{categoryId}/questions": {
             "get": {
                 "security": [
@@ -4804,6 +4890,489 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/teacher/assessments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "获取评估列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "创建评估",
+                "parameters": [
+                    {
+                        "description": "评估信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.AssessmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/assessments/questions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "获取测试题列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "评估ID",
+                        "name": "assessmentId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "创建测试题",
+                "parameters": [
+                    {
+                        "description": "题目信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.AssessmentQuestionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/assessments/questions/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "获取测试题详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "题目ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "更新测试题",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "题目ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "题目信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.AssessmentQuestionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "删除测试题",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "题目ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/assessments/retest": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "教师端：设置学生是否可以重测",
+                "parameters": [
+                    {
+                        "description": "重测设置信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.SetRetestRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/assessments/submissions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "教师端：获取提交列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学生姓名",
+                        "name": "name",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/assessments/submissions/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "教师端：获取提交详情（用于审核）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "提交ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "教师端：删除提交记录",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "提交ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/assessments/submissions/{id}/grade": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "教师端：评分提交",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "提交ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "评分信息 (recommendedLevel: 1-基础, 2-初级, 3-中级, 4-高级)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.GradeSubmissionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/assessments/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "学前测试评估"
+                ],
+                "summary": "获取评估详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "评估ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/teacher/levels": {
             "get": {
                 "security": [
@@ -6620,6 +7189,23 @@ const docTemplate = `{
                 }
             }
         },
+        "controller.SetRetestRequest": {
+            "type": "object",
+            "required": [
+                "userIds"
+            ],
+            "properties": {
+                "canTake": {
+                    "type": "boolean"
+                },
+                "userIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
         "controller.SetWeeklyTaskRequest": {
             "type": "object",
             "required": [
@@ -6920,6 +7506,17 @@ const docTemplate = `{
                 }
             }
         },
+        "model.QuestionAnswer": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "questionId": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.Resource": {
             "type": "object",
             "properties": {
@@ -7118,6 +7715,9 @@ const docTemplate = `{
         "model.User": {
             "type": "object",
             "properties": {
+                "canTakeAssessment": {
+                    "type": "boolean"
+                },
                 "createdAt": {
                     "type": "string"
                 },
@@ -7201,6 +7801,77 @@ const docTemplate = `{
                 }
             }
         },
+        "service.AssessmentQuestionRequest": {
+            "type": "object",
+            "required": [
+                "content",
+                "questionType"
+            ],
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "assessmentId": {
+                    "description": "可选，用于后续扩展",
+                    "type": "integer"
+                },
+                "content": {
+                    "type": "string"
+                },
+                "explanation": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "points": {
+                    "type": "integer"
+                },
+                "questionType": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.AssessmentRequest": {
+            "type": "object",
+            "required": [
+                "title"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "timeLimit": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.AssessmentSubmissionRequest": {
+            "type": "object",
+            "properties": {
+                "answers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.QuestionAnswer"
+                    }
+                },
+                "assessmentId": {
+                    "type": "integer"
+                }
+            }
+        },
         "service.CodeExecutionRequest": {
             "type": "object",
             "properties": {
@@ -7279,6 +7950,20 @@ const docTemplate = `{
                 },
                 "title": {
                     "type": "string"
+                }
+            }
+        },
+        "service.GradeSubmissionRequest": {
+            "type": "object",
+            "properties": {
+                "feedback": {
+                    "type": "string"
+                },
+                "recommendedLevel": {
+                    "type": "integer"
+                },
+                "score": {
+                    "type": "integer"
                 }
             }
         },

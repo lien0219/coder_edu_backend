@@ -34,6 +34,11 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 
 	log.Println("Database connection established")
 
+	// 将旧的空字符串更新为数字
+	if db.Migrator().HasTable(&model.AssessmentSubmission{}) {
+		db.Exec("UPDATE assessment_submissions SET recommended_level = '0' WHERE recommended_level = '' OR recommended_level IS NULL")
+	}
+
 	err = db.AutoMigrate(
 		&model.User{},
 		&model.Achievement{},
@@ -73,6 +78,9 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		&model.LevelAttemptQuestionScore{},
 		&model.Suggestion{},
 		&model.SuggestionCompletion{},
+		&model.Assessment{},
+		&model.AssessmentQuestion{},
+		&model.AssessmentSubmission{},
 	)
 
 	if err != nil {

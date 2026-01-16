@@ -75,6 +75,7 @@ func NewApp(cfg *config.Config) *App {
 	levelAttemptRepo := repository.NewLevelAttemptRepository(db)
 	knowledgeTagRepo := repository.NewKnowledgeTagRepository(db)
 	suggestionRepo := repository.NewSuggestionRepository(db)
+	assessmentRepo := repository.NewAssessmentRepository(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	contentService := service.NewContentService(resourceRepo, cfg)
@@ -108,6 +109,7 @@ func NewApp(cfg *config.Config) *App {
 	knowledgeTagService := service.NewKnowledgeTagService(knowledgeTagRepo)
 	knowledgeTagController := controller.NewKnowledgeTagController(knowledgeTagService)
 	suggestionService := service.NewSuggestionService(suggestionRepo, levelRepo, levelAttemptRepo)
+	assessmentService := service.NewAssessmentService(assessmentRepo)
 	learningGoalService := service.NewLearningGoalService(
 		goalRepo,
 		cProgrammingResRepo,
@@ -130,6 +132,7 @@ func NewApp(cfg *config.Config) *App {
 	levelController := controller.NewLevelController(levelService, contentService)
 	gradeController := controller.NewGradeController(levelService)
 	suggestionController := controller.NewSuggestionController(suggestionService)
+	assessmentController := controller.NewAssessmentController(assessmentService)
 
 	// 监控
 	monitoring.Init()
@@ -287,6 +290,11 @@ func NewApp(cfg *config.Config) *App {
 		// 教师建议（学生）
 		auth.GET("/suggestions", suggestionController.ListStudentSuggestions)
 		auth.POST("/suggestions/:id/complete", suggestionController.CompleteSuggestion)
+
+		// 学前测试题（学生）
+		auth.GET("/assessments/questions", assessmentController.GetStudentQuestions)
+		auth.POST("/assessments/submit", assessmentController.SubmitAssessment)
+		auth.GET("/assessments/result", assessmentController.GetMyResult)
 	}
 
 	teacher := auth.Group("/teacher")
@@ -336,6 +344,23 @@ func NewApp(cfg *config.Config) *App {
 		teacher.PUT("/suggestions/:id", suggestionController.UpdateSuggestion)
 		teacher.GET("/suggestions", suggestionController.ListTeacherSuggestions)
 		teacher.DELETE("/suggestions/:id", suggestionController.DeleteSuggestion)
+
+		// 学前测试管理
+		teacher.POST("/assessments", assessmentController.CreateAssessment)
+		teacher.GET("/assessments", assessmentController.ListAssessments)
+		teacher.GET("/assessments/:id", assessmentController.GetAssessment)
+		teacher.POST("/assessments/questions", assessmentController.CreateQuestion)
+		teacher.GET("/assessments/questions", assessmentController.ListQuestions)
+		teacher.GET("/assessments/questions/:id", assessmentController.GetQuestion)
+		teacher.PUT("/assessments/questions/:id", assessmentController.UpdateQuestion)
+		teacher.DELETE("/assessments/questions/:id", assessmentController.DeleteQuestion)
+
+		// 学前测试提交管理
+		teacher.GET("/assessments/submissions", assessmentController.ListSubmissions)
+		teacher.GET("/assessments/submissions/:id", assessmentController.GetSubmissionDetail)
+		teacher.POST("/assessments/submissions/:id/grade", assessmentController.GradeSubmission)
+		teacher.DELETE("/assessments/submissions/:id", assessmentController.DeleteSubmission)
+		teacher.POST("/assessments/retest", assessmentController.SetUserRetest)
 	}
 
 	admin := router.Group("/api/admin")

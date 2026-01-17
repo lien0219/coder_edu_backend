@@ -137,3 +137,108 @@ func (c *LearningPathController) DeleteMaterial(ctx *gin.Context) {
 
 	util.Success(ctx, gin.H{"deleted": id})
 }
+
+// @Summary 学生端：获取自我评估学习路径
+// @Tags 学习路径
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} util.Response
+// @Router /api/learning-path/student [get]
+func (c *LearningPathController) GetStudentPath(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	path, err := c.Service.GetStudentPath(user.UserID)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, path)
+}
+
+// @Summary 学生端：获取指定等级的所有资料
+// @Tags 学习路径
+// @Produce json
+// @Security BearerAuth
+// @Param level path int true "等级 (1:基础, 2:初级, 3:中级, 4:高级)"
+// @Success 200 {object} util.Response
+// @Router /api/learning-path/levels/{level}/materials [get]
+func (c *LearningPathController) GetMaterialsByLevel(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	level, _ := strconv.Atoi(ctx.Param("level"))
+	materials, err := c.Service.GetMaterialsByLevel(user.UserID, level)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	if materials == nil {
+		util.Error(ctx, 403, "该等级资料尚未解锁")
+		return
+	}
+
+	util.Success(ctx, materials)
+}
+
+// @Summary 学生端：记录学习路径资料的学习时长
+// @Tags 学习路径
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "资料ID"
+// @Param body body service.RecordLearningTimeRequest true "学习时长信息"
+// @Success 200 {object} util.Response
+// @Router /api/learning-path/materials/{id}/learning-time [post]
+func (c *LearningPathController) RecordLearningTime(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	id := ctx.Param("id")
+	var req service.RecordLearningTimeRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
+	if err := c.Service.RecordLearningTime(user.UserID, id, req.Duration); err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, "学习时长记录成功")
+}
+
+// @Summary 学生端：标记资料为已完成
+// @Tags 学习路径
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "资料ID"
+// @Success 200 {object} util.Response
+// @Router /api/learning-path/materials/{id}/complete [post]
+func (c *LearningPathController) CompleteMaterial(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	id := ctx.Param("id")
+	if err := c.Service.CompleteMaterial(user.UserID, id); err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, "标记完成成功")
+}

@@ -76,6 +76,7 @@ func NewApp(cfg *config.Config) *App {
 	knowledgeTagRepo := repository.NewKnowledgeTagRepository(db)
 	suggestionRepo := repository.NewSuggestionRepository(db)
 	assessmentRepo := repository.NewAssessmentRepository(db)
+	learningPathRepo := repository.NewLearningPathRepository(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	contentService := service.NewContentService(resourceRepo, cfg)
@@ -110,6 +111,7 @@ func NewApp(cfg *config.Config) *App {
 	knowledgeTagController := controller.NewKnowledgeTagController(knowledgeTagService)
 	suggestionService := service.NewSuggestionService(suggestionRepo, levelRepo, levelAttemptRepo)
 	assessmentService := service.NewAssessmentService(assessmentRepo)
+	learningPathService := service.NewLearningPathService(learningPathRepo)
 	learningGoalService := service.NewLearningGoalService(
 		goalRepo,
 		cProgrammingResRepo,
@@ -133,6 +135,7 @@ func NewApp(cfg *config.Config) *App {
 	gradeController := controller.NewGradeController(levelService)
 	suggestionController := controller.NewSuggestionController(suggestionService)
 	assessmentController := controller.NewAssessmentController(assessmentService)
+	learningPathController := controller.NewLearningPathController(learningPathService)
 
 	// 监控
 	monitoring.Init()
@@ -361,6 +364,17 @@ func NewApp(cfg *config.Config) *App {
 		teacher.POST("/assessments/submissions/:id/grade", assessmentController.GradeSubmission)
 		teacher.DELETE("/assessments/submissions/:id", assessmentController.DeleteSubmission)
 		teacher.POST("/assessments/retest", assessmentController.SetUserRetest)
+	}
+
+	// 学习路径管理 (仅限老师和管理员)
+	learningPath := auth.Group("/teacher/learning-path")
+	learningPath.Use(middleware.RoleMiddleware(model.Teacher, model.Admin))
+	{
+		learningPath.POST("/materials", learningPathController.CreateMaterial)
+		learningPath.GET("/materials", learningPathController.ListMaterials)
+		learningPath.GET("/materials/:id", learningPathController.GetMaterial)
+		learningPath.PUT("/materials/:id", learningPathController.UpdateMaterial)
+		learningPath.DELETE("/materials/:id", learningPathController.DeleteMaterial)
 	}
 
 	admin := router.Group("/api/admin")

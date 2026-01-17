@@ -81,6 +81,7 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		&model.Assessment{},
 		&model.AssessmentQuestion{},
 		&model.AssessmentSubmission{},
+		&model.LearningPathMaterial{},
 	)
 
 	if err != nil {

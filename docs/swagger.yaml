@@ -536,6 +536,25 @@ definitions:
     - targetDate
     - title
     type: object
+  service.CreateMaterialRequest:
+    properties:
+      chapterNumber:
+        type: integer
+      content:
+        type: string
+      level:
+        type: integer
+      points:
+        type: integer
+      title:
+        type: string
+      totalChapters:
+        type: integer
+    required:
+    - content
+    - level
+    - title
+    type: object
   service.FlexibleTime:
     properties:
       time.Time:
@@ -4100,6 +4119,123 @@ paths:
       summary: 教师端：评分提交
       tags:
       - 学前测试评估
+  /api/teacher/learning-path/materials:
+    get:
+      parameters:
+      - description: 等级 (1:基础, 2:初级, 3:中级, 4:高级)
+        in: query
+        name: level
+        type: integer
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取学习路径资料列表
+      tags:
+      - 学习路径
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资料信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateMaterialRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建学习路径资料
+      tags:
+      - 学习路径
+  /api/teacher/learning-path/materials/{id}:
+    delete:
+      parameters:
+      - description: 资料ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除学习路径资料
+      tags:
+      - 学习路径
+    get:
+      parameters:
+      - description: 资料ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取学习路径资料详情
+      tags:
+      - 学习路径
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资料ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 资料信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateMaterialRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新学习路径资料
+      tags:
+      - 学习路径
   /api/teacher/levels:
     get:
       parameters:

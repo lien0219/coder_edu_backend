@@ -15,8 +15,8 @@ type Claims struct {
 	jwt.StandardClaims
 }
 
-func GenerateJWT(user *model.User, secret string, expireHours int) (string, error) {
-	expirationTime := time.Now().Add(time.Duration(expireHours) * time.Hour)
+func GenerateJWT(user *model.User, secret string, expiration time.Duration) (string, error) {
+	expirationTime := time.Now().Add(expiration)
 
 	claims := &Claims{
 		UserID: user.ID,

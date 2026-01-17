@@ -13,7 +13,7 @@ database:
 
 jwt:
   secret: "coder_edu_backend_secret"
-  expire_hours: 72
+  expire_hours: 12
 
 storage:
   type: "local" # or "minio"

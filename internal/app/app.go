@@ -111,7 +111,7 @@ func NewApp(cfg *config.Config) *App {
 	knowledgeTagController := controller.NewKnowledgeTagController(knowledgeTagService)
 	suggestionService := service.NewSuggestionService(suggestionRepo, levelRepo, levelAttemptRepo)
 	assessmentService := service.NewAssessmentService(assessmentRepo)
-	learningPathService := service.NewLearningPathService(learningPathRepo)
+	learningPathService := service.NewLearningPathService(learningPathRepo, assessmentRepo, learningLogRepo, userRepo)
 	learningGoalService := service.NewLearningGoalService(
 		goalRepo,
 		cProgrammingResRepo,
@@ -190,7 +190,6 @@ func NewApp(cfg *config.Config) *App {
 		public.POST("/register", authController.Register)
 		public.POST("/login", authController.Login)
 		public.GET("/motivation", motivationController.GetCurrentMotivation)
-		public.POST("/users/:id/points", userController.UpdateUserPoints)
 	}
 
 	// 用于无需权限的答案提交接口
@@ -268,6 +267,7 @@ func NewApp(cfg *config.Config) *App {
 		auth.GET("/users/checkin/stats", userController.GetCheckinStats)
 		auth.GET("/users/stats", userController.GetUserStats)
 		auth.GET("/users/level-status", userController.GetLevelStatus)
+		auth.POST("/users/:id/points", middleware.RoleMiddleware(model.Student, model.Teacher, model.Admin), userController.UpdateUserPoints)
 
 		// 资源进度相关路由
 		auth.GET("/c-programming/resource-progress/:resourceId", cProgrammingResController.GetResourceModuleWithProgress)
@@ -298,6 +298,12 @@ func NewApp(cfg *config.Config) *App {
 		auth.GET("/assessments/questions", assessmentController.GetStudentQuestions)
 		auth.POST("/assessments/submit", assessmentController.SubmitAssessment)
 		auth.GET("/assessments/result", assessmentController.GetMyResult)
+
+		// 学习路径（学生）
+		auth.GET("/learning-path/student", learningPathController.GetStudentPath)
+		auth.GET("/learning-path/levels/:level/materials", learningPathController.GetMaterialsByLevel)
+		auth.POST("/learning-path/materials/:id/learning-time", learningPathController.RecordLearningTime)
+		auth.POST("/learning-path/materials/:id/complete", learningPathController.CompleteMaterial)
 	}
 
 	teacher := auth.Group("/teacher")

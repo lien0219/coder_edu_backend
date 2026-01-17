@@ -726,6 +726,14 @@ definitions:
         description: questionID -> answerIndex
         type: object
     type: object
+  service.RecordLearningTimeRequest:
+    properties:
+      duration:
+        minimum: 1
+        type: integer
+    required:
+    - duration
+    type: object
   service.SubmitExerciseAnswerRequest:
     properties:
       answer:
@@ -3185,6 +3193,88 @@ paths:
       summary: 获取特定类型的学习目标
       tags:
       - 学习目标
+  /api/learning-path/levels/{level}/materials:
+    get:
+      parameters:
+      - description: 等级 (1:基础, 2:初级, 3:中级, 4:高级)
+        in: path
+        name: level
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生端：获取指定等级的所有资料
+      tags:
+      - 学习路径
+  /api/learning-path/materials/{id}/complete:
+    post:
+      parameters:
+      - description: 资料ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生端：标记资料为已完成
+      tags:
+      - 学习路径
+  /api/learning-path/materials/{id}/learning-time:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资料ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 学习时长信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.RecordLearningTimeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生端：记录学习路径资料的学习时长
+      tags:
+      - 学习路径
+  /api/learning-path/student:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生端：获取自我评估学习路径
+      tags:
+      - 学习路径
   /api/learning/in-class:
     get:
       consumes:

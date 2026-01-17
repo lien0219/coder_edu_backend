@@ -31,3 +31,15 @@ type LearningPathMaterial struct {
 func (LearningPathMaterial) TableName() string {
 	return "learning_path_materials"
 }
+
+// swagger:model LearningPathCompletion
+type LearningPathCompletion struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	UserID      uint      `gorm:"index;type:bigint unsigned" json:"userId"`
+	MaterialID  string    `gorm:"index;type:varchar(36)" json:"materialId"`
+	CompletedAt time.Time `json:"completedAt"`
+}
+
+func (LearningPathCompletion) TableName() string {
+	return "learning_path_completions"
+}

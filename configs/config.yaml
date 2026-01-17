@@ -13,7 +13,7 @@ database:
 
 jwt:
   secret: "REDACTED_JWT_SECRET"
-  expire_hours: 72
+  expire_hours: 12
 
 storage:
   type: "local" # or "minio"

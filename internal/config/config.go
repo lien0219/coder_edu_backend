@@ -32,8 +32,8 @@ type DatabaseConfig struct {
 }
 
 type JWTConfig struct {
-	Secret     string
-	ExpireTime time.Duration
+	Secret     string        `mapstructure:"secret"`
+	ExpireTime time.Duration `mapstructure:"expire_hours"`
 }
 
 type StorageConfig struct {

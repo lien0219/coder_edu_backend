@@ -58,7 +58,7 @@ func (s *AuthService) Login(email, password string) (string, error) {
 	_ = s.UserRepo.UpdateLastLogin(user.ID)
 	_ = s.UserRepo.UpdateLastSeen(user.ID)
 
-	return util.GenerateJWT(user, s.Cfg.JWT.Secret, 72)
+	return util.GenerateJWT(user, s.Cfg.JWT.Secret, s.Cfg.JWT.ExpireTime)
 }
 
 func (s *AuthService) GetCurrentUser(c *gin.Context) *model.User {

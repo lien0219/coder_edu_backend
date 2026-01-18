@@ -5508,6 +5508,150 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/teacher/knowledge-points": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "获取知识点列表 (老师/管理员)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "标题筛选",
+                        "name": "title",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "创建知识点 (老师/管理员)",
+                "parameters": [
+                    {
+                        "description": "知识点信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.CreateKnowledgePointRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/knowledge-points/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "更新知识点 (老师/管理员)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "知识点ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "知识点信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.CreateKnowledgePointRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "删除知识点 (老师/管理员)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "知识点ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/teacher/learning-path/materials": {
             "get": {
                 "security": [
@@ -7728,6 +7872,42 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ExerciseType": {
+            "type": "string",
+            "enum": [
+                "single_choice",
+                "multiple_choice",
+                "fill_in",
+                "true_false",
+                "programming"
+            ],
+            "x-enum-varnames": [
+                "ExSingleChoice",
+                "ExMultipleChoice",
+                "ExFillIn",
+                "ExTrueFalse",
+                "ExProgramming"
+            ]
+        },
+        "model.KnowledgePointType": {
+            "type": "string",
+            "enum": [
+                "concept",
+                "rule",
+                "syntax",
+                "process",
+                "strategy",
+                "application"
+            ],
+            "x-enum-varnames": [
+                "KPConcept",
+                "KPRule",
+                "KPSyntax",
+                "KPProcess",
+                "KPStrategy",
+                "KPApplication"
+            ]
+        },
         "model.LearningLog": {
             "type": "object",
             "properties": {
@@ -8219,6 +8399,41 @@ const docTemplate = `{
                 }
             }
         },
+        "service.CreateExerciseRequest": {
+            "type": "object",
+            "required": [
+                "answer",
+                "question",
+                "type"
+            ],
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "explanation": {
+                    "type": "string"
+                },
+                "id": {
+                    "description": "Temporary ID from frontend",
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "points": {
+                    "type": "integer"
+                },
+                "question": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/model.ExerciseType"
+                }
+            }
+        },
         "service.CreateGoalRequest": {
             "type": "object",
             "required": [
@@ -8251,6 +8466,48 @@ const docTemplate = `{
                 }
             }
         },
+        "service.CreateKnowledgePointRequest": {
+            "type": "object",
+            "required": [
+                "title",
+                "type"
+            ],
+            "properties": {
+                "articleContent": {
+                    "type": "string"
+                },
+                "completionScore": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "exercises": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.CreateExerciseRequest"
+                    }
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "timeLimit": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/model.KnowledgePointType"
+                },
+                "videos": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.CreateVideoResourceRequest"
+                    }
+                }
+            }
+        },
         "service.CreateMaterialRequest": {
             "type": "object",
             "required": [
@@ -8276,6 +8533,28 @@ const docTemplate = `{
                 },
                 "totalChapters": {
                     "type": "integer"
+                }
+            }
+        },
+        "service.CreateVideoResourceRequest": {
+            "type": "object",
+            "required": [
+                "title",
+                "url"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "description": "Temporary ID from frontend",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
                 }
             }
         },

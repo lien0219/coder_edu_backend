@@ -175,6 +175,36 @@ definitions:
       updatedAt:
         type: string
     type: object
+  model.ExerciseType:
+    enum:
+    - single_choice
+    - multiple_choice
+    - fill_in
+    - true_false
+    - programming
+    type: string
+    x-enum-varnames:
+    - ExSingleChoice
+    - ExMultipleChoice
+    - ExFillIn
+    - ExTrueFalse
+    - ExProgramming
+  model.KnowledgePointType:
+    enum:
+    - concept
+    - rule
+    - syntax
+    - process
+    - strategy
+    - application
+    type: string
+    x-enum-varnames:
+    - KPConcept
+    - KPRule
+    - KPSyntax
+    - KPProcess
+    - KPStrategy
+    - KPApplication
   model.LearningLog:
     properties:
       activity:
@@ -513,6 +543,30 @@ definitions:
         description: '0: success, 1: compilation error, 2: runtime error, 3: timeout'
         type: integer
     type: object
+  service.CreateExerciseRequest:
+    properties:
+      answer:
+        type: string
+      explanation:
+        type: string
+      id:
+        description: Temporary ID from frontend
+        type: string
+      options:
+        items:
+          type: string
+        type: array
+      points:
+        type: integer
+      question:
+        type: string
+      type:
+        $ref: '#/definitions/model.ExerciseType'
+    required:
+    - answer
+    - question
+    - type
+    type: object
   service.CreateGoalRequest:
     properties:
       description:
@@ -536,6 +590,34 @@ definitions:
     - targetDate
     - title
     type: object
+  service.CreateKnowledgePointRequest:
+    properties:
+      articleContent:
+        type: string
+      completionScore:
+        type: integer
+      description:
+        type: string
+      exercises:
+        items:
+          $ref: '#/definitions/service.CreateExerciseRequest'
+        type: array
+      order:
+        type: integer
+      timeLimit:
+        type: integer
+      title:
+        type: string
+      type:
+        $ref: '#/definitions/model.KnowledgePointType'
+      videos:
+        items:
+          $ref: '#/definitions/service.CreateVideoResourceRequest'
+        type: array
+    required:
+    - title
+    - type
+    type: object
   service.CreateMaterialRequest:
     properties:
       chapterNumber:
@@ -554,6 +636,21 @@ definitions:
     - content
     - level
     - title
+    type: object
+  service.CreateVideoResourceRequest:
+    properties:
+      description:
+        type: string
+      id:
+        description: Temporary ID from frontend
+        type: string
+      title:
+        type: string
+      url:
+        type: string
+    required:
+    - title
+    - url
     type: object
   service.FlexibleTime:
     properties:
@@ -4209,6 +4306,94 @@ paths:
       summary: 教师端：评分提交
       tags:
       - 学前测试评估
+  /api/teacher/knowledge-points:
+    get:
+      parameters:
+      - description: 标题筛选
+        in: query
+        name: title
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取知识点列表 (老师/管理员)
+      tags:
+      - 知识点
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 知识点信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateKnowledgePointRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建知识点 (老师/管理员)
+      tags:
+      - 知识点
+  /api/teacher/knowledge-points/{id}:
+    delete:
+      parameters:
+      - description: 知识点ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除知识点 (老师/管理员)
+      tags:
+      - 知识点
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 知识点ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 知识点信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateKnowledgePointRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新知识点 (老师/管理员)
+      tags:
+      - 知识点
   /api/teacher/learning-path/materials:
     get:
       parameters:

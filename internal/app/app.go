@@ -112,6 +112,7 @@ func NewApp(cfg *config.Config) *App {
 	suggestionService := service.NewSuggestionService(suggestionRepo, levelRepo, levelAttemptRepo)
 	assessmentService := service.NewAssessmentService(assessmentRepo)
 	learningPathService := service.NewLearningPathService(learningPathRepo, assessmentRepo, learningLogRepo, userRepo)
+	knowledgePointService := service.NewKnowledgePointService(db)
 	learningGoalService := service.NewLearningGoalService(
 		goalRepo,
 		cProgrammingResRepo,
@@ -136,6 +137,7 @@ func NewApp(cfg *config.Config) *App {
 	suggestionController := controller.NewSuggestionController(suggestionService)
 	assessmentController := controller.NewAssessmentController(assessmentService)
 	learningPathController := controller.NewLearningPathController(learningPathService)
+	knowledgePointController := controller.NewKnowledgePointController(knowledgePointService)
 
 	// 监控
 	monitoring.Init()
@@ -370,6 +372,12 @@ func NewApp(cfg *config.Config) *App {
 		teacher.POST("/assessments/submissions/:id/grade", assessmentController.GradeSubmission)
 		teacher.DELETE("/assessments/submissions/:id", assessmentController.DeleteSubmission)
 		teacher.POST("/assessments/retest", assessmentController.SetUserRetest)
+
+		// 知识点管理
+		teacher.POST("/knowledge-points", knowledgePointController.Create)
+		teacher.GET("/knowledge-points", knowledgePointController.List)
+		teacher.PUT("/knowledge-points/:id", knowledgePointController.Update)
+		teacher.DELETE("/knowledge-points/:id", knowledgePointController.Delete)
 	}
 
 	// 学习路径管理 (仅限老师和管理员)

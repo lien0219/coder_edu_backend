@@ -79,3 +79,30 @@ type KnowledgePointExercise struct {
 func (KnowledgePointExercise) TableName() string {
 	return "knowledge_point_exercises"
 }
+
+type KnowledgePointCompletion struct {
+	UserID           uint      `gorm:"primaryKey;index:idx_user_kp" json:"userId"`
+	KnowledgePointID string    `gorm:"primaryKey;type:varchar(36);index:idx_user_kp" json:"knowledgePointId"`
+	IsCompleted      bool      `gorm:"default:false" json:"isCompleted"`
+	CompletedAt      time.Time `json:"completedAt"`
+}
+
+func (KnowledgePointCompletion) TableName() string {
+	return "knowledge_point_completions"
+}
+
+// KnowledgePointSubmission 记录学生提交的详细测试信息
+type KnowledgePointSubmission struct {
+	ID               string `gorm:"primaryKey;type:varchar(36)" json:"id"`
+	UserID           uint   `gorm:"index" json:"userId"`
+	KnowledgePointID string `gorm:"index;type:varchar(36)" json:"knowledgePointId"`
+	// Details 存储 JSON 数组，包含每题的题目、类型、学生答案、代码内容、执行结果及系统初步判断
+	Details   string    `gorm:"type:longtext" json:"details"`
+	Score     int       `gorm:"default:0" json:"score"`                  // 系统初步计算的得分
+	Status    string    `gorm:"size:20;default:'pending'" json:"status"` // pending, approved, rejected
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func (KnowledgePointSubmission) TableName() string {
+	return "knowledge_point_submissions"
+}

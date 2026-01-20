@@ -3533,6 +3533,153 @@
                 }
             }
         },
+        "/api/knowledge-points/student": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "获取知识点列表 (学生)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/knowledge-points/student/submit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "学生端：提交知识点测试结果 (包含题目、代码、执行结果)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "知识点ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "提交测试内容",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.SubmitKnowledgePointExercisesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/knowledge-points/student/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "获取知识点详情 (学生)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "知识点ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/knowledge-points/student/{id}/learning-time": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "学生端：记录知识点学习时长",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "知识点ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "学习时长信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.RecordLearningTimeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/knowledge-tags": {
             "get": {
                 "security": [
@@ -8552,6 +8699,29 @@
                 }
             }
         },
+        "service.ExerciseSubmissionItem": {
+            "type": "object",
+            "required": [
+                "exerciseId"
+            ],
+            "properties": {
+                "answer": {
+                    "description": "普通题答案",
+                    "type": "string"
+                },
+                "code": {
+                    "description": "编程题代码",
+                    "type": "string"
+                },
+                "executionResult": {
+                    "description": "编程题执行结果",
+                    "type": "string"
+                },
+                "exerciseId": {
+                    "type": "string"
+                }
+            }
+        },
         "service.FlexibleTime": {
             "type": "object",
             "properties": {
@@ -8831,6 +9001,24 @@
                 },
                 "user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "service.SubmitKnowledgePointExercisesRequest": {
+            "type": "object",
+            "required": [
+                "knowledgePointId",
+                "submissions"
+            ],
+            "properties": {
+                "knowledgePointId": {
+                    "type": "string"
+                },
+                "submissions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ExerciseSubmissionItem"
+                    }
                 }
             }
         },

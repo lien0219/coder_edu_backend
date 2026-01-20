@@ -212,6 +212,12 @@ func NewApp(cfg *config.Config) *App {
 		auth.GET("/dashboard/today-tasks", dashboardController.GetTodayTasks)
 		auth.PATCH("/dashboard/tasks/:taskId", dashboardController.UpdateTaskStatus)
 
+		// 知识点列表 (学生)
+		auth.GET("/knowledge-points/student", knowledgePointController.ListForStudent)
+		auth.GET("/knowledge-points/student/:id", knowledgePointController.GetDetailForStudent)
+		auth.POST("/knowledge-points/student/submit", knowledgePointController.SubmitExercises)
+		auth.POST("/knowledge-points/student/:id/learning-time", knowledgePointController.RecordLearningTime)
+
 		auth.GET("/learning/pre-class", learningController.GetPreClass)
 		auth.GET("/learning/in-class", learningController.GetInClass)
 		auth.GET("/learning/post-class", learningController.GetPostClass)

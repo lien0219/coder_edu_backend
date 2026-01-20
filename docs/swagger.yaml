@@ -652,6 +652,22 @@ definitions:
     - title
     - url
     type: object
+  service.ExerciseSubmissionItem:
+    properties:
+      answer:
+        description: 普通题答案
+        type: string
+      code:
+        description: 编程题代码
+        type: string
+      executionResult:
+        description: 编程题执行结果
+        type: string
+      exerciseId:
+        type: string
+    required:
+    - exerciseId
+    type: object
   service.FlexibleTime:
     properties:
       time.Time:
@@ -839,6 +855,18 @@ definitions:
         type: integer
     required:
     - answer
+    type: object
+  service.SubmitKnowledgePointExercisesRequest:
+    properties:
+      knowledgePointId:
+        type: string
+      submissions:
+        items:
+          $ref: '#/definitions/service.ExerciseSubmissionItem'
+        type: array
+    required:
+    - knowledgePointId
+    - submissions
     type: object
   service.UpdateGoalRequest:
     properties:
@@ -3097,6 +3125,96 @@ paths:
       summary: 获取今日任务
       tags:
       - 仪表盘
+  /api/knowledge-points/student:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取知识点列表 (学生)
+      tags:
+      - 知识点
+  /api/knowledge-points/student/{id}:
+    get:
+      parameters:
+      - description: 知识点ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取知识点详情 (学生)
+      tags:
+      - 知识点
+  /api/knowledge-points/student/{id}/learning-time:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 知识点ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 学习时长信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.RecordLearningTimeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生端：记录知识点学习时长
+      tags:
+      - 知识点
+  /api/knowledge-points/student/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 知识点ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 提交测试内容
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.SubmitKnowledgePointExercisesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生端：提交知识点测试结果 (包含题目、代码、执行结果)
+      tags:
+      - 知识点
   /api/knowledge-tags:
     get:
       produces:

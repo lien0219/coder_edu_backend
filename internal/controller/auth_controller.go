@@ -59,7 +59,8 @@ func (c *AuthController) Register(ctx *gin.Context) {
 		if err.Error() == "该邮箱已被注册" {
 			util.Error(ctx, 409, "该邮箱已被注册")
 		} else {
-			util.InternalServerError(ctx)
+			// 添加日志记录错误详情
+			util.LogInternalError(ctx, err)
 		}
 		return
 	}

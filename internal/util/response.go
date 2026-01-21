@@ -1,9 +1,11 @@
 package util
 
 import (
+	"coder_edu_backend/pkg/logger"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // Response represents the standard API response format
@@ -56,4 +58,9 @@ func NotFound(c *gin.Context) {
 
 func InternalServerError(c *gin.Context) {
 	Error(c, http.StatusInternalServerError, "Internal server error")
+}
+
+func LogInternalError(c *gin.Context, err error) {
+	logger.Log.Error("Internal server error", zap.Error(err))
+	InternalServerError(c)
 }

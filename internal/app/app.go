@@ -215,6 +215,7 @@ func NewApp(cfg *config.Config) *App {
 		// 知识点列表 (学生)
 		auth.GET("/knowledge-points/student", knowledgePointController.ListForStudent)
 		auth.GET("/knowledge-points/student/:id", knowledgePointController.GetDetailForStudent)
+		auth.POST("/knowledge-points/student/:id/start", knowledgePointController.StartExercises)
 		auth.POST("/knowledge-points/student/submit", knowledgePointController.SubmitExercises)
 		auth.POST("/knowledge-points/student/:id/learning-time", knowledgePointController.RecordLearningTime)
 
@@ -384,6 +385,11 @@ func NewApp(cfg *config.Config) *App {
 		teacher.GET("/knowledge-points", knowledgePointController.List)
 		teacher.PUT("/knowledge-points/:id", knowledgePointController.Update)
 		teacher.DELETE("/knowledge-points/:id", knowledgePointController.Delete)
+
+		// 知识点学生提交审核
+		teacher.GET("/knowledge-points/submissions", knowledgePointController.ListSubmissions)
+		teacher.GET("/knowledge-points/submissions/:id", knowledgePointController.GetSubmissionDetail)
+		teacher.POST("/knowledge-points/submissions/:id/audit", knowledgePointController.AuditSubmission)
 	}
 
 	// 学习路径管理 (仅限老师和管理员)

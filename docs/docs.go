@@ -3686,6 +3686,39 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/knowledge-points/student/{id}/start": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "学生端：开始答题 (启动计时)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "知识点ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/knowledge-tags": {
             "get": {
                 "security": [
@@ -5716,6 +5749,137 @@ const docTemplate = `{
                 "responses": {
                     "201": {
                         "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/knowledge-points/submissions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "获取所有学生提交的知识点测试 (老师/管理员)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "知识点ID",
+                        "name": "knowledgePointId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "审核状态 (pending, approved, rejected, unsubmitted)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "每页数量",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/knowledge-points/submissions/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "获取学生提交的知识点测试详情 (老师/管理员)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "提交ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/knowledge-points/submissions/{id}/audit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "审核学生提交的知识点测试 (老师/管理员)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "提交ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "状态 (status: approved 或 rejected, 可选 score: int 手动评分)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/util.Response"
                         }
@@ -8396,6 +8560,10 @@ const docTemplate = `{
                 "password": {
                     "type": "string"
                 },
+                "points": {
+                    "description": "独立积分系统（课中知识点测试积分）",
+                    "type": "integer"
+                },
                 "role": {
                     "$ref": "#/definitions/model.UserRole"
                 },
@@ -8403,6 +8571,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "xp": {
+                    "description": "总经验/等级积分",
                     "type": "integer"
                 }
             }
@@ -9013,10 +9182,17 @@ const docTemplate = `{
         "service.SubmitKnowledgePointExercisesRequest": {
             "type": "object",
             "required": [
-                "knowledgePointId",
-                "submissions"
+                "knowledgePointId"
             ],
             "properties": {
+                "duration": {
+                    "description": "答题时长（秒）",
+                    "type": "integer"
+                },
+                "isAutoSubmit": {
+                    "description": "是否为自动提交",
+                    "type": "boolean"
+                },
                 "knowledgePointId": {
                     "type": "string"
                 },

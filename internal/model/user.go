@@ -20,7 +20,8 @@ type User struct {
 	Email             string    `gorm:"size:100;unique;not null"`
 	Password          string    `gorm:"size:100;not null"`
 	Role              UserRole  `gorm:"type:enum('student','teacher','admin');default:'student'"`
-	XP                int       `gorm:"default:0"`
+	XP                int       `gorm:"default:0"` // 总经验/等级积分
+	Points            int       `gorm:"default:0"` // 独立积分系统（课中知识点测试积分）
 	Language          string    `gorm:"size:10;default:'en'"`
 	Disabled          bool      `gorm:"default:false"`
 	CanTakeAssessment bool      `gorm:"default:true" json:"canTakeAssessment"`

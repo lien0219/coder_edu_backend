@@ -198,7 +198,11 @@ func (s *AnalyticsService) GetLevelLearningCurve(userID, levelID uint, limit int
 	if levelID == 0 {
 		latestID, err := s.LevelAttemptRepo.GetLatestAttemptLevelID(userID)
 		if err != nil || latestID == 0 {
-			return nil, fmt.Errorf("no recent attempts found")
+			return &model.LevelCurveResponse{
+				LevelID:    0,
+				LevelTitle: "暂无关卡尝试记录",
+				Attempts:   []model.AttemptCurveData{},
+			}, nil
 		}
 		levelID = latestID
 	}
@@ -206,6 +210,13 @@ func (s *AnalyticsService) GetLevelLearningCurve(userID, levelID uint, limit int
 	// 2. 获取关卡标题
 	var level model.Level
 	if err := s.DB.First(&level, levelID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return &model.LevelCurveResponse{
+				LevelID:    levelID,
+				LevelTitle: "未知关卡",
+				Attempts:   []model.AttemptCurveData{},
+			}, nil
+		}
 		return nil, err
 	}
 

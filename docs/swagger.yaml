@@ -439,11 +439,15 @@ definitions:
         type: string
       password:
         type: string
+      points:
+        description: 独立积分系统（课中知识点测试积分）
+        type: integer
       role:
         $ref: '#/definitions/model.UserRole'
       updatedAt:
         type: string
       xp:
+        description: 总经验/等级积分
         type: integer
     type: object
   model.UserRole:
@@ -858,6 +862,12 @@ definitions:
     type: object
   service.SubmitKnowledgePointExercisesRequest:
     properties:
+      duration:
+        description: 答题时长（秒）
+        type: integer
+      isAutoSubmit:
+        description: 是否为自动提交
+        type: boolean
       knowledgePointId:
         type: string
       submissions:
@@ -866,7 +876,6 @@ definitions:
         type: array
     required:
     - knowledgePointId
-    - submissions
     type: object
   service.UpdateGoalRequest:
     properties:
@@ -3187,6 +3196,26 @@ paths:
       summary: 学生端：记录知识点学习时长
       tags:
       - 知识点
+  /api/knowledge-points/student/{id}/start:
+    post:
+      parameters:
+      - description: 知识点ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生端：开始答题 (启动计时)
+      tags:
+      - 知识点
   /api/knowledge-points/student/submit:
     post:
       consumes:
@@ -4510,6 +4539,88 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新知识点 (老师/管理员)
+      tags:
+      - 知识点
+  /api/teacher/knowledge-points/submissions:
+    get:
+      parameters:
+      - description: 知识点ID
+        in: query
+        name: knowledgePointId
+        type: string
+      - description: 审核状态 (pending, approved, rejected, unsubmitted)
+        in: query
+        name: status
+        type: string
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取所有学生提交的知识点测试 (老师/管理员)
+      tags:
+      - 知识点
+  /api/teacher/knowledge-points/submissions/{id}:
+    get:
+      parameters:
+      - description: 提交ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取学生提交的知识点测试详情 (老师/管理员)
+      tags:
+      - 知识点
+  /api/teacher/knowledge-points/submissions/{id}/audit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 提交ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: '状态 (status: approved 或 rejected, 可选 score: int 手动评分)'
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 审核学生提交的知识点测试 (老师/管理员)
       tags:
       - 知识点
   /api/teacher/learning-path/materials:

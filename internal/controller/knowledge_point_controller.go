@@ -3,6 +3,7 @@ package controller
 import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -102,6 +103,32 @@ func (c *KnowledgePointController) GetDetailForStudent(ctx *gin.Context) {
 	}
 
 	util.Success(ctx, resp)
+}
+
+// @Summary 学生端：开始答题 (启动计时)
+// @Tags 知识点
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "知识点ID"
+// @Success 200 {object} util.Response
+// @Router /api/knowledge-points/student/{id}/start [post]
+func (c *KnowledgePointController) StartExercises(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	id := ctx.Param("id")
+	startTime, err := c.Service.StartExercises(user.UserID, id)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, gin.H{
+		"startTime": startTime,
+	})
 }
 
 // @Summary 学生端：提交知识点测试结果 (包含题目、代码、执行结果)
@@ -208,4 +235,81 @@ func (c *KnowledgePointController) Delete(ctx *gin.Context) {
 	}
 
 	util.Success(ctx, gin.H{"deleted": id})
+}
+
+// @Summary 获取所有学生提交的知识点测试 (老师/管理员)
+// @Tags 知识点
+// @Produce json
+// @Security BearerAuth
+// @Param knowledgePointId query string false "知识点ID"
+// @Param status query string false "审核状态 (pending, approved, rejected, unsubmitted)"
+// @Param studentName query string false "学生姓名搜索"
+// @Param page query int false "页码" default(1)
+// @Param limit query int false "每页数量" default(10)
+// @Success 200 {object} util.Response
+// @Router /api/teacher/knowledge-points/submissions [get]
+func (c *KnowledgePointController) ListSubmissions(ctx *gin.Context) {
+	kpID := ctx.Query("knowledgePointId")
+	status := ctx.Query("status")
+	studentName := ctx.Query("studentName")
+	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "10"))
+
+	submissions, total, err := c.Service.ListSubmissions(kpID, status, studentName, page, limit)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, gin.H{
+		"items": submissions,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
+// @Summary 获取学生提交的知识点测试详情 (老师/管理员)
+// @Tags 知识点
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "提交ID"
+// @Success 200 {object} util.Response
+// @Router /api/teacher/knowledge-points/submissions/{id} [get]
+func (c *KnowledgePointController) GetSubmissionDetail(ctx *gin.Context) {
+	id := ctx.Param("id")
+	submission, err := c.Service.GetSubmissionDetail(id)
+	if err != nil {
+		util.NotFound(ctx)
+		return
+	}
+	util.Success(ctx, submission)
+}
+
+// @Summary 审核学生提交的知识点测试 (老师/管理员)
+// @Tags 知识点
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "提交ID"
+// @Param body body map[string]interface{} true "状态 (status: approved 或 rejected, 可选 score: int 手动评分)"
+// @Success 200 {object} util.Response
+// @Router /api/teacher/knowledge-points/submissions/{id}/audit [post]
+func (c *KnowledgePointController) AuditSubmission(ctx *gin.Context) {
+	id := ctx.Param("id")
+	var req struct {
+		Status string `json:"status" binding:"required"`
+		Score  *int   `json:"score"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
+	if err := c.Service.AuditSubmission(id, req.Status, req.Score); err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, "审核操作成功")
 }

@@ -97,10 +97,13 @@ type KnowledgePointSubmission struct {
 	UserID           uint   `gorm:"index" json:"userId"`
 	KnowledgePointID string `gorm:"index;type:varchar(36)" json:"knowledgePointId"`
 	// Details 存储 JSON 数组，包含每题的题目、类型、学生答案、代码内容、执行结果及系统初步判断
-	Details   string    `gorm:"type:longtext" json:"details"`
-	Score     int       `gorm:"default:0" json:"score"`                  // 系统初步计算的得分
-	Status    string    `gorm:"size:20;default:'pending'" json:"status"` // pending, approved, rejected
-	CreatedAt time.Time `json:"createdAt"`
+	Details      string    `gorm:"type:longtext" json:"details"`
+	Score        int       `gorm:"default:0" json:"score"`                  // 系统初步计算的得分
+	Status       string    `gorm:"size:20;default:'pending'" json:"status"` // pending, approved, rejected
+	IsAutoSubmit bool      `gorm:"default:false" json:"isAutoSubmit"`       // 是否为自动提交
+	Duration     int       `gorm:"default:0" json:"duration"`               // 答题耗时（秒）
+	StartedAt    time.Time `json:"startedAt"`                               // 开始答题时间
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 func (KnowledgePointSubmission) TableName() string {

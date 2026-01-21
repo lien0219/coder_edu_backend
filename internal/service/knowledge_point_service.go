@@ -57,7 +57,9 @@ type ExerciseSubmissionItem struct {
 
 type SubmitKnowledgePointExercisesRequest struct {
 	KnowledgePointID string                   `json:"knowledgePointId" binding:"required"`
-	Submissions      []ExerciseSubmissionItem `json:"submissions" binding:"required"`
+	Submissions      []ExerciseSubmissionItem `json:"submissions"`
+	IsAutoSubmit     bool                     `json:"isAutoSubmit"` // 是否为自动提交
+	Duration         int                      `json:"duration"`     // 答题时长（秒）
 }
 
 type KnowledgePointStudentResponse struct {
@@ -87,14 +89,16 @@ func (s *KnowledgePointService) ListKnowledgePointsForStudent(userID uint) ([]Kn
 		completionMap[c.KnowledgePointID] = c.IsCompleted
 	}
 
-	// 2. 获取提交状态 (学生是否点击过提交)
+	// 2. 获取提交状态 (如果最新一次提交被驳回，则视为未提交，允许重交)
 	var submissions []model.KnowledgePointSubmission
-	if err := s.db.Where("user_id = ?", userID).Find(&submissions).Error; err != nil {
+	if err := s.db.Where("user_id = ?", userID).Order("created_at ASC").Find(&submissions).Error; err != nil {
 		return nil, err
 	}
 	submissionMap := make(map[string]bool)
 	for _, sub := range submissions {
-		submissionMap[sub.KnowledgePointID] = true
+		// 采用覆盖逻辑，最后一次提交的状态决定了 IsSubmitted 的值
+		// 只有在已提交待审核或已通过时，才认为已提交
+		submissionMap[sub.KnowledgePointID] = sub.Status == "pending" || sub.Status == "approved"
 	}
 
 	var resp []KnowledgePointStudentResponse
@@ -124,16 +128,26 @@ func (s *KnowledgePointService) GetKnowledgePointForStudent(id string, userID ui
 	var completion model.KnowledgePointCompletion
 	isCompleted := s.db.Where("user_id = ? AND knowledge_point_id = ? AND is_completed = ?", userID, id, true).First(&completion).Error == nil
 
-	// 2. 检查并获取提交记录
+	// 2. 检查记录，仅获取现有状态，不再自动创建
 	var submission model.KnowledgePointSubmission
 	var submissionDetails interface{}
-	isSubmitted := s.db.Where("user_id = ? AND knowledge_point_id = ?", userID, id).Order("created_at DESC").First(&submission).Error == nil
+	var startTime time.Time
 
-	if isSubmitted {
-		// 解析 Details 字段
-		var details []interface{}
-		if err := json.Unmarshal([]byte(submission.Details), &details); err == nil {
-			submissionDetails = details
+	err := s.db.Where("user_id = ? AND knowledge_point_id = ?", userID, id).Order("created_at DESC").First(&submission).Error
+
+	isSubmitted := false
+	if err == nil {
+		// 如果已提交待审核或已通过，则返回提交详情
+		if submission.Status == "pending" || submission.Status == "approved" {
+			isSubmitted = true
+			var details []interface{}
+			if err := json.Unmarshal([]byte(submission.Details), &details); err == nil {
+				submissionDetails = details
+			}
+			startTime = submission.StartedAt
+		} else if submission.Status == "draft" {
+			// 如果是进行中的草稿，返回其开始时间供前端恢复倒计时
+			startTime = submission.StartedAt
 		}
 	}
 
@@ -141,8 +155,36 @@ func (s *KnowledgePointService) GetKnowledgePointForStudent(id string, userID ui
 		"knowledgePoint":    kp,
 		"isCompleted":       isCompleted,
 		"isSubmitted":       isSubmitted,
-		"submissionDetails": submissionDetails, // 如果没提交则为 null
+		"submissionDetails": submissionDetails,
+		"startTime":         startTime, // 如果没开始答题，则为零值
 	}, nil
+}
+
+func (s *KnowledgePointService) StartExercises(userID uint, id string) (time.Time, error) {
+	// 1. 检查是否已经有正在进行的计时或已提交的记录
+	var existing model.KnowledgePointSubmission
+	err := s.db.Where("user_id = ? AND knowledge_point_id = ?", userID, id).Order("created_at DESC").First(&existing).Error
+
+	// 2. 如果已经有记录且不是被驳回的状态，则直接返回原有的开始时间（防止重复点按钮重置时间）
+	if err == nil && existing.Status != "rejected" {
+		return existing.StartedAt, nil
+	}
+
+	// 3. 真正的开启计时逻辑：创建草稿记录
+	startTime := time.Now()
+	newDraft := model.KnowledgePointSubmission{
+		ID:               uuid.New().String(),
+		UserID:           userID,
+		KnowledgePointID: id,
+		Status:           "draft",
+		StartedAt:        startTime,
+		CreatedAt:        startTime,
+	}
+
+	if err := s.db.Create(&newDraft).Error; err != nil {
+		return time.Time{}, err
+	}
+	return startTime, nil
 }
 
 func (s *KnowledgePointService) SubmitExercises(userID uint, req SubmitKnowledgePointExercisesRequest) (interface{}, error) {
@@ -204,17 +246,34 @@ func (s *KnowledgePointService) SubmitExercises(userID uint, req SubmitKnowledge
 	}
 
 	detailsJSON, _ := json.Marshal(detailedResults)
-	submission := model.KnowledgePointSubmission{
-		ID:               uuid.New().String(),
-		UserID:           userID,
-		KnowledgePointID: kp.ID,
-		Details:          string(detailsJSON),
-		Score:            totalScore,
-		Status:           "pending",
-		CreatedAt:        time.Now(),
+
+	// 查找该知识点的“草稿”记录进行更新
+	var submission model.KnowledgePointSubmission
+	err := s.db.Where("user_id = ? AND knowledge_point_id = ? AND status = ?", userID, req.KnowledgePointID, "draft").Order("created_at DESC").First(&submission).Error
+
+	if err != nil {
+		// 如果没找到草稿（极端情况），则创建新记录
+		submission = model.KnowledgePointSubmission{
+			ID:               uuid.New().String(),
+			UserID:           userID,
+			KnowledgePointID: req.KnowledgePointID,
+			StartedAt:        time.Now(),
+		}
 	}
 
-	if err := s.db.Create(&submission).Error; err != nil {
+	submission.Details = string(detailsJSON)
+	submission.Score = totalScore
+	submission.Status = "pending"
+	submission.IsAutoSubmit = req.IsAutoSubmit
+	// 如果前端没传 Duration，后端根据开始时间算一个
+	if req.Duration > 0 {
+		submission.Duration = req.Duration
+	} else {
+		submission.Duration = int(time.Since(submission.StartedAt).Seconds())
+	}
+	submission.CreatedAt = time.Now()
+
+	if err := s.db.Save(&submission).Error; err != nil {
 		return nil, err
 	}
 
@@ -378,6 +437,12 @@ func (s *KnowledgePointService) UpdateKnowledgePoint(id string, req CreateKnowle
 			kp.Exercises = append(kp.Exercises, exercise)
 		}
 
+		// 当老师保存编辑后，清理掉该知识点下所有“正在进行中”的草稿记录
+		// 强制正在答题的学生下次进入时重新同步新版本的题目和计时规则
+		if err := tx.Where("knowledge_point_id = ? AND status = ?", id, "draft").Delete(&model.KnowledgePointSubmission{}).Error; err != nil {
+			return err
+		}
+
 		return nil
 	})
 
@@ -390,16 +455,180 @@ func (s *KnowledgePointService) UpdateKnowledgePoint(id string, req CreateKnowle
 
 func (s *KnowledgePointService) DeleteKnowledgePoint(id string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		// 1. 删除关联的视频
 		if err := tx.Where("knowledge_point_id = ?", id).Delete(&model.KnowledgePointVideo{}).Error; err != nil {
 			return err
 		}
 
+		// 2. 删除关联的练习题
 		if err := tx.Where("knowledge_point_id = ?", id).Delete(&model.KnowledgePointExercise{}).Error; err != nil {
 			return err
 		}
 
+		// 3. 删除学生的完成状态
+		if err := tx.Where("knowledge_point_id = ?", id).Delete(&model.KnowledgePointCompletion{}).Error; err != nil {
+			return err
+		}
+
+		// 4. 删除学生的提交记录及答题数据
+		if err := tx.Where("knowledge_point_id = ?", id).Delete(&model.KnowledgePointSubmission{}).Error; err != nil {
+			return err
+		}
+
+		// 5. 最后删除知识点本体
 		if err := tx.Delete(&model.KnowledgePoint{}, "id = ?", id).Error; err != nil {
 			return err
+		}
+
+		return nil
+	})
+}
+
+type SubmissionListResponse struct {
+	ID                  string    `json:"id"`
+	UserID              uint      `json:"userId"`
+	UserName            string    `json:"userName"`
+	KnowledgePointID    string    `json:"knowledgePointId"`
+	KnowledgePointTitle string    `json:"knowledgePointTitle"`
+	Score               int       `json:"score"`
+	Status              string    `json:"status"`
+	CreatedAt           time.Time `json:"createdAt"`
+}
+
+func (s *KnowledgePointService) ListSubmissions(kpID string, status string, studentName string, page int, limit int) ([]SubmissionListResponse, int64, error) {
+	// 1. 获取所有学生总数
+	var total int64
+	studentQuery := s.db.Model(&model.User{}).Where("role = ?", model.Student)
+	if studentName != "" {
+		studentQuery = studentQuery.Where("name LIKE ?", "%"+studentName+"%")
+	}
+	studentQuery.Count(&total)
+
+	// 2. 分页获取学生
+	var students []model.User
+	offset := (page - 1) * limit
+	if err := studentQuery.
+		Order("id ASC").
+		Offset(offset).
+		Limit(limit).
+		Find(&students).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var res []SubmissionListResponse
+
+	// 3. 遍历分页后的学生，查询其提交记录
+	for _, student := range students {
+		var subs []model.KnowledgePointSubmission
+		db := s.db.Where("user_id = ?", student.ID)
+
+		if kpID != "" {
+			db = db.Where("knowledge_point_id = ?", kpID)
+		}
+		if status != "" {
+			db = db.Where("status = ?", status)
+		}
+
+		// 获取该学生匹配条件的提交记录
+		if err := db.Order("created_at DESC").Find(&subs).Error; err != nil {
+			continue
+		}
+
+		if len(subs) > 0 {
+			for _, sub := range subs {
+				var kp model.KnowledgePoint
+				s.db.Select("title").First(&kp, "id = ?", sub.KnowledgePointID)
+
+				res = append(res, SubmissionListResponse{
+					ID:                  sub.ID,
+					UserID:              student.ID,
+					UserName:            student.Name,
+					KnowledgePointID:    sub.KnowledgePointID,
+					KnowledgePointTitle: kp.Title,
+					Score:               sub.Score,
+					Status:              sub.Status,
+					CreatedAt:           sub.CreatedAt,
+				})
+			}
+		} else if status == "" || status == "unsubmitted" {
+			title := "待分配"
+			if kpID != "" {
+				var kp model.KnowledgePoint
+				s.db.Select("title").First(&kp, "id = ?", kpID)
+				title = kp.Title
+			}
+
+			res = append(res, SubmissionListResponse{
+				ID:                  "",
+				UserID:              student.ID,
+				UserName:            student.Name,
+				KnowledgePointID:    kpID,
+				KnowledgePointTitle: title,
+				Score:               0,
+				Status:              "unsubmitted",
+				CreatedAt:           time.Time{},
+			})
+		}
+	}
+
+	return res, total, nil
+}
+
+func (s *KnowledgePointService) GetSubmissionDetail(id string) (*model.KnowledgePointSubmission, error) {
+	var sub model.KnowledgePointSubmission
+	if err := s.db.First(&sub, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &sub, nil
+}
+
+func (s *KnowledgePointService) AuditSubmission(id string, status string, manualScore *int) error {
+	if status != "approved" && status != "rejected" {
+		return fmt.Errorf("invalid status")
+	}
+
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var sub model.KnowledgePointSubmission
+		if err := tx.First(&sub, "id = ?", id).Error; err != nil {
+			return err
+		}
+
+		// 记录原始状态，用于判断是否需要发放积分
+		oldStatus := sub.Status
+
+		// 如果老师提供了手动分数，更新提交记录中的分数
+		finalScore := sub.Score
+		if manualScore != nil {
+			finalScore = *manualScore
+			if err := tx.Model(&sub).Update("score", finalScore).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Model(&sub).Update("status", status).Error; err != nil {
+			return err
+		}
+
+		// 如果审核通过，且之前不是已通过状态，则更新完成状态并按最终分数发放积分
+		if status == "approved" && oldStatus != "approved" {
+			completion := model.KnowledgePointCompletion{
+				UserID:           sub.UserID,
+				KnowledgePointID: sub.KnowledgePointID,
+				IsCompleted:      true,
+				CompletedAt:      time.Now(),
+			}
+			if err := tx.Save(&completion).Error; err != nil {
+				return err
+			}
+
+			var user model.User
+			if err := tx.First(&user, sub.UserID).Error; err != nil {
+				return err
+			}
+			user.Points += finalScore // 发放到独立积分系统
+			if err := tx.Save(&user).Error; err != nil {
+				return err
+			}
 		}
 
 		return nil

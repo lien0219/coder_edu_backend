@@ -243,6 +243,25 @@ func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *reposito
 
 	router.GET("/metrics", monitoring.PrometheusHandler())
 
+	// 1. 公共路由 (无需登录)
+	a.registerPublicRoutes(router, c)
+
+	// 2. 需要授权的路由
+	authGroup := router.Group("/api")
+	authGroup.Use(middleware.AuthMiddleware(), middleware.ActivityMiddleware(repos.user))
+	{
+		// 学生/通用 授权接口
+		a.registerStudentRoutes(authGroup, c)
+
+		// 教师相关接口
+		a.registerTeacherRoutes(authGroup, c)
+	}
+
+	// 3. 管理员相关接口
+	a.registerAdminRoutes(router, c)
+}
+
+func (a *App) registerPublicRoutes(router *gin.Engine, c *controllers) {
 	public := router.Group("/api")
 	{
 		public.GET("/health", c.health.HealthCheck)
@@ -256,135 +275,134 @@ func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *reposito
 	{
 		publicAPI.POST("/c-programming/questions/:questionId/submit", c.cProgramming.SubmitExerciseAnswerPublic)
 	}
+}
 
-	auth := router.Group("/api")
-	auth.Use(middleware.AuthMiddleware(), middleware.ActivityMiddleware(repos.user))
-	{
-		auth.GET("/profile", c.auth.GetProfile)
-		auth.GET("/resources", c.content.GetResources)
-		// 知识点标签列表
-		auth.GET("/knowledge-tags", c.knowledgeTag.ListTags)
+func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
+	rg.GET("/profile", c.auth.GetProfile)
+	rg.GET("/resources", c.content.GetResources)
+	rg.GET("/knowledge-tags", c.knowledgeTag.ListTags)
+	rg.GET("/dashboard", c.dashboard.GetDashboard)
+	rg.GET("/dashboard/today-tasks", c.dashboard.GetTodayTasks)
+	rg.PATCH("/dashboard/tasks/:taskId", c.dashboard.UpdateTaskStatus)
 
-		auth.GET("/dashboard", c.dashboard.GetDashboard)
-		auth.GET("/dashboard/today-tasks", c.dashboard.GetTodayTasks)
-		auth.PATCH("/dashboard/tasks/:taskId", c.dashboard.UpdateTaskStatus)
+	// 知识点相关
+	rg.GET("/knowledge-points/student", c.knowledgePoint.ListForStudent)
+	rg.GET("/knowledge-points/ranking", c.knowledgePoint.GetRanking)
+	rg.GET("/knowledge-points/student/:id", c.knowledgePoint.GetDetailForStudent)
+	rg.POST("/knowledge-points/student/:id/start", c.knowledgePoint.StartExercises)
+	rg.POST("/knowledge-points/student/submit", c.knowledgePoint.SubmitExercises)
+	rg.POST("/knowledge-points/student/:id/learning-time", c.knowledgePoint.RecordLearningTime)
 
-		// 知识点列表 (学生)
-		auth.GET("/knowledge-points/student", c.knowledgePoint.ListForStudent)
-		auth.GET("/knowledge-points/ranking", c.knowledgePoint.GetRanking)
-		auth.GET("/knowledge-points/student/:id", c.knowledgePoint.GetDetailForStudent)
-		auth.POST("/knowledge-points/student/:id/start", c.knowledgePoint.StartExercises)
-		auth.POST("/knowledge-points/student/submit", c.knowledgePoint.SubmitExercises)
-		auth.POST("/knowledge-points/student/:id/learning-time", c.knowledgePoint.RecordLearningTime)
+	// 学习相关
+	rg.GET("/learning/pre-class", c.learning.GetPreClass)
+	rg.GET("/learning/in-class", c.learning.GetInClass)
+	rg.GET("/learning/post-class", c.learning.GetPostClass)
+	rg.POST("/learning/learning-log", c.learning.SubmitLearningLog)
+	rg.POST("/learning/quiz/:quizId", c.learning.SubmitQuiz)
+	rg.POST("/learning/run-code", c.learning.ExecuteCode)
 
-		auth.GET("/learning/pre-class", c.learning.GetPreClass)
-		auth.GET("/learning/in-class", c.learning.GetInClass)
-		auth.GET("/learning/post-class", c.learning.GetPostClass)
-		auth.POST("/learning/learning-log", c.learning.SubmitLearningLog)
-		auth.POST("/learning/quiz/:quizId", c.learning.SubmitQuiz)
-		auth.POST("/learning/run-code", c.learning.ExecuteCode)
+	// 成就/目标
+	rg.GET("/achievements", c.achievement.GetUserAchievements)
+	rg.GET("/achievements/leaderboard", c.achievement.GetLeaderboard)
+	rg.GET("/achievements/goals", c.achievement.GetUserGoals)
+	rg.POST("/achievements/goals", c.achievement.CreateGoal)
+	rg.PATCH("/achievements/goals/:goalId", c.achievement.UpdateGoalProgress)
 
-		auth.GET("/achievements", c.achievement.GetUserAchievements)
-		auth.GET("/achievements/leaderboard", c.achievement.GetLeaderboard)
-		auth.GET("/achievements/goals", c.achievement.GetUserGoals)
-		auth.POST("/achievements/goals", c.achievement.CreateGoal)
-		auth.PATCH("/achievements/goals/:goalId", c.achievement.UpdateGoalProgress)
+	// 社区
+	rg.GET("/community/posts", c.community.GetPosts)
+	rg.POST("/community/posts", c.community.CreatePost)
+	rg.GET("/community/questions", c.community.GetQuestions)
+	rg.POST("/community/questions", c.community.CreateQuestion)
+	rg.POST("/community/questions/:questionId/answers", c.community.AnswerQuestion)
+	rg.POST("/community/:type/:id/upvote", c.community.Upvote)
 
-		auth.GET("/community/posts", c.community.GetPosts)
-		auth.POST("/community/posts", c.community.CreatePost)
-		auth.GET("/community/questions", c.community.GetQuestions)
-		auth.POST("/community/questions", c.community.CreateQuestion)
-		auth.POST("/community/questions/:questionId/answers", c.community.AnswerQuestion)
-		auth.POST("/community/:type/:id/upvote", c.community.Upvote)
+	// 分析
+	rg.GET("/analytics/overview", c.analytics.GetOverview)
+	rg.GET("/analytics/progress", c.analytics.GetProgress)
+	rg.GET("/analytics/challenges/weekly", c.analytics.GetWeeklyChallengeStats)
+	rg.GET("/analytics/skills", c.analytics.GetSkills)
+	rg.GET("/analytics/abilities", c.analytics.GetAbilities)
+	rg.GET("/analytics/levels/:levelId/curve", c.analytics.GetLevelCurve)
+	rg.GET("/analytics/recommendations", c.analytics.GetRecommendations)
+	rg.POST("/analytics/session/start", c.analytics.StartSession)
+	rg.POST("/analytics/session/:sessionId/end", c.analytics.EndSession)
 
-		auth.GET("/analytics/overview", c.analytics.GetOverview)
-		auth.GET("/analytics/progress", c.analytics.GetProgress)
-		auth.GET("/analytics/challenges/weekly", c.analytics.GetWeeklyChallengeStats)
-		auth.GET("/analytics/skills", c.analytics.GetSkills)
-		auth.GET("/analytics/abilities", c.analytics.GetAbilities)
-		auth.GET("/analytics/levels/:levelId/curve", c.analytics.GetLevelCurve)
-		auth.GET("/analytics/recommendations", c.analytics.GetRecommendations)
-		auth.POST("/analytics/session/start", c.analytics.StartSession)
-		auth.POST("/analytics/session/:sessionId/end", c.analytics.EndSession)
+	// 关卡挑战
+	rg.GET("/levels/student", c.level.GetStudentLevels)
+	rg.GET("/levels/student/:id", c.level.GetStudentLevelDetail)
+	rg.GET("/levels/student/:id/questions", c.level.GetStudentLevelQuestions)
+	rg.GET("/levels/basic-info", c.level.GetAllLevelsBasicInfo)
+	rg.POST("/levels/:id/attempts/start", c.level.StartAttempt)
+	rg.POST("/levels/:id/attempts/:attemptId/submit", c.level.BatchSubmitAnswers)
+	rg.POST("/attempts/:id/submit", c.level.SubmitAttempt)
+	rg.GET("/levels/ranking", c.level.GetLevelRanking)
+	rg.GET("/users/:userId/level-total-score", c.level.GetUserLevelTotalScore)
+	rg.GET("/users/:userId/level-stats", c.level.GetUserLevelStats)
 
-		// 关卡挑战（学生）
-		auth.GET("/levels/student", c.level.GetStudentLevels)
-		auth.GET("/levels/student/:id", c.level.GetStudentLevelDetail)
-		auth.GET("/levels/student/:id/questions", c.level.GetStudentLevelQuestions)
-		auth.GET("/levels/basic-info", c.level.GetAllLevelsBasicInfo)
-		auth.POST("/levels/:id/attempts/start", c.level.StartAttempt)
-		auth.POST("/levels/:id/attempts/:attemptId/submit", c.level.BatchSubmitAnswers)
-		auth.POST("/attempts/:id/submit", c.level.SubmitAttempt)
-		auth.GET("/levels/ranking", c.level.GetLevelRanking)
-		auth.GET("/users/:userId/level-total-score", c.level.GetUserLevelTotalScore)
-		auth.GET("/users/:userId/level-stats", c.level.GetUserLevelStats)
+	// C语言资源
+	rg.GET("/c-programming/resources", c.cProgramming.GetResources)
+	rg.GET("/c-programming/resources/full", c.cProgramming.GetResourcesWithAllContent)
+	rg.GET("/c-programming/resources/:id", c.cProgramming.GetResourceByID)
+	rg.GET("/c-programming/resources/:id/categories", c.cProgramming.GetCategoriesByResourceID)
+	rg.GET("/c-programming/categories/:categoryId/questions", c.cProgramming.GetQuestionsByCategoryID)
+	rg.GET("/c-programming/categories/:categoryId/questions-with-status", c.cProgramming.GetQuestionsByCategoryIDWithUserStatus)
+	rg.GET("/c-programming/resources/:id/videos", c.cProgramming.GetVideosByResourceID)
+	rg.GET("/c-programming/resources/:id/articles", c.cProgramming.GetArticlesByResourceID)
+	rg.GET("/c-programming/exercises/users/:userID/questions/:questionID/submission", c.cProgramming.CheckUserSubmittedQuestion)
 
-		auth.GET("/c-programming/resources", c.cProgramming.GetResources)
-		auth.GET("/c-programming/resources/full", c.cProgramming.GetResourcesWithAllContent)
-		auth.GET("/c-programming/resources/:id", c.cProgramming.GetResourceByID)
-		auth.GET("/c-programming/resources/:id/categories", c.cProgramming.GetCategoriesByResourceID)
-		auth.GET("/c-programming/categories/:categoryId/questions", c.cProgramming.GetQuestionsByCategoryID)
-		auth.GET("/c-programming/categories/:categoryId/questions-with-status", c.cProgramming.GetQuestionsByCategoryIDWithUserStatus)
-		auth.GET("/c-programming/resources/:id/videos", c.cProgramming.GetVideosByResourceID)
-		auth.GET("/c-programming/resources/:id/articles", c.cProgramming.GetArticlesByResourceID)
+	// 用户相关
+	rg.POST("/users/checkin", c.user.Checkin)
+	rg.GET("/users/checkin/stats", c.user.GetCheckinStats)
+	rg.GET("/users/stats", c.user.GetUserStats)
+	rg.GET("/users/level-status", c.user.GetLevelStatus)
+	rg.POST("/users/:id/points", middleware.RoleMiddleware(model.Student, model.Teacher, model.Admin), c.user.UpdateUserPoints)
 
-		auth.GET("/c-programming/exercises/users/:userID/questions/:questionID/submission", c.cProgramming.CheckUserSubmittedQuestion)
+	// 资源进度
+	rg.GET("/c-programming/resource-progress/:resourceId", c.cProgramming.GetResourceModuleWithProgress)
+	rg.POST("/c-programming/resource-progress/:resourceId/completion", c.cProgramming.UpdateResourceCompletionStatus)
+	rg.GET("/c-programming/resource-progress/unfinished", c.cProgramming.GetUnfinishedResourceModules)
+	rg.GET("/c-programming/resource-progress/all", c.cProgramming.GetAllResourceModulesWithProgress)
 
-		auth.POST("/users/checkin", c.user.Checkin)
-		auth.GET("/users/checkin/stats", c.user.GetCheckinStats)
-		auth.GET("/users/stats", c.user.GetUserStats)
-		auth.GET("/users/level-status", c.user.GetLevelStatus)
-		auth.POST("/users/:id/points", middleware.RoleMiddleware(model.Student, model.Teacher, model.Admin), c.user.UpdateUserPoints)
+	// 学习目标
+	rg.GET("/learning-goals/resources", c.learningGoal.GetRecommendedResourceModules)
+	rg.GET("/learning-goals", c.learningGoal.GetUserGoals)
+	rg.GET("/learning-goals/type", c.learningGoal.GetUserGoalsByType)
+	rg.POST("/learning-goals", c.learningGoal.CreateGoal)
+	rg.GET("/learning-goals/:id", c.learningGoal.GetGoalByID)
+	rg.PUT("/learning-goals/:id", c.learningGoal.UpdateGoal)
+	rg.DELETE("/learning-goals/:id", c.learningGoal.DeleteGoal)
+	rg.GET("/learning-goals/:id/details", c.learningGoal.GetGoalDetails)
 
-		// 资源进度相关路由
-		auth.GET("/c-programming/resource-progress/:resourceId", c.cProgramming.GetResourceModuleWithProgress)
-		auth.POST("/c-programming/resource-progress/:resourceId/completion", c.cProgramming.UpdateResourceCompletionStatus)
-		auth.GET("/c-programming/resource-progress/unfinished", c.cProgramming.GetUnfinishedResourceModules)
-		auth.GET("/c-programming/resource-progress/all", c.cProgramming.GetAllResourceModulesWithProgress)
+	// 任务相关
+	rg.GET("/tasks/today", c.task.GetTodayTasks)
+	rg.POST("/tasks/:taskItemId/completion", c.task.UpdateTaskCompletion)
 
-		// 学习目标相关路由
-		auth.GET("/learning-goals/resources", c.learningGoal.GetRecommendedResourceModules)
-		auth.GET("/learning-goals", c.learningGoal.GetUserGoals)
-		auth.GET("/learning-goals/type", c.learningGoal.GetUserGoalsByType)
-		auth.POST("/learning-goals", c.learningGoal.CreateGoal)
-		auth.GET("/learning-goals/:id", c.learningGoal.GetGoalByID)
-		auth.PUT("/learning-goals/:id", c.learningGoal.UpdateGoal)
-		auth.DELETE("/learning-goals/:id", c.learningGoal.DeleteGoal)
-		auth.GET("/learning-goals/:id/details", c.learningGoal.GetGoalDetails)
+	// 教师建议
+	rg.GET("/suggestions", c.suggestion.ListStudentSuggestions)
+	rg.POST("/suggestions/:id/complete", c.suggestion.CompleteSuggestion)
 
-		// 学生获取今天任务
-		auth.GET("/tasks/today", c.task.GetTodayTasks)
-		// 更新任务完成状态
-		auth.POST("/tasks/:taskItemId/completion", c.task.UpdateTaskCompletion)
+	// 学前测试
+	rg.GET("/assessments/questions", c.assessment.GetStudentQuestions)
+	rg.POST("/assessments/submit", c.assessment.SubmitAssessment)
+	rg.GET("/assessments/result", c.assessment.GetMyResult)
 
-		// 教师建议（学生）
-		auth.GET("/suggestions", c.suggestion.ListStudentSuggestions)
-		auth.POST("/suggestions/:id/complete", c.suggestion.CompleteSuggestion)
+	// 学习路径
+	rg.GET("/learning-path/student", c.learningPath.GetStudentPath)
+	rg.GET("/learning-path/levels/:level/materials", c.learningPath.GetMaterialsByLevel)
+	rg.POST("/learning-path/materials/:id/learning-time", c.learningPath.RecordLearningTime)
+	rg.POST("/learning-path/materials/:id/complete", c.learningPath.CompleteMaterial)
+}
 
-		// 学前测试题（学生）
-		auth.GET("/assessments/questions", c.assessment.GetStudentQuestions)
-		auth.POST("/assessments/submit", c.assessment.SubmitAssessment)
-		auth.GET("/assessments/result", c.assessment.GetMyResult)
-
-		// 学习路径（学生）
-		auth.GET("/learning-path/student", c.learningPath.GetStudentPath)
-		auth.GET("/learning-path/levels/:level/materials", c.learningPath.GetMaterialsByLevel)
-		auth.POST("/learning-path/materials/:id/learning-time", c.learningPath.RecordLearningTime)
-		auth.POST("/learning-path/materials/:id/complete", c.learningPath.CompleteMaterial)
-	}
-
-	teacher := auth.Group("/teacher")
-	// 允许 Teacher / Admin / Student 访问教师相关的周任务接口（暂时放宽校验）
+func (a *App) registerTeacherRoutes(rg *gin.RouterGroup, c *controllers) {
+	teacher := rg.Group("/teacher")
 	teacher.Use(middleware.RoleMiddleware(model.Teacher, model.Admin, model.Student))
 	{
 		// 周任务
 		teacher.POST("/tasks/weekly", c.task.SetWeeklyTask)
-		// 获取周任务列表
 		teacher.GET("/tasks/weekly", c.task.GetWeeklyTasks)
-		// 获取当前周任务
 		teacher.GET("/tasks/weekly/current", c.task.GetCurrentWeekTask)
-		// 删除周任务
 		teacher.DELETE("/tasks/weekly/:taskId", c.task.DeleteWeeklyTask)
+
 		// 关卡管理
 		teacher.POST("/levels", c.level.CreateLevel)
 		teacher.GET("/levels", c.level.ListLevels)
@@ -396,26 +414,30 @@ func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *reposito
 		teacher.POST("/levels/bulk", c.level.BulkUpdate)
 		teacher.GET("/levels/:id/versions", c.level.GetVersions)
 		teacher.POST("/levels/:id/versions/:versionId/rollback", c.level.RollbackVersion)
-		// question management
+
+		// 题目管理
 		teacher.POST("/levels/:id/questions", c.level.CreateQuestion)
 		teacher.PUT("/levels/:id/questions/:qid", c.level.UpdateQuestion)
 		teacher.DELETE("/levels/:id/questions/:qid", c.level.DeleteQuestion)
-		// grading
+
+		// 评分相关
 		teacher.GET("/levels/:id/attempts/pending-grading", c.grade.ListPendingGrading)
 		teacher.POST("/levels/:id/attempts/:attemptId/grade", c.grade.GradeAttempt)
-		// student progress for suggestions
+
+		// 学生进度
 		teacher.GET("/students/progress", c.suggestion.ListStudentsProgress)
 		teacher.GET("/students/:id/progress", c.suggestion.GetStudentProgress)
-		// attempts stats
+
+		// 尝试统计
 		teacher.GET("/levels/:id/attempts/stats", c.level.GetAttemptStats)
-		// attempts
 		teacher.POST("/levels/:id/attempts/start", c.level.StartAttempt)
 		teacher.POST("/levels/:id/attempts/:attemptId/submit", c.level.SubmitAttempt)
-		// visibility & scheduling
+
+		// 可见性与排期
 		teacher.PUT("/levels/:id/visibility", c.level.UpdateVisibility)
 		teacher.POST("/levels/:id/schedule_publish", c.level.SchedulePublish)
 
-		// 教师建议管理
+		// 建议管理
 		teacher.POST("/suggestions", c.suggestion.CreateSuggestion)
 		teacher.PUT("/suggestions/:id", c.suggestion.UpdateSuggestion)
 		teacher.GET("/suggestions", c.suggestion.ListTeacherSuggestions)
@@ -431,7 +453,7 @@ func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *reposito
 		teacher.PUT("/assessments/questions/:id", c.assessment.UpdateQuestion)
 		teacher.DELETE("/assessments/questions/:id", c.assessment.DeleteQuestion)
 
-		// 学前测试提交管理
+		// 提交管理
 		teacher.GET("/assessments/submissions", c.assessment.ListSubmissions)
 		teacher.GET("/assessments/submissions/:id", c.assessment.GetSubmissionDetail)
 		teacher.POST("/assessments/submissions/:id/grade", c.assessment.GradeSubmission)
@@ -446,14 +468,14 @@ func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *reposito
 		teacher.GET("/knowledge-points/points-list", c.knowledgePoint.GetStudentsPointsList)
 		teacher.POST("/knowledge-points/reward", c.knowledgePoint.RewardStudents)
 
-		// 知识点学生提交审核
+		// 知识点审核
 		teacher.GET("/knowledge-points/submissions", c.knowledgePoint.ListSubmissions)
 		teacher.GET("/knowledge-points/submissions/:id", c.knowledgePoint.GetSubmissionDetail)
 		teacher.POST("/knowledge-points/submissions/:id/audit", c.knowledgePoint.AuditSubmission)
 	}
 
-	// 学习路径管理 (仅限老师和管理员)
-	learningPath := auth.Group("/teacher/learning-path")
+	// 学习路径管理
+	learningPath := rg.Group("/teacher/learning-path")
 	learningPath.Use(middleware.RoleMiddleware(model.Teacher, model.Admin))
 	{
 		learningPath.POST("/materials", c.learningPath.CreateMaterial)
@@ -462,7 +484,9 @@ func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *reposito
 		learningPath.PUT("/materials/:id", c.learningPath.UpdateMaterial)
 		learningPath.DELETE("/materials/:id", c.learningPath.DeleteMaterial)
 	}
+}
 
+func (a *App) registerAdminRoutes(router *gin.Engine, c *controllers) {
 	admin := router.Group("/api/admin")
 	admin.Use(middleware.AuthMiddleware())
 	{

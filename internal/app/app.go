@@ -14,7 +14,6 @@ import (
 	"coder_edu_backend/pkg/tracing"
 	"context"
 	"log"
-	"strconv"
 	"time"
 
 	"coder_edu_backend/docs"
@@ -33,11 +32,501 @@ type App struct {
 	configCallbacks []func(*config.Config)
 }
 
+type repositories struct {
+	user               *repository.UserRepository
+	resource           *repository.ResourceRepository
+	task               *repository.TaskRepository
+	goal               *repository.GoalRepository
+	module             *repository.ModuleRepository
+	progress           *repository.ProgressRepository
+	learningLog        *repository.LearningLogRepository
+	quiz               *repository.QuizRepository
+	achievement        *repository.AchievementRepository
+	post               *repository.PostRepository
+	question           *repository.QuestionRepository
+	answer             *repository.AnswerRepository
+	session            *repository.SessionRepository
+	skill              *repository.SkillRepository
+	recommendation     *repository.RecommendationRepository
+	motivation         *repository.MotivationRepository
+	cProgrammingRes    *repository.CProgrammingResourceRepository
+	exerciseCategory   *repository.ExerciseCategoryRepository
+	exerciseQuestion   *repository.ExerciseQuestionRepository
+	exerciseSubmission *repository.ExerciseSubmissionRepository
+	checkin            *repository.CheckinRepository
+	resourceCompletion *repository.ResourceCompletionRepository
+	level              *repository.LevelRepository
+	levelAttempt       *repository.LevelAttemptRepository
+	knowledgeTag       *repository.KnowledgeTagRepository
+	suggestion         *repository.SuggestionRepository
+	assessment         *repository.AssessmentRepository
+	learningPath       *repository.LearningPathRepository
+}
+
+type services struct {
+	auth                 *service.AuthService
+	content              *service.ContentService
+	motivation           *service.MotivationService
+	dashboard            *service.DashboardService
+	learning             *service.LearningService
+	achievement          *service.AchievementService
+	community            *service.CommunityService
+	analytics            *service.AnalyticsService
+	user                 *service.UserService
+	task                 *service.TaskService
+	cProgrammingResource *service.CProgrammingResourceService
+	level                *service.LevelService
+	knowledgeTag         *service.KnowledgeTagService
+	suggestion           *service.SuggestionService
+	assessment           *service.AssessmentService
+	learningPath         *service.LearningPathService
+	knowledgePoint       *service.KnowledgePointService
+	learningGoal         *service.LearningGoalService
+}
+
+type controllers struct {
+	auth           *controller.AuthController
+	content        *controller.ContentController
+	motivation     *controller.MotivationController
+	dashboard      *controller.DashboardController
+	learning       *controller.LearningController
+	achievement    *controller.AchievementController
+	community      *controller.CommunityController
+	analytics      *controller.AnalyticsController
+	user           *controller.UserController
+	cProgramming   *controller.CProgrammingResourceController
+	learningGoal   *controller.LearningGoalController
+	task           *controller.TaskController
+	level          *controller.LevelController
+	grade          *controller.GradeController
+	suggestion     *controller.SuggestionController
+	assessment     *controller.AssessmentController
+	learningPath   *controller.LearningPathController
+	knowledgePoint *controller.KnowledgePointController
+	knowledgeTag   *controller.KnowledgeTagController
+	health         *controller.HealthController
+}
+
 func (a *App) RegisterConfigCallback(callback func(*config.Config)) {
 	a.configCallbacks = append(a.configCallbacks, callback)
 }
-func NewApp(cfg *config.Config) *App {
 
+func (a *App) initRepositories(db *gorm.DB) *repositories {
+	return &repositories{
+		user:               repository.NewUserRepository(db),
+		resource:           repository.NewResourceRepository(db),
+		task:               repository.NewTaskRepository(db),
+		goal:               repository.NewGoalRepository(db),
+		module:             repository.NewModuleRepository(db),
+		progress:           repository.NewProgressRepository(db),
+		learningLog:        repository.NewLearningLogRepository(db),
+		quiz:               repository.NewQuizRepository(db),
+		achievement:        repository.NewAchievementRepository(db),
+		post:               repository.NewPostRepository(db),
+		question:           repository.NewQuestionRepository(db),
+		answer:             repository.NewAnswerRepository(db),
+		session:            repository.NewSessionRepository(db),
+		skill:              repository.NewSkillRepository(db),
+		recommendation:     repository.NewRecommendationRepository(db),
+		motivation:         repository.NewMotivationRepository(db),
+		cProgrammingRes:    repository.NewCProgrammingResourceRepository(db),
+		exerciseCategory:   repository.NewExerciseCategoryRepository(db),
+		exerciseQuestion:   repository.NewExerciseQuestionRepository(db),
+		exerciseSubmission: repository.NewExerciseSubmissionRepository(db),
+		checkin:            repository.NewCheckinRepository(db),
+		resourceCompletion: repository.NewResourceCompletionRepository(db),
+		level:              repository.NewLevelRepository(db),
+		levelAttempt:       repository.NewLevelAttemptRepository(db),
+		knowledgeTag:       repository.NewKnowledgeTagRepository(db),
+		suggestion:         repository.NewSuggestionRepository(db),
+		assessment:         repository.NewAssessmentRepository(db),
+		learningPath:       repository.NewLearningPathRepository(db),
+	}
+}
+
+func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB) *services {
+	s := &services{}
+
+	s.auth = service.NewAuthService(repos.user, cfg)
+	s.content = service.NewContentService(repos.resource, cfg)
+	s.motivation = service.NewMotivationService(repos.motivation)
+	s.dashboard = service.NewDashboardService(repos.user, repos.task, repos.resource, repos.goal, s.motivation)
+	s.learning = service.NewLearningService(repos.module, repos.task, repos.resource, repos.progress, repos.learningLog, repos.quiz, cfg, db)
+	s.achievement = service.NewAchievementService(repos.achievement, repos.user, repos.goal)
+	s.community = service.NewCommunityService(repos.post, nil, repos.question, repos.answer, repos.user)
+	s.analytics = service.NewAnalyticsService(repos.progress, repos.session, repos.skill, repos.learningLog, repos.recommendation, repos.levelAttempt, db)
+	s.user = service.NewUserServiceWithDB(repos.user, repos.checkin, db)
+
+	s.task = service.NewTaskService(
+		repos.task,
+		repos.resource,
+		repos.exerciseQuestion,
+		repos.cProgrammingRes,
+		repos.goal,
+	)
+
+	s.cProgrammingResource = service.NewCProgrammingResourceService(
+		repos.cProgrammingRes,
+		repos.exerciseCategory,
+		repos.exerciseQuestion,
+		repos.exerciseSubmission,
+		repos.resource,
+		repos.resourceCompletion,
+		repos.goal,
+		repos.task,
+		s.task,
+		db,
+	)
+
+	s.level = service.NewLevelService(repos.level, db)
+	s.knowledgeTag = service.NewKnowledgeTagService(repos.knowledgeTag)
+	s.suggestion = service.NewSuggestionService(repos.suggestion, repos.level, repos.levelAttempt)
+	s.assessment = service.NewAssessmentService(repos.assessment)
+	s.learningPath = service.NewLearningPathService(repos.learningPath, repos.assessment, repos.learningLog, repos.user)
+	s.knowledgePoint = service.NewKnowledgePointService(db)
+	s.learningGoal = service.NewLearningGoalService(
+		repos.goal,
+		repos.cProgrammingRes,
+		s.cProgrammingResource,
+		db,
+	)
+
+	return s
+}
+
+func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
+	return &controllers{
+		auth:           controller.NewAuthController(s.auth, s.user),
+		content:        controller.NewContentController(s.content),
+		motivation:     controller.NewMotivationController(s.motivation),
+		dashboard:      controller.NewDashboardController(s.dashboard),
+		learning:       controller.NewLearningController(s.learning),
+		achievement:    controller.NewAchievementController(s.achievement),
+		community:      controller.NewCommunityController(s.community),
+		analytics:      controller.NewAnalyticsController(s.analytics),
+		user:           controller.NewUserController(s.user),
+		cProgramming:   controller.NewCProgrammingResourceController(s.cProgrammingResource, s.content),
+		learningGoal:   controller.NewLearningGoalController(s.learningGoal),
+		task:           controller.NewTaskController(s.task),
+		level:          controller.NewLevelController(s.level, s.content),
+		grade:          controller.NewGradeController(s.level),
+		suggestion:     controller.NewSuggestionController(s.suggestion),
+		assessment:     controller.NewAssessmentController(s.assessment),
+		learningPath:   controller.NewLearningPathController(s.learningPath),
+		knowledgePoint: controller.NewKnowledgePointController(s.knowledgePoint),
+		knowledgeTag:   controller.NewKnowledgeTagController(s.knowledgeTag),
+		health:         controller.NewHealthController(db),
+	}
+}
+
+func (a *App) setupMiddlewares(router *gin.Engine, cfg *config.Config) {
+	router.Use(security.CORS())
+	router.Use(security.Secure())
+	router.Use(security.RateLimiter(100000, time.Minute)) // 每分钟100000次请求
+
+	// 分布式追踪中间件
+	if cfg.Tracing.Enabled {
+		router.Use(tracing.GinMiddleware())
+	}
+
+	router.Use(monitoring.MetricsMiddleware())
+
+	router.Use(func(c *gin.Context) {
+		c.Set("config", cfg)
+		c.Next()
+	})
+}
+
+func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *repositories, cfg *config.Config) {
+	docs.SwaggerInfo.BasePath = "/api"
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/swagger/doc.json")))
+
+	router.GET("/metrics", monitoring.PrometheusHandler())
+
+	public := router.Group("/api")
+	{
+		public.GET("/health", c.health.HealthCheck)
+		public.POST("/register", c.auth.Register)
+		public.POST("/login", c.auth.Login)
+		public.GET("/motivation", c.motivation.GetCurrentMotivation)
+	}
+
+	// 无需权限的答案提交接口
+	publicAPI := router.Group("/api/public")
+	{
+		publicAPI.POST("/c-programming/questions/:questionId/submit", c.cProgramming.SubmitExerciseAnswerPublic)
+	}
+
+	auth := router.Group("/api")
+	auth.Use(middleware.AuthMiddleware(), middleware.ActivityMiddleware(repos.user))
+	{
+		auth.GET("/profile", c.auth.GetProfile)
+		auth.GET("/resources", c.content.GetResources)
+		// 知识点标签列表
+		auth.GET("/knowledge-tags", c.knowledgeTag.ListTags)
+
+		auth.GET("/dashboard", c.dashboard.GetDashboard)
+		auth.GET("/dashboard/today-tasks", c.dashboard.GetTodayTasks)
+		auth.PATCH("/dashboard/tasks/:taskId", c.dashboard.UpdateTaskStatus)
+
+		// 知识点列表 (学生)
+		auth.GET("/knowledge-points/student", c.knowledgePoint.ListForStudent)
+		auth.GET("/knowledge-points/ranking", c.knowledgePoint.GetRanking)
+		auth.GET("/knowledge-points/student/:id", c.knowledgePoint.GetDetailForStudent)
+		auth.POST("/knowledge-points/student/:id/start", c.knowledgePoint.StartExercises)
+		auth.POST("/knowledge-points/student/submit", c.knowledgePoint.SubmitExercises)
+		auth.POST("/knowledge-points/student/:id/learning-time", c.knowledgePoint.RecordLearningTime)
+
+		auth.GET("/learning/pre-class", c.learning.GetPreClass)
+		auth.GET("/learning/in-class", c.learning.GetInClass)
+		auth.GET("/learning/post-class", c.learning.GetPostClass)
+		auth.POST("/learning/learning-log", c.learning.SubmitLearningLog)
+		auth.POST("/learning/quiz/:quizId", c.learning.SubmitQuiz)
+		auth.POST("/learning/run-code", c.learning.ExecuteCode)
+
+		auth.GET("/achievements", c.achievement.GetUserAchievements)
+		auth.GET("/achievements/leaderboard", c.achievement.GetLeaderboard)
+		auth.GET("/achievements/goals", c.achievement.GetUserGoals)
+		auth.POST("/achievements/goals", c.achievement.CreateGoal)
+		auth.PATCH("/achievements/goals/:goalId", c.achievement.UpdateGoalProgress)
+
+		auth.GET("/community/posts", c.community.GetPosts)
+		auth.POST("/community/posts", c.community.CreatePost)
+		auth.GET("/community/questions", c.community.GetQuestions)
+		auth.POST("/community/questions", c.community.CreateQuestion)
+		auth.POST("/community/questions/:questionId/answers", c.community.AnswerQuestion)
+		auth.POST("/community/:type/:id/upvote", c.community.Upvote)
+
+		auth.GET("/analytics/overview", c.analytics.GetOverview)
+		auth.GET("/analytics/progress", c.analytics.GetProgress)
+		auth.GET("/analytics/challenges/weekly", c.analytics.GetWeeklyChallengeStats)
+		auth.GET("/analytics/skills", c.analytics.GetSkills)
+		auth.GET("/analytics/abilities", c.analytics.GetAbilities)
+		auth.GET("/analytics/levels/:levelId/curve", c.analytics.GetLevelCurve)
+		auth.GET("/analytics/recommendations", c.analytics.GetRecommendations)
+		auth.POST("/analytics/session/start", c.analytics.StartSession)
+		auth.POST("/analytics/session/:sessionId/end", c.analytics.EndSession)
+
+		// 关卡挑战（学生）
+		auth.GET("/levels/student", c.level.GetStudentLevels)
+		auth.GET("/levels/student/:id", c.level.GetStudentLevelDetail)
+		auth.GET("/levels/student/:id/questions", c.level.GetStudentLevelQuestions)
+		auth.GET("/levels/basic-info", c.level.GetAllLevelsBasicInfo)
+		auth.POST("/levels/:id/attempts/start", c.level.StartAttempt)
+		auth.POST("/levels/:id/attempts/:attemptId/submit", c.level.BatchSubmitAnswers)
+		auth.POST("/attempts/:id/submit", c.level.SubmitAttempt)
+		auth.GET("/levels/ranking", c.level.GetLevelRanking)
+		auth.GET("/users/:userId/level-total-score", c.level.GetUserLevelTotalScore)
+		auth.GET("/users/:userId/level-stats", c.level.GetUserLevelStats)
+
+		auth.GET("/c-programming/resources", c.cProgramming.GetResources)
+		auth.GET("/c-programming/resources/full", c.cProgramming.GetResourcesWithAllContent)
+		auth.GET("/c-programming/resources/:id", c.cProgramming.GetResourceByID)
+		auth.GET("/c-programming/resources/:id/categories", c.cProgramming.GetCategoriesByResourceID)
+		auth.GET("/c-programming/categories/:categoryId/questions", c.cProgramming.GetQuestionsByCategoryID)
+		auth.GET("/c-programming/categories/:categoryId/questions-with-status", c.cProgramming.GetQuestionsByCategoryIDWithUserStatus)
+		auth.GET("/c-programming/resources/:id/videos", c.cProgramming.GetVideosByResourceID)
+		auth.GET("/c-programming/resources/:id/articles", c.cProgramming.GetArticlesByResourceID)
+
+		auth.GET("/c-programming/exercises/users/:userID/questions/:questionID/submission", c.cProgramming.CheckUserSubmittedQuestion)
+
+		auth.POST("/users/checkin", c.user.Checkin)
+		auth.GET("/users/checkin/stats", c.user.GetCheckinStats)
+		auth.GET("/users/stats", c.user.GetUserStats)
+		auth.GET("/users/level-status", c.user.GetLevelStatus)
+		auth.POST("/users/:id/points", middleware.RoleMiddleware(model.Student, model.Teacher, model.Admin), c.user.UpdateUserPoints)
+
+		// 资源进度相关路由
+		auth.GET("/c-programming/resource-progress/:resourceId", c.cProgramming.GetResourceModuleWithProgress)
+		auth.POST("/c-programming/resource-progress/:resourceId/completion", c.cProgramming.UpdateResourceCompletionStatus)
+		auth.GET("/c-programming/resource-progress/unfinished", c.cProgramming.GetUnfinishedResourceModules)
+		auth.GET("/c-programming/resource-progress/all", c.cProgramming.GetAllResourceModulesWithProgress)
+
+		// 学习目标相关路由
+		auth.GET("/learning-goals/resources", c.learningGoal.GetRecommendedResourceModules)
+		auth.GET("/learning-goals", c.learningGoal.GetUserGoals)
+		auth.GET("/learning-goals/type", c.learningGoal.GetUserGoalsByType)
+		auth.POST("/learning-goals", c.learningGoal.CreateGoal)
+		auth.GET("/learning-goals/:id", c.learningGoal.GetGoalByID)
+		auth.PUT("/learning-goals/:id", c.learningGoal.UpdateGoal)
+		auth.DELETE("/learning-goals/:id", c.learningGoal.DeleteGoal)
+		auth.GET("/learning-goals/:id/details", c.learningGoal.GetGoalDetails)
+
+		// 学生获取今天任务
+		auth.GET("/tasks/today", c.task.GetTodayTasks)
+		// 更新任务完成状态
+		auth.POST("/tasks/:taskItemId/completion", c.task.UpdateTaskCompletion)
+
+		// 教师建议（学生）
+		auth.GET("/suggestions", c.suggestion.ListStudentSuggestions)
+		auth.POST("/suggestions/:id/complete", c.suggestion.CompleteSuggestion)
+
+		// 学前测试题（学生）
+		auth.GET("/assessments/questions", c.assessment.GetStudentQuestions)
+		auth.POST("/assessments/submit", c.assessment.SubmitAssessment)
+		auth.GET("/assessments/result", c.assessment.GetMyResult)
+
+		// 学习路径（学生）
+		auth.GET("/learning-path/student", c.learningPath.GetStudentPath)
+		auth.GET("/learning-path/levels/:level/materials", c.learningPath.GetMaterialsByLevel)
+		auth.POST("/learning-path/materials/:id/learning-time", c.learningPath.RecordLearningTime)
+		auth.POST("/learning-path/materials/:id/complete", c.learningPath.CompleteMaterial)
+	}
+
+	teacher := auth.Group("/teacher")
+	// 允许 Teacher / Admin / Student 访问教师相关的周任务接口（暂时放宽校验）
+	teacher.Use(middleware.RoleMiddleware(model.Teacher, model.Admin, model.Student))
+	{
+		// 周任务
+		teacher.POST("/tasks/weekly", c.task.SetWeeklyTask)
+		// 获取周任务列表
+		teacher.GET("/tasks/weekly", c.task.GetWeeklyTasks)
+		// 获取当前周任务
+		teacher.GET("/tasks/weekly/current", c.task.GetCurrentWeekTask)
+		// 删除周任务
+		teacher.DELETE("/tasks/weekly/:taskId", c.task.DeleteWeeklyTask)
+		// 关卡管理
+		teacher.POST("/levels", c.level.CreateLevel)
+		teacher.GET("/levels", c.level.ListLevels)
+		teacher.GET("/levels/:id", c.level.GetLevel)
+		teacher.PUT("/levels/:id", c.level.UpdateLevel)
+		teacher.DELETE("/levels/:id", c.level.DeleteLevel)
+		teacher.POST("/levels/:id/publish", c.level.PublishLevel)
+		teacher.POST("/levels/bulk/publish", c.level.BulkPublish)
+		teacher.POST("/levels/bulk", c.level.BulkUpdate)
+		teacher.GET("/levels/:id/versions", c.level.GetVersions)
+		teacher.POST("/levels/:id/versions/:versionId/rollback", c.level.RollbackVersion)
+		// question management
+		teacher.POST("/levels/:id/questions", c.level.CreateQuestion)
+		teacher.PUT("/levels/:id/questions/:qid", c.level.UpdateQuestion)
+		teacher.DELETE("/levels/:id/questions/:qid", c.level.DeleteQuestion)
+		// grading
+		teacher.GET("/levels/:id/attempts/pending-grading", c.grade.ListPendingGrading)
+		teacher.POST("/levels/:id/attempts/:attemptId/grade", c.grade.GradeAttempt)
+		// student progress for suggestions
+		teacher.GET("/students/progress", c.suggestion.ListStudentsProgress)
+		teacher.GET("/students/:id/progress", c.suggestion.GetStudentProgress)
+		// attempts stats
+		teacher.GET("/levels/:id/attempts/stats", c.level.GetAttemptStats)
+		// attempts
+		teacher.POST("/levels/:id/attempts/start", c.level.StartAttempt)
+		teacher.POST("/levels/:id/attempts/:attemptId/submit", c.level.SubmitAttempt)
+		// visibility & scheduling
+		teacher.PUT("/levels/:id/visibility", c.level.UpdateVisibility)
+		teacher.POST("/levels/:id/schedule_publish", c.level.SchedulePublish)
+
+		// 教师建议管理
+		teacher.POST("/suggestions", c.suggestion.CreateSuggestion)
+		teacher.PUT("/suggestions/:id", c.suggestion.UpdateSuggestion)
+		teacher.GET("/suggestions", c.suggestion.ListTeacherSuggestions)
+		teacher.DELETE("/suggestions/:id", c.suggestion.DeleteSuggestion)
+
+		// 学前测试管理
+		teacher.POST("/assessments", c.assessment.CreateAssessment)
+		teacher.GET("/assessments", c.assessment.ListAssessments)
+		teacher.GET("/assessments/:id", c.assessment.GetAssessment)
+		teacher.POST("/assessments/questions", c.assessment.CreateQuestion)
+		teacher.GET("/assessments/questions", c.assessment.ListQuestions)
+		teacher.GET("/assessments/questions/:id", c.assessment.GetQuestion)
+		teacher.PUT("/assessments/questions/:id", c.assessment.UpdateQuestion)
+		teacher.DELETE("/assessments/questions/:id", c.assessment.DeleteQuestion)
+
+		// 学前测试提交管理
+		teacher.GET("/assessments/submissions", c.assessment.ListSubmissions)
+		teacher.GET("/assessments/submissions/:id", c.assessment.GetSubmissionDetail)
+		teacher.POST("/assessments/submissions/:id/grade", c.assessment.GradeSubmission)
+		teacher.DELETE("/assessments/submissions/:id", c.assessment.DeleteSubmission)
+		teacher.POST("/assessments/retest", c.assessment.SetUserRetest)
+
+		// 知识点管理
+		teacher.POST("/knowledge-points", c.knowledgePoint.Create)
+		teacher.GET("/knowledge-points", c.knowledgePoint.List)
+		teacher.PUT("/knowledge-points/:id", c.knowledgePoint.Update)
+		teacher.DELETE("/knowledge-points/:id", c.knowledgePoint.Delete)
+		teacher.GET("/knowledge-points/points-list", c.knowledgePoint.GetStudentsPointsList)
+		teacher.POST("/knowledge-points/reward", c.knowledgePoint.RewardStudents)
+
+		// 知识点学生提交审核
+		teacher.GET("/knowledge-points/submissions", c.knowledgePoint.ListSubmissions)
+		teacher.GET("/knowledge-points/submissions/:id", c.knowledgePoint.GetSubmissionDetail)
+		teacher.POST("/knowledge-points/submissions/:id/audit", c.knowledgePoint.AuditSubmission)
+	}
+
+	// 学习路径管理 (仅限老师和管理员)
+	learningPath := auth.Group("/teacher/learning-path")
+	learningPath.Use(middleware.RoleMiddleware(model.Teacher, model.Admin))
+	{
+		learningPath.POST("/materials", c.learningPath.CreateMaterial)
+		learningPath.GET("/materials", c.learningPath.ListMaterials)
+		learningPath.GET("/materials/:id", c.learningPath.GetMaterial)
+		learningPath.PUT("/materials/:id", c.learningPath.UpdateMaterial)
+		learningPath.DELETE("/materials/:id", c.learningPath.DeleteMaterial)
+	}
+
+	admin := router.Group("/api/admin")
+	admin.Use(middleware.AuthMiddleware())
+	{
+		// 1. 用户列表和详情：允许管理员和老师访问
+		admin.GET("/users", middleware.RoleMiddleware(model.Admin, model.Teacher), c.user.GetUsers)
+		admin.GET("/users/:id", middleware.RoleMiddleware(model.Admin, model.Teacher), c.user.GetUser)
+
+		// 2. 其他所有接口：仅限管理员访问
+		adminOnly := admin.Group("/")
+		adminOnly.Use(middleware.RoleMiddleware(model.Admin))
+		{
+			adminOnly.POST("/upload/icon", c.content.UploadIcon)
+			adminOnly.POST("/resources", c.content.UploadResource)
+			adminOnly.PUT("/users/:id", c.user.UpdateUser)
+			adminOnly.DELETE("/users/:id", c.user.DeleteUser)
+			adminOnly.POST("/users/:id/reset-password", c.user.ResetPassword)
+			adminOnly.POST("/users/:id/disable", c.user.DisableUser)
+
+			adminOnly.GET("/motivations", c.motivation.GetAllMotivations)
+			adminOnly.POST("/motivations", c.motivation.CreateMotivation)
+			adminOnly.PUT("/motivations/:id", c.motivation.UpdateMotivation)
+			adminOnly.DELETE("/motivations/:id", c.motivation.DeleteMotivation)
+			adminOnly.POST("/motivations/:id/switch", c.motivation.SwitchMotivation)
+
+			adminOnly.POST("/c-programming/resources", c.cProgramming.CreateResource)
+			adminOnly.PUT("/c-programming/resources/:id", c.cProgramming.UpdateResource)
+			adminOnly.DELETE("/c-programming/resources/:id", c.cProgramming.DeleteResource)
+			adminOnly.POST("/c-programming/resources/:id/categories", c.cProgramming.CreateCategory)
+			adminOnly.POST("/c-programming/categories/:categoryId/questions", c.cProgramming.CreateQuestion)
+			adminOnly.POST("/c-programming/resources/upload", c.cProgramming.UploadResource)
+			adminOnly.GET("/c-programming/resources", c.cProgramming.GetAdminResources)
+
+			adminOnly.GET("/resources/:id/content", c.cProgramming.GetResourceCompleteContent)
+			adminOnly.POST("/resources/:id/videos", c.cProgramming.AddVideoToResource)
+			adminOnly.POST("/resources/:id/articles", c.cProgramming.AddArticleToResource)
+			adminOnly.POST("/resources/:id/exercise-categories", c.cProgramming.CreateCategory)
+			adminOnly.POST("/exercise-categories/:categoryId/questions", c.cProgramming.CreateQuestion)
+			adminOnly.GET("/c-programming/categories/:categoryId/questions/all", c.cProgramming.AdminGetAllQuestionsByCategoryID)
+			adminOnly.PUT("/videos/:id", c.cProgramming.UpdateVideo)
+			adminOnly.PUT("/articles/:id", c.cProgramming.UpdateArticle)
+			adminOnly.PUT("/exercise-categories/:id", c.cProgramming.UpdateExerciseCategory)
+			adminOnly.PUT("/questions/:id", c.cProgramming.UpdateQuestion)
+			adminOnly.DELETE("/:itemType/:itemId", c.cProgramming.DeleteContentItem)
+
+			// 上传视频相关路由
+			adminOnly.POST("/upload/video", c.content.UploadVideo)
+			adminOnly.POST("/upload/video/chunk", c.content.UploadVideoChunk)
+			adminOnly.GET("/upload/video/progress/:uploadId", c.content.GetUploadProgress)
+		}
+	}
+}
+
+func (a *App) startBackgroundTasks(s *services) {
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		for range ticker.C {
+			if err := s.level.ProcessScheduledPublishes(); err != nil {
+				logger.Log.Error("scheduled publish error", zap.Error(err))
+			}
+		}
+	}()
+}
+
+func NewApp(cfg *config.Config) *App {
 	logger.InitLogger(cfg)
 	defer logger.Log.Sync()
 
@@ -49,106 +538,23 @@ func NewApp(cfg *config.Config) *App {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	userRepo := repository.NewUserRepository(db)
-	resourceRepo := repository.NewResourceRepository(db)
-	taskRepo := repository.NewTaskRepository(db)
-	goalRepo := repository.NewGoalRepository(db)
-	moduleRepo := repository.NewModuleRepository(db)
-	progressRepo := repository.NewProgressRepository(db)
-	learningLogRepo := repository.NewLearningLogRepository(db)
-	quizRepo := repository.NewQuizRepository(db)
-	achievementRepo := repository.NewAchievementRepository(db)
-	postRepo := repository.NewPostRepository(db)
-	questionRepo := repository.NewQuestionRepository(db)
-	answerRepo := repository.NewAnswerRepository(db)
-	sessionRepo := repository.NewSessionRepository(db)
-	skillRepo := repository.NewSkillRepository(db)
-	recommendationRepo := repository.NewRecommendationRepository(db)
-	motivationRepo := repository.NewMotivationRepository(db)
-	cProgrammingResRepo := repository.NewCProgrammingResourceRepository(db)
-	exerciseCategoryRepo := repository.NewExerciseCategoryRepository(db)
-	exerciseQuestionRepo := repository.NewExerciseQuestionRepository(db)
-	exerciseSubmissionRepo := repository.NewExerciseSubmissionRepository(db)
-	checkinRepo := repository.NewCheckinRepository(db)
-	resourceCompletionRepo := repository.NewResourceCompletionRepository(db)
-	levelRepo := repository.NewLevelRepository(db)
-	levelAttemptRepo := repository.NewLevelAttemptRepository(db)
-	knowledgeTagRepo := repository.NewKnowledgeTagRepository(db)
-	suggestionRepo := repository.NewSuggestionRepository(db)
-	assessmentRepo := repository.NewAssessmentRepository(db)
-	learningPathRepo := repository.NewLearningPathRepository(db)
+	app := &App{
+		Config: cfg,
+		DB:     db,
+	}
 
-	authService := service.NewAuthService(userRepo, cfg)
-	contentService := service.NewContentService(resourceRepo, cfg)
-	motivationService := service.NewMotivationService(motivationRepo)
-	dashboardService := service.NewDashboardService(userRepo, taskRepo, resourceRepo, goalRepo, motivationService)
-	learningService := service.NewLearningService(moduleRepo, taskRepo, resourceRepo, progressRepo, learningLogRepo, quizRepo, cfg, db)
-	achievementService := service.NewAchievementService(achievementRepo, userRepo, goalRepo)
-	communityService := service.NewCommunityService(postRepo, nil, questionRepo, answerRepo, userRepo)
-	analyticsService := service.NewAnalyticsService(progressRepo, sessionRepo, skillRepo, learningLogRepo, recommendationRepo, levelAttemptRepo, db)
-	userService := service.NewUserServiceWithDB(userRepo, checkinRepo, db)
-	taskService := service.NewTaskService(
-		taskRepo,
-		resourceRepo,
-		exerciseQuestionRepo,
-		cProgrammingResRepo,
-		goalRepo,
-	)
-	cProgrammingResService := service.NewCProgrammingResourceService(
-		cProgrammingResRepo,
-		exerciseCategoryRepo,
-		exerciseQuestionRepo,
-		exerciseSubmissionRepo,
-		resourceRepo,
-		resourceCompletionRepo,
-		goalRepo,
-		taskRepo,
-		taskService,
-		db,
-	)
-	levelService := service.NewLevelService(levelRepo, db)
-	knowledgeTagService := service.NewKnowledgeTagService(knowledgeTagRepo)
-	knowledgeTagController := controller.NewKnowledgeTagController(knowledgeTagService)
-	suggestionService := service.NewSuggestionService(suggestionRepo, levelRepo, levelAttemptRepo)
-	assessmentService := service.NewAssessmentService(assessmentRepo)
-	learningPathService := service.NewLearningPathService(learningPathRepo, assessmentRepo, learningLogRepo, userRepo)
-	knowledgePointService := service.NewKnowledgePointService(db)
-	learningGoalService := service.NewLearningGoalService(
-		goalRepo,
-		cProgrammingResRepo,
-		cProgrammingResService,
-		db,
-	)
+	repos := app.initRepositories(db)
+	services := app.initServices(repos, cfg, db)
+	controllers := app.initControllers(services, db)
 
-	authController := controller.NewAuthController(authService, userService)
-	contentController := controller.NewContentController(contentService)
-	motivationController := controller.NewMotivationController(motivationService)
-	dashboardController := controller.NewDashboardController(dashboardService)
-	learningController := controller.NewLearningController(learningService)
-	achievementController := controller.NewAchievementController(achievementService)
-	communityController := controller.NewCommunityController(communityService)
-	analyticsController := controller.NewAnalyticsController(analyticsService)
-	userController := controller.NewUserController(userService)
-	cProgrammingResController := controller.NewCProgrammingResourceController(cProgrammingResService, contentService)
-	learningGoalController := controller.NewLearningGoalController(learningGoalService)
-	taskController := controller.NewTaskController(taskService)
-	levelController := controller.NewLevelController(levelService, contentService)
-	gradeController := controller.NewGradeController(levelService)
-	suggestionController := controller.NewSuggestionController(suggestionService)
-	assessmentController := controller.NewAssessmentController(assessmentService)
-	learningPathController := controller.NewLearningPathController(learningPathService)
-	knowledgePointController := controller.NewKnowledgePointController(knowledgePointService)
-
-	// 监控
+	// 监控初始化
 	monitoring.Init()
 
 	router := gin.Default()
+	app.Router = router
 
-	router.Use(security.CORS())
-	router.Use(security.Secure())
-	router.Use(security.RateLimiter(100000, time.Minute)) // 每分钟100000次请求
+	app.setupMiddlewares(router, cfg)
 
-	// 初始化分布式追踪
 	if cfg.Tracing.Enabled {
 		tp, err := tracing.InitTracer("learning-platform", cfg.Tracing.CollectorEndpoint)
 		if err != nil {
@@ -159,319 +565,18 @@ func NewApp(cfg *config.Config) *App {
 				logger.Log.Error("Failed to shutdown tracer provider", zap.Error(err))
 			}
 		}()
-
-		router.Use(tracing.GinMiddleware())
 	}
 
-	docs.SwaggerInfo.BasePath = "/api"
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/swagger/doc.json")))
-
-	router.Use(monitoring.MetricsMiddleware())
-
-	router.Use(func(c *gin.Context) {
-		c.Set("config", cfg)
-		c.Next()
-	})
-
-	go func() {
-		ticker := time.NewTicker(time.Minute)
-		for range ticker.C {
-			if err := levelService.ProcessScheduledPublishes(); err != nil {
-				logger.Log.Error("scheduled publish error", zap.Error(err))
-			}
-		}
-	}()
-
-	router.GET("/metrics", monitoring.PrometheusHandler())
-
-	healthController := controller.NewHealthController(db)
-
-	public := router.Group("/api")
-	{
-		public.GET("/health", healthController.HealthCheck)
-		public.POST("/register", authController.Register)
-		public.POST("/login", authController.Login)
-		public.GET("/motivation", motivationController.GetCurrentMotivation)
-	}
-
-	// 用于无需权限的答案提交接口
-	publicAPI := router.Group("/api/public")
-	{
-		publicAPI.POST("/c-programming/questions/:questionId/submit", cProgrammingResController.SubmitExerciseAnswerPublic)
-	}
-
-	auth := router.Group("/api")
-	auth.Use(middleware.AuthMiddleware(), middleware.ActivityMiddleware(userRepo))
-	{
-		auth.GET("/profile", authController.GetProfile)
-		auth.GET("/resources", contentController.GetResources)
-		// 知识点标签列表
-		auth.GET("/knowledge-tags", knowledgeTagController.ListTags)
-
-		auth.GET("/dashboard", dashboardController.GetDashboard)
-		auth.GET("/dashboard/today-tasks", dashboardController.GetTodayTasks)
-		auth.PATCH("/dashboard/tasks/:taskId", dashboardController.UpdateTaskStatus)
-
-		// 知识点列表 (学生)
-		auth.GET("/knowledge-points/student", knowledgePointController.ListForStudent)
-		auth.GET("/knowledge-points/ranking", knowledgePointController.GetRanking)
-		auth.GET("/knowledge-points/student/:id", knowledgePointController.GetDetailForStudent)
-		auth.POST("/knowledge-points/student/:id/start", knowledgePointController.StartExercises)
-		auth.POST("/knowledge-points/student/submit", knowledgePointController.SubmitExercises)
-		auth.POST("/knowledge-points/student/:id/learning-time", knowledgePointController.RecordLearningTime)
-
-		auth.GET("/learning/pre-class", learningController.GetPreClass)
-		auth.GET("/learning/in-class", learningController.GetInClass)
-		auth.GET("/learning/post-class", learningController.GetPostClass)
-		auth.POST("/learning/learning-log", learningController.SubmitLearningLog)
-		auth.POST("/learning/quiz/:quizId", learningController.SubmitQuiz)
-		auth.POST("/learning/run-code", learningController.ExecuteCode)
-
-		auth.GET("/achievements", achievementController.GetUserAchievements)
-		auth.GET("/achievements/leaderboard", achievementController.GetLeaderboard)
-		auth.GET("/achievements/goals", achievementController.GetUserGoals)
-		auth.POST("/achievements/goals", achievementController.CreateGoal)
-		auth.PATCH("/achievements/goals/:goalId", achievementController.UpdateGoalProgress)
-
-		auth.GET("/community/posts", communityController.GetPosts)
-		auth.POST("/community/posts", communityController.CreatePost)
-		auth.GET("/community/questions", communityController.GetQuestions)
-		auth.POST("/community/questions", communityController.CreateQuestion)
-		auth.POST("/community/questions/:questionId/answers", communityController.AnswerQuestion)
-		auth.POST("/community/:type/:id/upvote", communityController.Upvote)
-
-		auth.GET("/analytics/overview", analyticsController.GetOverview)
-		auth.GET("/analytics/progress", analyticsController.GetProgress)
-		auth.GET("/analytics/challenges/weekly", analyticsController.GetWeeklyChallengeStats)
-		auth.GET("/analytics/skills", analyticsController.GetSkills)
-		auth.GET("/analytics/abilities", analyticsController.GetAbilities)
-		auth.GET("/analytics/levels/:levelId/curve", analyticsController.GetLevelCurve)
-		auth.GET("/analytics/recommendations", analyticsController.GetRecommendations)
-		auth.POST("/analytics/session/start", analyticsController.StartSession)
-		auth.POST("/analytics/session/:sessionId/end", analyticsController.EndSession)
-
-		// 关卡挑战（学生）
-		auth.GET("/levels/student", levelController.GetStudentLevels)
-		auth.GET("/levels/student/:id", levelController.GetStudentLevelDetail)
-		auth.GET("/levels/student/:id/questions", levelController.GetStudentLevelQuestions)
-		auth.GET("/levels/basic-info", levelController.GetAllLevelsBasicInfo)
-		auth.POST("/levels/:id/attempts/start", levelController.StartAttempt)
-		auth.POST("/levels/:id/attempts/:attemptId/submit", levelController.BatchSubmitAnswers)
-		auth.POST("/attempts/:id/submit", levelController.SubmitAttempt)
-		auth.GET("/levels/ranking", levelController.GetLevelRanking)
-		auth.GET("/users/:userId/level-total-score", levelController.GetUserLevelTotalScore)
-		auth.GET("/users/:userId/level-stats", levelController.GetUserLevelStats)
-
-		auth.GET("/c-programming/resources", cProgrammingResController.GetResources)
-		auth.GET("/c-programming/resources/full", cProgrammingResController.GetResourcesWithAllContent)
-		auth.GET("/c-programming/resources/:id", cProgrammingResController.GetResourceByID)
-		auth.GET("/c-programming/resources/:id/categories", cProgrammingResController.GetCategoriesByResourceID)
-		auth.GET("/c-programming/categories/:categoryId/questions", cProgrammingResController.GetQuestionsByCategoryID)
-		auth.GET("/c-programming/categories/:categoryId/questions-with-status", cProgrammingResController.GetQuestionsByCategoryIDWithUserStatus)
-		auth.GET("/c-programming/resources/:id/videos", cProgrammingResController.GetVideosByResourceID)
-		auth.GET("/c-programming/resources/:id/articles", cProgrammingResController.GetArticlesByResourceID)
-
-		auth.GET("/c-programming/exercises/users/:userID/questions/:questionID/submission", cProgrammingResController.CheckUserSubmittedQuestion)
-
-		auth.POST("/users/checkin", userController.Checkin)
-		auth.GET("/users/checkin/stats", userController.GetCheckinStats)
-		auth.GET("/users/stats", userController.GetUserStats)
-		auth.GET("/users/level-status", userController.GetLevelStatus)
-		auth.POST("/users/:id/points", middleware.RoleMiddleware(model.Student, model.Teacher, model.Admin), userController.UpdateUserPoints)
-
-		// 资源进度相关路由
-		auth.GET("/c-programming/resource-progress/:resourceId", cProgrammingResController.GetResourceModuleWithProgress)
-		auth.POST("/c-programming/resource-progress/:resourceId/completion", cProgrammingResController.UpdateResourceCompletionStatus)
-		auth.GET("/c-programming/resource-progress/unfinished", cProgrammingResController.GetUnfinishedResourceModules)
-		auth.GET("/c-programming/resource-progress/all", cProgrammingResController.GetAllResourceModulesWithProgress)
-
-		// 学习目标相关路由
-		auth.GET("/learning-goals/resources", learningGoalController.GetRecommendedResourceModules)
-		auth.GET("/learning-goals", learningGoalController.GetUserGoals)
-		auth.GET("/learning-goals/type", learningGoalController.GetUserGoalsByType)
-		auth.POST("/learning-goals", learningGoalController.CreateGoal)
-		auth.GET("/learning-goals/:id", learningGoalController.GetGoalByID)
-		auth.PUT("/learning-goals/:id", learningGoalController.UpdateGoal)
-		auth.DELETE("/learning-goals/:id", learningGoalController.DeleteGoal)
-		auth.GET("/learning-goals/:id/details", learningGoalController.GetGoalDetails)
-
-		// 学生获取今天任务
-		auth.GET("/tasks/today", taskController.GetTodayTasks)
-		// 更新任务完成状态
-		auth.POST("/tasks/:taskItemId/completion", taskController.UpdateTaskCompletion)
-
-		// 教师建议（学生）
-		auth.GET("/suggestions", suggestionController.ListStudentSuggestions)
-		auth.POST("/suggestions/:id/complete", suggestionController.CompleteSuggestion)
-
-		// 学前测试题（学生）
-		auth.GET("/assessments/questions", assessmentController.GetStudentQuestions)
-		auth.POST("/assessments/submit", assessmentController.SubmitAssessment)
-		auth.GET("/assessments/result", assessmentController.GetMyResult)
-
-		// 学习路径（学生）
-		auth.GET("/learning-path/student", learningPathController.GetStudentPath)
-		auth.GET("/learning-path/levels/:level/materials", learningPathController.GetMaterialsByLevel)
-		auth.POST("/learning-path/materials/:id/learning-time", learningPathController.RecordLearningTime)
-		auth.POST("/learning-path/materials/:id/complete", learningPathController.CompleteMaterial)
-	}
-
-	teacher := auth.Group("/teacher")
-	// 允许 Teacher / Admin / Student 访问教师相关的周任务接口（暂时放宽校验）
-	teacher.Use(middleware.RoleMiddleware(model.Teacher, model.Admin, model.Student))
-	{
-		// 周任务
-		teacher.POST("/tasks/weekly", taskController.SetWeeklyTask)
-		// 获取周任务列表
-		teacher.GET("/tasks/weekly", taskController.GetWeeklyTasks)
-		// 获取当前周任务
-		teacher.GET("/tasks/weekly/current", taskController.GetCurrentWeekTask)
-		// 删除周任务
-		teacher.DELETE("/tasks/weekly/:taskId", taskController.DeleteWeeklyTask)
-		// 关卡管理
-		teacher.POST("/levels", levelController.CreateLevel)
-		teacher.GET("/levels", levelController.ListLevels)
-		teacher.GET("/levels/:id", levelController.GetLevel)
-		teacher.PUT("/levels/:id", levelController.UpdateLevel)
-		teacher.DELETE("/levels/:id", levelController.DeleteLevel)
-		teacher.POST("/levels/:id/publish", levelController.PublishLevel)
-		teacher.POST("/levels/bulk/publish", levelController.BulkPublish)
-		teacher.POST("/levels/bulk", levelController.BulkUpdate)
-		teacher.GET("/levels/:id/versions", levelController.GetVersions)
-		teacher.POST("/levels/:id/versions/:versionId/rollback", levelController.RollbackVersion)
-		// question management
-		teacher.POST("/levels/:id/questions", levelController.CreateQuestion)
-		teacher.PUT("/levels/:id/questions/:qid", levelController.UpdateQuestion)
-		teacher.DELETE("/levels/:id/questions/:qid", levelController.DeleteQuestion)
-		// grading
-		teacher.GET("/levels/:id/attempts/pending-grading", gradeController.ListPendingGrading)
-		teacher.POST("/levels/:id/attempts/:attemptId/grade", gradeController.GradeAttempt)
-		// student progress for suggestions
-		teacher.GET("/students/progress", suggestionController.ListStudentsProgress)
-		teacher.GET("/students/:id/progress", suggestionController.GetStudentProgress)
-		// attempts stats
-		teacher.GET("/levels/:id/attempts/stats", levelController.GetAttemptStats)
-		// attempts
-		teacher.POST("/levels/:id/attempts/start", levelController.StartAttempt)
-		teacher.POST("/levels/:id/attempts/:attemptId/submit", levelController.SubmitAttempt)
-		// visibility & scheduling
-		teacher.PUT("/levels/:id/visibility", levelController.UpdateVisibility)
-		teacher.POST("/levels/:id/schedule_publish", levelController.SchedulePublish)
-
-		// 教师建议管理
-		teacher.POST("/suggestions", suggestionController.CreateSuggestion)
-		teacher.PUT("/suggestions/:id", suggestionController.UpdateSuggestion)
-		teacher.GET("/suggestions", suggestionController.ListTeacherSuggestions)
-		teacher.DELETE("/suggestions/:id", suggestionController.DeleteSuggestion)
-
-		// 学前测试管理
-		teacher.POST("/assessments", assessmentController.CreateAssessment)
-		teacher.GET("/assessments", assessmentController.ListAssessments)
-		teacher.GET("/assessments/:id", assessmentController.GetAssessment)
-		teacher.POST("/assessments/questions", assessmentController.CreateQuestion)
-		teacher.GET("/assessments/questions", assessmentController.ListQuestions)
-		teacher.GET("/assessments/questions/:id", assessmentController.GetQuestion)
-		teacher.PUT("/assessments/questions/:id", assessmentController.UpdateQuestion)
-		teacher.DELETE("/assessments/questions/:id", assessmentController.DeleteQuestion)
-
-		// 学前测试提交管理
-		teacher.GET("/assessments/submissions", assessmentController.ListSubmissions)
-		teacher.GET("/assessments/submissions/:id", assessmentController.GetSubmissionDetail)
-		teacher.POST("/assessments/submissions/:id/grade", assessmentController.GradeSubmission)
-		teacher.DELETE("/assessments/submissions/:id", assessmentController.DeleteSubmission)
-		teacher.POST("/assessments/retest", assessmentController.SetUserRetest)
-
-		// 知识点管理
-		teacher.POST("/knowledge-points", knowledgePointController.Create)
-		teacher.GET("/knowledge-points", knowledgePointController.List)
-		teacher.PUT("/knowledge-points/:id", knowledgePointController.Update)
-		teacher.DELETE("/knowledge-points/:id", knowledgePointController.Delete)
-		teacher.GET("/knowledge-points/points-list", knowledgePointController.GetStudentsPointsList)
-		teacher.POST("/knowledge-points/reward", knowledgePointController.RewardStudents)
-
-		// 知识点学生提交审核
-		teacher.GET("/knowledge-points/submissions", knowledgePointController.ListSubmissions)
-		teacher.GET("/knowledge-points/submissions/:id", knowledgePointController.GetSubmissionDetail)
-		teacher.POST("/knowledge-points/submissions/:id/audit", knowledgePointController.AuditSubmission)
-	}
-
-	// 学习路径管理 (仅限老师和管理员)
-	learningPath := auth.Group("/teacher/learning-path")
-	learningPath.Use(middleware.RoleMiddleware(model.Teacher, model.Admin))
-	{
-		learningPath.POST("/materials", learningPathController.CreateMaterial)
-		learningPath.GET("/materials", learningPathController.ListMaterials)
-		learningPath.GET("/materials/:id", learningPathController.GetMaterial)
-		learningPath.PUT("/materials/:id", learningPathController.UpdateMaterial)
-		learningPath.DELETE("/materials/:id", learningPathController.DeleteMaterial)
-	}
-
-	admin := router.Group("/api/admin")
-	admin.Use(middleware.AuthMiddleware())
-	{
-		// 1. 用户列表和详情：允许管理员和老师访问
-		admin.GET("/users", middleware.RoleMiddleware(model.Admin, model.Teacher), userController.GetUsers)
-		admin.GET("/users/:id", middleware.RoleMiddleware(model.Admin, model.Teacher), userController.GetUser)
-
-		// 2. 其他所有接口：仅限管理员访问
-		adminOnly := admin.Group("/")
-		adminOnly.Use(middleware.RoleMiddleware(model.Admin))
-		{
-			adminOnly.POST("/upload/icon", contentController.UploadIcon)
-			adminOnly.POST("/resources", contentController.UploadResource)
-			adminOnly.PUT("/users/:id", userController.UpdateUser)
-			adminOnly.DELETE("/users/:id", userController.DeleteUser)
-			adminOnly.POST("/users/:id/reset-password", userController.ResetPassword)
-			adminOnly.POST("/users/:id/disable", userController.DisableUser)
-
-			adminOnly.GET("/motivations", motivationController.GetAllMotivations)
-			adminOnly.POST("/motivations", motivationController.CreateMotivation)
-			adminOnly.PUT("/motivations/:id", motivationController.UpdateMotivation)
-			adminOnly.DELETE("/motivations/:id", motivationController.DeleteMotivation)
-			adminOnly.POST("/motivations/:id/switch", motivationController.SwitchMotivation)
-
-			adminOnly.POST("/c-programming/resources", cProgrammingResController.CreateResource)
-			adminOnly.PUT("/c-programming/resources/:id", cProgrammingResController.UpdateResource)
-			adminOnly.DELETE("/c-programming/resources/:id", cProgrammingResController.DeleteResource)
-			adminOnly.POST("/c-programming/resources/:id/categories", cProgrammingResController.CreateCategory)
-			adminOnly.POST("/c-programming/categories/:categoryId/questions", cProgrammingResController.CreateQuestion)
-			adminOnly.POST("/c-programming/resources/upload", cProgrammingResController.UploadResource)
-			adminOnly.GET("/c-programming/resources", cProgrammingResController.GetAdminResources)
-
-			adminOnly.GET("/resources/:id/content", cProgrammingResController.GetResourceCompleteContent)
-			adminOnly.POST("/resources/:id/videos", cProgrammingResController.AddVideoToResource)
-			adminOnly.POST("/resources/:id/articles", cProgrammingResController.AddArticleToResource)
-			adminOnly.POST("/resources/:id/exercise-categories", cProgrammingResController.CreateCategory)
-			adminOnly.POST("/exercise-categories/:categoryId/questions", cProgrammingResController.CreateQuestion)
-			adminOnly.GET("/c-programming/categories/:categoryId/questions/all", cProgrammingResController.AdminGetAllQuestionsByCategoryID)
-			adminOnly.PUT("/videos/:id", cProgrammingResController.UpdateVideo)
-			adminOnly.PUT("/articles/:id", cProgrammingResController.UpdateArticle)
-			adminOnly.PUT("/exercise-categories/:id", cProgrammingResController.UpdateExerciseCategory)
-			adminOnly.PUT("/questions/:id", cProgrammingResController.UpdateQuestion)
-			adminOnly.DELETE("/:itemType/:itemId", cProgrammingResController.DeleteContentItem)
-
-			// 上传视频相关路由
-			adminOnly.POST("/upload/video", contentController.UploadVideo)
-			adminOnly.POST("/upload/video/chunk", contentController.UploadVideoChunk)
-			adminOnly.GET("/upload/video/progress/:uploadId", contentController.GetUploadProgress)
-		}
-	}
+	app.registerRoutes(router, controllers, repos, cfg)
 
 	if cfg.Storage.Type == "local" {
 		router.Static("/uploads", cfg.Storage.LocalPath)
 		router.Static("/api/uploads", cfg.Storage.LocalPath)
 	}
 
-	return &App{
-		Config: cfg,
-		Router: router,
-		DB:     db,
-	}
-}
+	app.startBackgroundTasks(services)
 
-func mustParseUint(s string) uint {
-	id, _ := strconv.ParseUint(s, 10, 32)
-	return uint(id)
+	return app
 }
 
 func (a *App) Run() {

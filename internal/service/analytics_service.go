@@ -248,7 +248,7 @@ func (s *AnalyticsService) GetLevelLearningCurve(userID, levelID uint, limit int
 		}
 
 		curve = append(curve, model.AttemptCurveData{
-			AttemptIndex: limit - i, // 序号从 1 到 limit
+			AttemptIndex: limit - i,
 			Score:        score,
 			Date:         dateStr,
 		})
@@ -262,7 +262,6 @@ func (s *AnalyticsService) GetLevelLearningCurve(userID, levelID uint, limit int
 }
 
 func (s *AnalyticsService) GetPersonalizedRecommendations(userID uint) (*model.PersonalizedRecommendation, error) {
-	// 基于用户学习数据生成个性化建议
 	recommendations, err := s.RecommendationRepo.GenerateForUser(userID)
 	if err != nil {
 		return nil, err

@@ -12,7 +12,6 @@ const (
 	Admin   UserRole = "admin"
 )
 
-// User represents a platform user
 // swagger:model User
 type User struct {
 	BaseModel

@@ -69,6 +69,12 @@ func (r *UserRepository) FindTopByXP(limit int) ([]model.User, error) {
 	return users, err
 }
 
+func (r *UserRepository) FindTopByPoints(limit int) ([]model.User, error) {
+	var users []model.User
+	err := r.DB.Where("disabled = ? AND role = ?", false, model.Student).Order("points DESC").Limit(limit).Find(&users).Error
+	return users, err
+}
+
 func (r *UserRepository) GetAchievements(userID uint) ([]model.Achievement, error) {
 	var achievements []model.Achievement
 	err := r.DB.Where("user_id = ?", userID).Find(&achievements).Error

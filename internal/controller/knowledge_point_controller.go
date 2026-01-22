@@ -59,6 +59,96 @@ func (c *KnowledgePointController) List(ctx *gin.Context) {
 	util.Success(ctx, kps)
 }
 
+// @Summary 获取课中积分排行榜
+// @Description 获取学生课中测试获得的总积分排行榜
+// @Tags 知识点
+// @Produce json
+// @Security BearerAuth
+// @Param limit query int false "限制返回数量" default(10)
+// @Success 200 {object} util.Response
+// @Router /api/knowledge-points/ranking [get]
+func (c *KnowledgePointController) GetRanking(ctx *gin.Context) {
+	limitStr := ctx.DefaultQuery("limit", "10")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 10
+	}
+
+	ranking, err := c.Service.GetPointsRanking(limit)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, ranking)
+}
+
+// @Summary 获取学生课中积分列表 (老师/管理员)
+// @Description 支持分页、姓名筛选、积分排序、获取前十名
+// @Tags 知识点
+// @Produce json
+// @Security BearerAuth
+// @Param page query int false "页码" default(1)
+// @Param limit query int false "每页数量" default(10)
+// @Param name query string false "学生姓名筛选"
+// @Param sort query string false "排序方式 (asc: 升序, desc: 降序)" default(desc)
+// @Param isTop10 query bool false "是否只获取前十名" default(false)
+// @Success 200 {object} util.Response
+// @Router /api/teacher/knowledge-points/points-list [get]
+func (c *KnowledgePointController) GetStudentsPointsList(ctx *gin.Context) {
+	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "10"))
+	name := ctx.Query("name")
+	sort := ctx.DefaultQuery("sort", "desc")
+	isTop10Str := ctx.DefaultQuery("isTop10", "false")
+	isTop10, _ := strconv.ParseBool(isTop10Str)
+
+	req := service.StudentPointsListRequest{
+		Page:    page,
+		Limit:   limit,
+		Name:    name,
+		Sort:    sort,
+		IsTop10: isTop10,
+	}
+
+	resp, err := c.Service.GetStudentsPointsList(req)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, resp)
+}
+
+// @Summary 发放排行榜奖励积分 (老师/管理员)
+// @Description 为指定学生发放通用积分 (XP)。默认第一名300，第二三名100，支持手动调整。
+// @Tags 知识点
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body service.BatchRewardRequest true "奖励发放信息"
+// @Success 200 {object} util.Response
+// @Router /api/teacher/knowledge-points/reward [post]
+func (c *KnowledgePointController) RewardStudents(ctx *gin.Context) {
+	var req service.BatchRewardRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
+	if len(req.Rewards) == 0 {
+		util.BadRequest(ctx, "奖励列表不能为空")
+		return
+	}
+
+	if err := c.Service.RewardStudents(req.Rewards); err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, "奖励发放成功")
+}
+
 // @Summary 获取知识点列表 (学生)
 // @Tags 知识点
 // @Produce json

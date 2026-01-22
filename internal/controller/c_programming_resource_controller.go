@@ -530,7 +530,7 @@ func (c *CProgrammingResourceController) UploadResource(ctx *gin.Context) {
 	}
 
 	resource := &model.Resource{
-		ModuleID:    mustParseUint(resourceID),
+		ModuleID:    util.MustParseUint(resourceID),
 		Type:        model.ResourceType(resourceType),
 		Title:       title,
 		Description: description,
@@ -542,13 +542,6 @@ func (c *CProgrammingResourceController) UploadResource(ctx *gin.Context) {
 	}
 
 	util.Created(ctx, resource)
-}
-
-// 将字符串转换为uint
-func mustParseUint(s string) uint {
-	var id uint
-	fmt.Sscanf(s, "%d", &id)
-	return id
 }
 
 // GetResourceCompleteContent godoc

@@ -73,6 +73,151 @@ type KnowledgePointStudentResponse struct {
 	CompletionScore int                      `json:"completionScore"`
 }
 
+type PointsRankingEntry struct {
+	ID      uint   `json:"id"`
+	Ranking int    `json:"ranking"`
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Points  int    `json:"points"`
+}
+
+type StudentPointsListRequest struct {
+	Page    int    `json:"page"`
+	Limit   int    `json:"limit"`
+	Name    string `json:"name"`
+	Sort    string `json:"sort"` // "desc" or "asc"
+	IsTop10 bool   `json:"isTop10"`
+}
+
+type StudentPointsListResponse struct {
+	Items []PointsRankingEntry `json:"items"`
+	Total int64                `json:"total"`
+	Page  int                  `json:"page"`
+	Limit int                  `json:"limit"`
+}
+
+type RewardStudentItem struct {
+	StudentID uint `json:"studentId" binding:"required"`
+	Points    int  `json:"points" binding:"required"`
+}
+
+type BatchRewardRequest struct {
+	Rewards []RewardStudentItem `json:"rewards" binding:"required"`
+}
+
+func (s *KnowledgePointService) GetPointsRanking(limit int) ([]PointsRankingEntry, error) {
+	var users []model.User
+	query := s.db.Where("disabled = ? AND role = ?", false, model.Student).Order("points DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	if err := query.Find(&users).Error; err != nil {
+		return nil, err
+	}
+
+	var ranking []PointsRankingEntry
+	for i, user := range users {
+		ranking = append(ranking, PointsRankingEntry{
+			ID:      user.ID,
+			Ranking: i + 1,
+			Name:    user.Name,
+			Email:   user.Email,
+			Points:  user.Points,
+		})
+	}
+
+	return ranking, nil
+}
+
+func (s *KnowledgePointService) GetStudentsPointsList(req StudentPointsListRequest) (*StudentPointsListResponse, error) {
+	var users []model.User
+	var total int64
+
+	// 基础查询：学生角色、非禁用
+	query := s.db.Model(&model.User{}).Where("disabled = ? AND role = ?", false, model.Student)
+
+	// 名称筛选
+	if req.Name != "" {
+		query = query.Where("name LIKE ?", "%"+req.Name+"%")
+	}
+
+	// 统计总数
+	if err := query.Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	// 排序
+	order := "points DESC" // 默认降序
+	if req.Sort == "asc" {
+		order = "points ASC"
+	}
+	query = query.Order(order)
+
+	// 分页处理
+	page := req.Page
+	if page <= 0 {
+		page = 1
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+
+	// 如果是获取前十名，忽略分页参数
+	if req.IsTop10 {
+		page = 1
+		limit = 10
+		query = query.Order("points DESC") // 强制降序
+	}
+
+	offset := (page - 1) * limit
+	if err := query.Offset(offset).Limit(limit).Find(&users).Error; err != nil {
+		return nil, err
+	}
+
+	// 构建响应数据
+	var items []PointsRankingEntry
+	for i, user := range users {
+		// 计算排行
+		ranking := offset + i + 1
+		// 如果是Top10，排行就是 i + 1
+		if req.IsTop10 {
+			ranking = i + 1
+		}
+
+		items = append(items, PointsRankingEntry{
+			ID:      user.ID,
+			Ranking: ranking,
+			Name:    user.Name,
+			Email:   user.Email,
+			Points:  user.Points,
+		})
+	}
+
+	return &StudentPointsListResponse{
+		Items: items,
+		Total: total,
+		Page:  page,
+		Limit: limit,
+	}, nil
+}
+
+func (s *KnowledgePointService) RewardStudents(rewards []RewardStudentItem) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		for _, item := range rewards {
+			// 更新用户的 XP (通用积分)
+			if err := tx.Model(&model.User{}).
+				Where("id = ?", item.StudentID).
+				UpdateColumn("xp", gorm.Expr("xp + ?", item.Points)).
+				Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *KnowledgePointService) ListKnowledgePointsForStudent(userID uint) ([]KnowledgePointStudentResponse, error) {
 	var kps []model.KnowledgePoint
 	if err := s.db.Order("`order` ASC, created_at DESC").Find(&kps).Error; err != nil {
@@ -96,7 +241,6 @@ func (s *KnowledgePointService) ListKnowledgePointsForStudent(userID uint) ([]Kn
 	}
 	submissionMap := make(map[string]bool)
 	for _, sub := range submissions {
-		// 采用覆盖逻辑，最后一次提交的状态决定了 IsSubmitted 的值
 		// 只有在已提交待审核或已通过时，才认为已提交
 		submissionMap[sub.KnowledgePointID] = sub.Status == "pending" || sub.Status == "approved"
 	}
@@ -247,12 +391,10 @@ func (s *KnowledgePointService) SubmitExercises(userID uint, req SubmitKnowledge
 
 	detailsJSON, _ := json.Marshal(detailedResults)
 
-	// 查找该知识点的“草稿”记录进行更新
 	var submission model.KnowledgePointSubmission
 	err := s.db.Where("user_id = ? AND knowledge_point_id = ? AND status = ?", userID, req.KnowledgePointID, "draft").Order("created_at DESC").First(&submission).Error
 
 	if err != nil {
-		// 如果没找到草稿（极端情况），则创建新记录
 		submission = model.KnowledgePointSubmission{
 			ID:               uuid.New().String(),
 			UserID:           userID,
@@ -313,12 +455,10 @@ func (s *KnowledgePointService) CreateKnowledgePoint(req CreateKnowledgePointReq
 	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
-		// 1. Create Knowledge Point
 		if err := tx.Create(kp).Error; err != nil {
 			return err
 		}
 
-		// 2. Create Videos
 		for _, v := range req.Videos {
 			video := model.KnowledgePointVideo{
 				ID:               uuid.New().String(),
@@ -333,7 +473,6 @@ func (s *KnowledgePointService) CreateKnowledgePoint(req CreateKnowledgePointReq
 			kp.Videos = append(kp.Videos, video)
 		}
 
-		// 3. Create Exercises
 		for _, ex := range req.Exercises {
 			optionsJSON, _ := json.Marshal(ex.Options)
 			exercise := model.KnowledgePointExercise{
@@ -437,7 +576,6 @@ func (s *KnowledgePointService) UpdateKnowledgePoint(id string, req CreateKnowle
 			kp.Exercises = append(kp.Exercises, exercise)
 		}
 
-		// 当老师保存编辑后，清理掉该知识点下所有“正在进行中”的草稿记录
 		// 强制正在答题的学生下次进入时重新同步新版本的题目和计时规则
 		if err := tx.Where("knowledge_point_id = ? AND status = ?", id, "draft").Delete(&model.KnowledgePointSubmission{}).Error; err != nil {
 			return err

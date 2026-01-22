@@ -59,7 +59,6 @@ func (c *AuthController) Register(ctx *gin.Context) {
 		if err.Error() == "该邮箱已被注册" {
 			util.Error(ctx, 409, "该邮箱已被注册")
 		} else {
-			// 添加日志记录错误详情
 			util.LogInternalError(ctx, err)
 		}
 		return
@@ -68,7 +67,6 @@ func (c *AuthController) Register(ctx *gin.Context) {
 	util.Created(ctx, gin.H{"id": user.ID})
 }
 
-// LoginRequest defines model for login
 // swagger:model LoginRequest
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
@@ -122,7 +120,6 @@ func (c *AuthController) GetProfile(ctx *gin.Context) {
 	// 用户签到状态
 	isCheckedInToday, err := c.UserService.IsCheckedInToday(user.ID)
 	if err != nil {
-		// 如果出错，默认设置为未签到
 		isCheckedInToday = false
 	}
 

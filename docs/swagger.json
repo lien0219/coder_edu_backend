@@ -3533,6 +3533,40 @@
                 }
             }
         },
+        "/api/knowledge-points/ranking": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取学生课中测试获得的总积分排行榜",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "获取课中积分排行榜",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "限制返回数量",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/knowledge-points/student": {
             "get": {
                 "security": [
@@ -5750,6 +5784,106 @@
                 }
             }
         },
+        "/api/teacher/knowledge-points/points-list": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "支持分页、姓名筛选、积分排序、获取前十名",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "获取学生课中积分列表 (老师/管理员)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "每页数量",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学生姓名筛选",
+                        "name": "name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "desc",
+                        "description": "排序方式 (asc: 升序, desc: 降序)",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "是否只获取前十名",
+                        "name": "isTop10",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/knowledge-points/reward": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "为指定学生发放通用积分 (XP)。默认第一名300，第二三名100，支持手动调整。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识点"
+                ],
+                "summary": "发放排行榜奖励积分 (老师/管理员)",
+                "parameters": [
+                    {
+                        "description": "奖励发放信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.BatchRewardRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/teacher/knowledge-points/submissions": {
             "get": {
                 "security": [
@@ -5775,6 +5909,12 @@
                         "type": "string",
                         "description": "审核状态 (pending, approved, rejected, unsubmitted)",
                         "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学生姓名搜索",
+                        "name": "studentName",
                         "in": "query"
                     },
                     {
@@ -8686,6 +8826,20 @@
                 }
             }
         },
+        "service.BatchRewardRequest": {
+            "type": "object",
+            "required": [
+                "rewards"
+            ],
+            "properties": {
+                "rewards": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.RewardStudentItem"
+                    }
+                }
+            }
+        },
         "service.CodeExecutionRequest": {
             "type": "object",
             "properties": {
@@ -9156,6 +9310,21 @@
                 "duration": {
                     "type": "integer",
                     "minimum": 1
+                }
+            }
+        },
+        "service.RewardStudentItem": {
+            "type": "object",
+            "required": [
+                "points",
+                "studentId"
+            ],
+            "properties": {
+                "points": {
+                    "type": "integer"
+                },
+                "studentId": {
+                    "type": "integer"
                 }
             }
         },

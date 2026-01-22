@@ -8,7 +8,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// Response represents the standard API response format
 // swagger:model Response
 type Response struct {
 	Code    int         `json:"code"`
@@ -16,7 +15,6 @@ type Response struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
-// Success creates a successful response
 func Success(c *gin.Context, data interface{}) {
 	c.JSON(http.StatusOK, Response{
 		Code:    http.StatusOK,

@@ -214,6 +214,7 @@ func NewApp(cfg *config.Config) *App {
 
 		// 知识点列表 (学生)
 		auth.GET("/knowledge-points/student", knowledgePointController.ListForStudent)
+		auth.GET("/knowledge-points/ranking", knowledgePointController.GetRanking)
 		auth.GET("/knowledge-points/student/:id", knowledgePointController.GetDetailForStudent)
 		auth.POST("/knowledge-points/student/:id/start", knowledgePointController.StartExercises)
 		auth.POST("/knowledge-points/student/submit", knowledgePointController.SubmitExercises)
@@ -385,6 +386,8 @@ func NewApp(cfg *config.Config) *App {
 		teacher.GET("/knowledge-points", knowledgePointController.List)
 		teacher.PUT("/knowledge-points/:id", knowledgePointController.Update)
 		teacher.DELETE("/knowledge-points/:id", knowledgePointController.Delete)
+		teacher.GET("/knowledge-points/points-list", knowledgePointController.GetStudentsPointsList)
+		teacher.POST("/knowledge-points/reward", knowledgePointController.RewardStudents)
 
 		// 知识点学生提交审核
 		teacher.GET("/knowledge-points/submissions", knowledgePointController.ListSubmissions)
@@ -404,47 +407,54 @@ func NewApp(cfg *config.Config) *App {
 	}
 
 	admin := router.Group("/api/admin")
-	admin.Use(middleware.AuthMiddleware(), middleware.RoleMiddleware(model.Admin))
+	admin.Use(middleware.AuthMiddleware())
 	{
-		admin.POST("/upload/icon", contentController.UploadIcon)
-		admin.POST("/resources", contentController.UploadResource)
-		admin.GET("/users", userController.GetUsers)
-		admin.GET("/users/:id", userController.GetUser)
-		admin.PUT("/users/:id", userController.UpdateUser)
-		admin.DELETE("/users/:id", userController.DeleteUser)
-		admin.POST("/users/:id/reset-password", userController.ResetPassword)
-		admin.POST("/users/:id/disable", userController.DisableUser)
+		// 1. 用户列表和详情：允许管理员和老师访问
+		admin.GET("/users", middleware.RoleMiddleware(model.Admin, model.Teacher), userController.GetUsers)
+		admin.GET("/users/:id", middleware.RoleMiddleware(model.Admin, model.Teacher), userController.GetUser)
 
-		admin.GET("/motivations", motivationController.GetAllMotivations)
-		admin.POST("/motivations", motivationController.CreateMotivation)
-		admin.PUT("/motivations/:id", motivationController.UpdateMotivation)
-		admin.DELETE("/motivations/:id", motivationController.DeleteMotivation)
-		admin.POST("/motivations/:id/switch", motivationController.SwitchMotivation)
+		// 2. 其他所有接口：仅限管理员访问
+		adminOnly := admin.Group("/")
+		adminOnly.Use(middleware.RoleMiddleware(model.Admin))
+		{
+			adminOnly.POST("/upload/icon", contentController.UploadIcon)
+			adminOnly.POST("/resources", contentController.UploadResource)
+			adminOnly.PUT("/users/:id", userController.UpdateUser)
+			adminOnly.DELETE("/users/:id", userController.DeleteUser)
+			adminOnly.POST("/users/:id/reset-password", userController.ResetPassword)
+			adminOnly.POST("/users/:id/disable", userController.DisableUser)
 
-		admin.POST("/c-programming/resources", cProgrammingResController.CreateResource)
-		admin.PUT("/c-programming/resources/:id", cProgrammingResController.UpdateResource)
-		admin.DELETE("/c-programming/resources/:id", cProgrammingResController.DeleteResource)
-		admin.POST("/c-programming/resources/:id/categories", cProgrammingResController.CreateCategory)
-		admin.POST("/c-programming/categories/:categoryId/questions", cProgrammingResController.CreateQuestion)
-		admin.POST("/c-programming/resources/upload", cProgrammingResController.UploadResource)
-		admin.GET("/c-programming/resources", cProgrammingResController.GetAdminResources)
+			adminOnly.GET("/motivations", motivationController.GetAllMotivations)
+			adminOnly.POST("/motivations", motivationController.CreateMotivation)
+			adminOnly.PUT("/motivations/:id", motivationController.UpdateMotivation)
+			adminOnly.DELETE("/motivations/:id", motivationController.DeleteMotivation)
+			adminOnly.POST("/motivations/:id/switch", motivationController.SwitchMotivation)
 
-		admin.GET("/resources/:id/content", cProgrammingResController.GetResourceCompleteContent)
-		admin.POST("/resources/:id/videos", cProgrammingResController.AddVideoToResource)
-		admin.POST("/resources/:id/articles", cProgrammingResController.AddArticleToResource)
-		admin.POST("/resources/:id/exercise-categories", cProgrammingResController.CreateCategory)
-		admin.POST("/exercise-categories/:categoryId/questions", cProgrammingResController.CreateQuestion)
-		admin.GET("/c-programming/categories/:categoryId/questions/all", cProgrammingResController.AdminGetAllQuestionsByCategoryID)
-		admin.PUT("/videos/:id", cProgrammingResController.UpdateVideo)
-		admin.PUT("/articles/:id", cProgrammingResController.UpdateArticle)
-		admin.PUT("/exercise-categories/:id", cProgrammingResController.UpdateExerciseCategory)
-		admin.PUT("/questions/:id", cProgrammingResController.UpdateQuestion)
-		admin.DELETE("/:itemType/:itemId", cProgrammingResController.DeleteContentItem)
+			adminOnly.POST("/c-programming/resources", cProgrammingResController.CreateResource)
+			adminOnly.PUT("/c-programming/resources/:id", cProgrammingResController.UpdateResource)
+			adminOnly.DELETE("/c-programming/resources/:id", cProgrammingResController.DeleteResource)
+			adminOnly.POST("/c-programming/resources/:id/categories", cProgrammingResController.CreateCategory)
+			adminOnly.POST("/c-programming/categories/:categoryId/questions", cProgrammingResController.CreateQuestion)
+			adminOnly.POST("/c-programming/resources/upload", cProgrammingResController.UploadResource)
+			adminOnly.GET("/c-programming/resources", cProgrammingResController.GetAdminResources)
 
-		// 上传视频相关路由
-		admin.POST("/upload/video", contentController.UploadVideo)
-		admin.POST("/upload/video/chunk", contentController.UploadVideoChunk)
-		admin.GET("/upload/video/progress/:uploadId", contentController.GetUploadProgress)
+			adminOnly.GET("/resources/:id/content", cProgrammingResController.GetResourceCompleteContent)
+			adminOnly.POST("/resources/:id/videos", cProgrammingResController.AddVideoToResource)
+			adminOnly.POST("/resources/:id/articles", cProgrammingResController.AddArticleToResource)
+			adminOnly.POST("/resources/:id/exercise-categories", cProgrammingResController.CreateCategory)
+			adminOnly.POST("/exercise-categories/:categoryId/questions", cProgrammingResController.CreateQuestion)
+			adminOnly.GET("/c-programming/categories/:categoryId/questions/all", cProgrammingResController.AdminGetAllQuestionsByCategoryID)
+			adminOnly.PUT("/videos/:id", cProgrammingResController.UpdateVideo)
+			adminOnly.PUT("/articles/:id", cProgrammingResController.UpdateArticle)
+			adminOnly.PUT("/exercise-categories/:id", cProgrammingResController.UpdateExerciseCategory)
+			adminOnly.PUT("/questions/:id", cProgrammingResController.UpdateQuestion)
+			adminOnly.DELETE("/:itemType/:itemId", cProgrammingResController.DeleteContentItem)
+
+			// 上传视频相关路由
+			adminOnly.POST("/upload/video", contentController.UploadVideo)
+			adminOnly.POST("/upload/video/chunk", contentController.UploadVideoChunk)
+			adminOnly.GET("/upload/video/progress/:uploadId", contentController.GetUploadProgress)
+		}
 	}
 
 	if cfg.Storage.Type == "local" {

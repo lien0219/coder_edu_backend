@@ -532,6 +532,15 @@ definitions:
       assessmentId:
         type: integer
     type: object
+  service.BatchRewardRequest:
+    properties:
+      rewards:
+        items:
+          $ref: '#/definitions/service.RewardStudentItem'
+        type: array
+    required:
+    - rewards
+    type: object
   service.CodeExecutionRequest:
     properties:
       code:
@@ -850,6 +859,16 @@ definitions:
         type: integer
     required:
     - duration
+    type: object
+  service.RewardStudentItem:
+    properties:
+      points:
+        type: integer
+      studentId:
+        type: integer
+    required:
+    - points
+    - studentId
     type: object
   service.SubmitExerciseAnswerRequest:
     properties:
@@ -3134,6 +3153,27 @@ paths:
       summary: 获取今日任务
       tags:
       - 仪表盘
+  /api/knowledge-points/ranking:
+    get:
+      description: 获取学生课中测试获得的总积分排行榜
+      parameters:
+      - default: 10
+        description: 限制返回数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取课中积分排行榜
+      tags:
+      - 知识点
   /api/knowledge-points/student:
     get:
       produces:
@@ -4541,6 +4581,70 @@ paths:
       summary: 更新知识点 (老师/管理员)
       tags:
       - 知识点
+  /api/teacher/knowledge-points/points-list:
+    get:
+      description: 支持分页、姓名筛选、积分排序、获取前十名
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - description: 学生姓名筛选
+        in: query
+        name: name
+        type: string
+      - default: desc
+        description: '排序方式 (asc: 升序, desc: 降序)'
+        in: query
+        name: sort
+        type: string
+      - default: false
+        description: 是否只获取前十名
+        in: query
+        name: isTop10
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取学生课中积分列表 (老师/管理员)
+      tags:
+      - 知识点
+  /api/teacher/knowledge-points/reward:
+    post:
+      consumes:
+      - application/json
+      description: 为指定学生发放通用积分 (XP)。默认第一名300，第二三名100，支持手动调整。
+      parameters:
+      - description: 奖励发放信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.BatchRewardRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 发放排行榜奖励积分 (老师/管理员)
+      tags:
+      - 知识点
   /api/teacher/knowledge-points/submissions:
     get:
       parameters:
@@ -4551,6 +4655,10 @@ paths:
       - description: 审核状态 (pending, approved, rejected, unsubmitted)
         in: query
         name: status
+        type: string
+      - description: 学生姓名搜索
+        in: query
+        name: studentName
         type: string
       - default: 1
         description: 页码

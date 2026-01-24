@@ -83,6 +83,10 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		&model.KnowledgePointExercise{},
 		&model.KnowledgePointCompletion{},
 		&model.KnowledgePointSubmission{},
+		&model.PostClassTest{},
+		&model.PostClassTestQuestion{},
+		&model.PostClassTestSubmission{},
+		&model.PostClassTestAnswer{},
 	)
 
 	if err != nil {

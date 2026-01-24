@@ -61,6 +61,7 @@ type repositories struct {
 	suggestion         *repository.SuggestionRepository
 	assessment         *repository.AssessmentRepository
 	learningPath       *repository.LearningPathRepository
+	postClassTest      *repository.PostClassTestRepository
 }
 
 type services struct {
@@ -82,6 +83,7 @@ type services struct {
 	learningPath         *service.LearningPathService
 	knowledgePoint       *service.KnowledgePointService
 	learningGoal         *service.LearningGoalService
+	postClassTest        *service.PostClassTestService
 }
 
 type controllers struct {
@@ -104,6 +106,7 @@ type controllers struct {
 	learningPath   *controller.LearningPathController
 	knowledgePoint *controller.KnowledgePointController
 	knowledgeTag   *controller.KnowledgeTagController
+	postClassTest  *controller.PostClassTestController
 	health         *controller.HealthController
 }
 
@@ -141,6 +144,7 @@ func (a *App) initRepositories(db *gorm.DB) *repositories {
 		suggestion:         repository.NewSuggestionRepository(db),
 		assessment:         repository.NewAssessmentRepository(db),
 		learningPath:       repository.NewLearningPathRepository(db),
+		postClassTest:      repository.NewPostClassTestRepository(db),
 	}
 }
 
@@ -190,6 +194,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB)
 		s.cProgrammingResource,
 		db,
 	)
+	s.postClassTest = service.NewPostClassTestService(repos.postClassTest)
 
 	return s
 }
@@ -215,6 +220,7 @@ func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
 		learningPath:   controller.NewLearningPathController(s.learningPath),
 		knowledgePoint: controller.NewKnowledgePointController(s.knowledgePoint),
 		knowledgeTag:   controller.NewKnowledgeTagController(s.knowledgeTag),
+		postClassTest:  controller.NewPostClassTestController(s.postClassTest),
 		health:         controller.NewHealthController(db),
 	}
 }
@@ -472,6 +478,19 @@ func (a *App) registerTeacherRoutes(rg *gin.RouterGroup, c *controllers) {
 		teacher.GET("/knowledge-points/submissions", c.knowledgePoint.ListSubmissions)
 		teacher.GET("/knowledge-points/submissions/:id", c.knowledgePoint.GetSubmissionDetail)
 		teacher.POST("/knowledge-points/submissions/:id/audit", c.knowledgePoint.AuditSubmission)
+
+		// 课后测试试卷管理
+		teacher.POST("/post-class-tests", c.postClassTest.CreateTest)
+		teacher.GET("/post-class-tests", c.postClassTest.ListTests)
+		teacher.GET("/post-class-tests/:id", c.postClassTest.GetTest)
+		teacher.PUT("/post-class-tests/:id", c.postClassTest.UpdateTest)
+		teacher.DELETE("/post-class-tests/:id", c.postClassTest.DeleteTest)
+
+		// 课后测试答题管理
+		teacher.GET("/post-class-tests/:id/submissions", c.postClassTest.ListSubmissions)
+		teacher.GET("/post-class-tests/submissions/:id", c.postClassTest.GetSubmissionDetail)
+		teacher.POST("/post-class-tests/submissions/:id/reset", c.postClassTest.ResetStudentTest)
+		teacher.POST("/post-class-tests/submissions/batch-reset", c.postClassTest.BatchResetStudentTests)
 	}
 
 	// 学习路径管理

@@ -816,6 +816,50 @@ definitions:
         description: 距离下一级还差多少分
         type: integer
     type: object
+  service.PostClassTestQuestionReq:
+    properties:
+      answer:
+        type: string
+      content:
+        type: string
+      explanation:
+        type: string
+      id:
+        type: string
+      options:
+        items:
+          type: integer
+        type: array
+      order:
+        type: integer
+      points:
+        type: integer
+      questionType:
+        type: string
+      rewardXp:
+        type: integer
+    required:
+    - answer
+    - content
+    - questionType
+    type: object
+  service.PostClassTestReq:
+    properties:
+      description:
+        type: string
+      isPublished:
+        type: boolean
+      questions:
+        items:
+          $ref: '#/definitions/service.PostClassTestQuestionReq'
+        type: array
+      timeLimit:
+        type: integer
+      title:
+        type: string
+    required:
+    - title
+    type: object
   service.PostRequest:
     properties:
       content:
@@ -5418,6 +5462,220 @@ paths:
       summary: 批量发布/下架关卡
       tags:
       - 关卡管理
+  /api/teacher/post-class-tests:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取课后测试试卷列表
+      tags:
+      - 课后测试模块
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 试卷信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.PostClassTestReq'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建课后测试试卷
+      tags:
+      - 课后测试模块
+  /api/teacher/post-class-tests/{id}:
+    delete:
+      parameters:
+      - description: 试卷ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除课后测试试卷
+      tags:
+      - 课后测试模块
+    get:
+      parameters:
+      - description: 试卷ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取课后测试试卷详情
+      tags:
+      - 课后测试模块
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 试卷ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 试卷信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.PostClassTestReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新课后测试试卷
+      tags:
+      - 课后测试模块
+  /api/teacher/post-class-tests/{id}/submissions:
+    get:
+      parameters:
+      - description: 试卷ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - description: 学生姓名
+        in: query
+        name: name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取试卷答题情况列表
+      tags:
+      - 课后测试模块
+  /api/teacher/post-class-tests/submissions/{id}:
+    get:
+      parameters:
+      - description: 提交ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取学生答题详情
+      tags:
+      - 课后测试模块
+  /api/teacher/post-class-tests/submissions/{id}/reset:
+    post:
+      parameters:
+      - description: 提交ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 重设学生测试（允许重测）
+      tags:
+      - 课后测试模块
+  /api/teacher/post-class-tests/submissions/batch-reset:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: '提交ID列表 {''submissionIds'': [''uuid1'',''uuid2'']}'
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 批量重设学生测试
+      tags:
+      - 课后测试模块
   /api/teacher/students/{id}/progress:
     get:
       parameters:

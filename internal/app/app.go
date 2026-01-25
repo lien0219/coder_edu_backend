@@ -194,7 +194,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB)
 		s.cProgrammingResource,
 		db,
 	)
-	s.postClassTest = service.NewPostClassTestService(repos.postClassTest)
+	s.postClassTest = service.NewPostClassTestService(repos.postClassTest, s.user)
 
 	return s
 }
@@ -387,6 +387,13 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	rg.GET("/suggestions", c.suggestion.ListStudentSuggestions)
 	rg.POST("/suggestions/:id/complete", c.suggestion.CompleteSuggestion)
 
+	// 课后测试
+	rg.GET("/student/post-class-tests/published", c.postClassTest.GetPublishedTest)
+	rg.GET("/student/post-class-tests/:id", c.postClassTest.GetStudentTestDetail)
+	rg.POST("/student/post-class-tests/:id/start", c.postClassTest.StartTest)
+	rg.POST("/student/post-class-tests/:id/learning-time", c.postClassTest.RecordLearningTime)
+	rg.POST("/student/post-class-tests/:id/submit", c.postClassTest.SubmitTest)
+
 	// 学前测试
 	rg.GET("/assessments/questions", c.assessment.GetStudentQuestions)
 	rg.POST("/assessments/submit", c.assessment.SubmitAssessment)
@@ -489,8 +496,7 @@ func (a *App) registerTeacherRoutes(rg *gin.RouterGroup, c *controllers) {
 		// 课后测试答题管理
 		teacher.GET("/post-class-tests/:id/submissions", c.postClassTest.ListSubmissions)
 		teacher.GET("/post-class-tests/submissions/:id", c.postClassTest.GetSubmissionDetail)
-		teacher.POST("/post-class-tests/submissions/:id/reset", c.postClassTest.ResetStudentTest)
-		teacher.POST("/post-class-tests/submissions/batch-reset", c.postClassTest.BatchResetStudentTests)
+		teacher.POST("/post-class-tests/submissions/reset", c.postClassTest.ResetStudentTests)
 	}
 
 	// 学习路径管理

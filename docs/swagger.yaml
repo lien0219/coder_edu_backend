@@ -816,6 +816,15 @@ definitions:
         description: 距离下一级还差多少分
         type: integer
     type: object
+  service.PostClassTestAnswerReq:
+    properties:
+      code:
+        description: 如果是代码题，提交的源代码
+        type: string
+      result:
+        description: 用于比对得分的结果
+        type: string
+    type: object
   service.PostClassTestQuestionReq:
     properties:
       answer:
@@ -857,8 +866,16 @@ definitions:
         type: integer
       title:
         type: string
-    required:
-    - title
+    type: object
+  service.PostClassTestSubmissionReq:
+    properties:
+      answers:
+        additionalProperties:
+          $ref: '#/definitions/service.PostClassTestAnswerReq'
+        description: 'key: questionID'
+        type: object
+      isTimeout:
+        type: boolean
     type: object
   service.PostRequest:
     properties:
@@ -4118,6 +4135,116 @@ paths:
       summary: 按模块类型获取资源
       tags:
       - 内容
+  /api/student/post-class-tests/{id}:
+    get:
+      parameters:
+      - description: 试卷ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生获取已发布的课后测试详情（包含题目）
+      tags:
+      - 课后测试模块
+  /api/student/post-class-tests/{id}/learning-time:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 试卷ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 学习时长信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.RecordLearningTimeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生记录课后测试学习时长
+      tags:
+      - 课后测试模块
+  /api/student/post-class-tests/{id}/start:
+    post:
+      parameters:
+      - description: 试卷ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生开始课后测试答题
+      tags:
+      - 课后测试模块
+  /api/student/post-class-tests/{id}/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 试卷ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 提交信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.PostClassTestSubmissionReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生提交课后测试答案
+      tags:
+      - 课后测试模块
+  /api/student/post-class-tests/published:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生获取已发布的课后测试
+      tags:
+      - 课后测试模块
   /api/student/suggestions:
     get:
       produces:
@@ -5629,32 +5756,12 @@ paths:
       summary: 获取学生答题详情
       tags:
       - 课后测试模块
-  /api/teacher/post-class-tests/submissions/{id}/reset:
-    post:
-      parameters:
-      - description: 提交ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/util.Response'
-      security:
-      - BearerAuth: []
-      summary: 重设学生测试（允许重测）
-      tags:
-      - 课后测试模块
-  /api/teacher/post-class-tests/submissions/batch-reset:
+  /api/teacher/post-class-tests/submissions/reset:
     post:
       consumes:
       - application/json
       parameters:
-      - description: '提交ID列表 {''submissionIds'': [''uuid1'',''uuid2'']}'
+      - description: '提交记录ID列表 {''ids'': [''uuid1'', ''uuid2'']}'
         in: body
         name: body
         required: true
@@ -5673,7 +5780,7 @@ paths:
             $ref: '#/definitions/util.Response'
       security:
       - BearerAuth: []
-      summary: 批量重设学生测试
+      summary: 重置学生测试（支持单人或批量）
       tags:
       - 课后测试模块
   /api/teacher/students/{id}/progress:

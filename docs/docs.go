@@ -5037,6 +5037,186 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/student/post-class-tests/published": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "课后测试模块"
+                ],
+                "summary": "学生获取已发布的课后测试",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/student/post-class-tests/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "课后测试模块"
+                ],
+                "summary": "学生获取已发布的课后测试详情（包含题目）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "试卷ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/student/post-class-tests/{id}/learning-time": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "课后测试模块"
+                ],
+                "summary": "学生记录课后测试学习时长",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "试卷ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "学习时长信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.RecordLearningTimeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/student/post-class-tests/{id}/start": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "课后测试模块"
+                ],
+                "summary": "学生开始课后测试答题",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "试卷ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/student/post-class-tests/{id}/submit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "课后测试模块"
+                ],
+                "summary": "学生提交课后测试答案",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "试卷ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "提交信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.PostClassTestSubmissionReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/student/suggestions": {
             "get": {
                 "security": [
@@ -7284,7 +7464,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/teacher/post-class-tests/submissions/batch-reset": {
+        "/api/teacher/post-class-tests/submissions/reset": {
             "post": {
                 "security": [
                     {
@@ -7300,10 +7480,10 @@ const docTemplate = `{
                 "tags": [
                     "课后测试模块"
                 ],
-                "summary": "批量重设学生测试",
+                "summary": "重置学生测试（支持单人或批量）",
                 "parameters": [
                     {
-                        "description": "提交ID列表 {'submissionIds': ['uuid1','uuid2']}",
+                        "description": "提交记录ID列表 {'ids': ['uuid1', 'uuid2']}",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -7342,39 +7522,6 @@ const docTemplate = `{
                     "课后测试模块"
                 ],
                 "summary": "获取学生答题详情",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "提交ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/util.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/teacher/post-class-tests/submissions/{id}/reset": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "课后测试模块"
-                ],
-                "summary": "重设学生测试（允许重测）",
                 "parameters": [
                     {
                         "type": "string",
@@ -9599,6 +9746,19 @@ const docTemplate = `{
                 }
             }
         },
+        "service.PostClassTestAnswerReq": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "如果是代码题，提交的源代码",
+                    "type": "string"
+                },
+                "result": {
+                    "description": "用于比对得分的结果",
+                    "type": "string"
+                }
+            }
+        },
         "service.PostClassTestQuestionReq": {
             "type": "object",
             "required": [
@@ -9641,9 +9801,6 @@ const docTemplate = `{
         },
         "service.PostClassTestReq": {
             "type": "object",
-            "required": [
-                "title"
-            ],
             "properties": {
                 "description": {
                     "type": "string"
@@ -9662,6 +9819,21 @@ const docTemplate = `{
                 },
                 "title": {
                     "type": "string"
+                }
+            }
+        },
+        "service.PostClassTestSubmissionReq": {
+            "type": "object",
+            "properties": {
+                "answers": {
+                    "description": "key: questionID",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/service.PostClassTestAnswerReq"
+                    }
+                },
+                "isTimeout": {
+                    "type": "boolean"
                 }
             }
         },

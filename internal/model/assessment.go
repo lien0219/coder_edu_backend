@@ -58,6 +58,7 @@ type PostClassTestSubmission struct {
 	RewardXP    int        `gorm:"default:0" json:"rewardXp"`
 	Status      string     `gorm:"size:20;default:'completed'" json:"status"`
 	IsRetest    bool       `gorm:"default:false" json:"isRetest"`
+	IsTimeout   bool       `gorm:"default:false" json:"isTimeout"` // 是否超时提交
 	StartedAt   time.Time  `json:"startedAt"`
 	CompletedAt *time.Time `json:"completedAt"`
 }
@@ -68,11 +69,14 @@ func (PostClassTestSubmission) TableName() string {
 
 type PostClassTestAnswer struct {
 	UUIDBase
-	SubmissionID string `gorm:"index;type:varchar(36)" json:"submissionId"`
-	QuestionID   string `gorm:"index;type:varchar(36)" json:"questionId"`
-	UserAnswer   string `gorm:"type:text" json:"userAnswer"`
-	IsCorrect    bool   `gorm:"default:false" json:"isCorrect"`
-	Score        int    `gorm:"default:0" json:"score"`
+	SubmissionID    string          `gorm:"index;type:varchar(36)" json:"submissionId"`
+	QuestionID      string          `gorm:"index;type:varchar(36)" json:"questionId"`
+	QuestionType    string          `gorm:"size:50" json:"questionType"`      // 提交时的题目类型快照
+	QuestionContent string          `gorm:"type:text" json:"questionContent"` // 提交时的题目内容快照
+	QuestionOptions json.RawMessage `gorm:"type:json" json:"questionOptions"` // 提交时的选项快照
+	UserAnswer      string          `gorm:"type:text" json:"userAnswer"`
+	IsCorrect       bool            `gorm:"default:false" json:"isCorrect"`
+	Score           int             `gorm:"default:0" json:"score"`
 }
 
 func (PostClassTestAnswer) TableName() string {

@@ -67,6 +67,148 @@ func (c *PostClassTestController) ListTests(ctx *gin.Context) {
 	util.Success(ctx, gin.H{"items": tests, "total": total})
 }
 
+// @Summary 学生获取已发布的课后测试
+// @Tags 课后测试模块
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} util.Response
+// @Router /api/student/post-class-tests/published [get]
+func (c *PostClassTestController) GetPublishedTest(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	test, err := c.Service.GetPublishedTestForStudent(user.UserID)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, test)
+}
+
+// @Summary 学生获取已发布的课后测试详情（包含题目）
+// @Tags 课后测试模块
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "试卷ID"
+// @Success 200 {object} util.Response
+// @Router /api/student/post-class-tests/{id} [get]
+func (c *PostClassTestController) GetStudentTestDetail(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	id := ctx.Param("id")
+
+	detail, err := c.Service.GetStudentTestDetail(user.UserID, id)
+	if err != nil {
+		if err.Error() == "test not published or not accessible" {
+			util.Error(ctx, 403, err.Error())
+		} else {
+			util.NotFound(ctx)
+		}
+		return
+	}
+
+	util.Success(ctx, detail)
+}
+
+// @Summary 学生开始课后测试答题
+// @Tags 课后测试模块
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "试卷ID"
+// @Success 200 {object} util.Response
+// @Router /api/student/post-class-tests/{id}/start [post]
+func (c *PostClassTestController) StartTest(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	id := ctx.Param("id")
+	submission, err := c.Service.StartTest(user.UserID, id)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, submission)
+}
+
+// @Summary 学生记录课后测试学习时长
+// @Tags 课后测试模块
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "试卷ID"
+// @Param body body service.RecordLearningTimeRequest true "学习时长信息"
+// @Success 200 {object} util.Response
+// @Router /api/student/post-class-tests/{id}/learning-time [post]
+func (c *PostClassTestController) RecordLearningTime(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	id := ctx.Param("id")
+	var req service.RecordLearningTimeRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
+	if err := c.Service.RecordLearningTime(user.UserID, id, req.Duration); err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, "记录成功")
+}
+
+// @Summary 学生提交课后测试答案
+// @Tags 课后测试模块
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "试卷ID"
+// @Param body body service.PostClassTestSubmissionReq true "提交信息"
+// @Success 200 {object} util.Response
+// @Router /api/student/post-class-tests/{id}/submit [post]
+func (c *PostClassTestController) SubmitTest(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	id := ctx.Param("id")
+	var req service.PostClassTestSubmissionReq
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
+	submission, err := c.Service.SubmitTest(user.UserID, id, req)
+	if err != nil {
+		if err.Error() == "test already submitted" {
+			util.Error(ctx, 403, err.Error())
+		} else {
+			util.InternalServerError(ctx)
+		}
+		return
+	}
+
+	util.Success(ctx, submission)
+}
+
 // @Summary 获取课后测试试卷详情
 // @Tags 课后测试模块
 // @Produce json
@@ -142,13 +284,17 @@ func (c *PostClassTestController) DeleteTest(ctx *gin.Context) {
 // @Success 200 {object} util.Response
 // @Router /api/teacher/post-class-tests/{id}/submissions [get]
 func (c *PostClassTestController) ListSubmissions(ctx *gin.Context) {
-	id := ctx.Param("id")
+	id := ctx.Query("testId")
+	if id == "" {
+		id = ctx.Param("id")
+	}
 
 	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "20"))
 	name := ctx.Query("name")
+	status := ctx.Query("status")
 
-	ss, total, err := c.Service.ListSubmissions(id, page, limit, name)
+	ss, total, err := c.Service.ListSubmissions(id, page, limit, name, status)
 	if err != nil {
 		util.InternalServerError(ctx)
 		return
@@ -176,45 +322,27 @@ func (c *PostClassTestController) GetSubmissionDetail(ctx *gin.Context) {
 	util.Success(ctx, detail)
 }
 
-// @Summary 重设学生测试（允许重测）
-// @Tags 课后测试模块
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "提交ID"
-// @Success 200 {object} util.Response
-// @Router /api/teacher/post-class-tests/submissions/{id}/reset [post]
-func (c *PostClassTestController) ResetStudentTest(ctx *gin.Context) {
-	id := ctx.Param("id")
-
-	if err := c.Service.ResetStudentTest(id); err != nil {
-		util.InternalServerError(ctx)
-		return
-	}
-
-	util.Success(ctx, "已重置学生测试状态")
-}
-
-// @Summary 批量重设学生测试
+// @Summary 重置学生测试（支持单人或批量）
 // @Tags 课后测试模块
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param body body map[string][]string true "提交ID列表 {'submissionIds': ['uuid1','uuid2']}"
+// @Param body body map[string][]string true "提交记录ID列表 {'ids': ['uuid1', 'uuid2']}"
 // @Success 200 {object} util.Response
-// @Router /api/teacher/post-class-tests/submissions/batch-reset [post]
-func (c *PostClassTestController) BatchResetStudentTests(ctx *gin.Context) {
+// @Router /api/teacher/post-class-tests/submissions/reset [post]
+func (c *PostClassTestController) ResetStudentTests(ctx *gin.Context) {
 	var req struct {
-		SubmissionIDs []string `json:"submissionIds" binding:"required"`
+		IDs []string `json:"ids" binding:"required"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		util.BadRequest(ctx, err.Error())
 		return
 	}
 
-	if err := c.Service.BatchResetStudentTests(req.SubmissionIDs); err != nil {
+	if err := c.Service.BatchResetStudentTests(req.IDs); err != nil {
 		util.InternalServerError(ctx)
 		return
 	}
 
-	util.Success(ctx, "已批量重置学生测试状态")
+	util.Success(ctx, "已重置选中的学生测试状态")
 }

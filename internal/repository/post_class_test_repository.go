@@ -99,15 +99,24 @@ func (r *PostClassTestRepository) ListQuestions(testID string) ([]model.PostClas
 	return qs, err
 }
 
-func (r *PostClassTestRepository) ListSubmissions(testID string, page, limit int, studentName string) ([]map[string]interface{}, int64, error) {
+func (r *PostClassTestRepository) ListSubmissions(testID string, page, limit int, studentName string, status string) ([]map[string]interface{}, int64, error) {
 	var total int64
 	query := r.DB.Table("post_class_test_submissions s").
-		Select("s.*, u.name as user_name, u.email as user_email").
+		Select("s.*, u.name as user_name, u.email as user_email, t.title as test_title").
 		Joins("JOIN users u ON s.user_id = u.id").
-		Where("s.test_id = ? AND s.deleted_at IS NULL", testID)
+		Joins("JOIN post_class_tests t ON s.test_id = t.id").
+		Where("s.deleted_at IS NULL AND u.deleted_at IS NULL AND u.disabled = ? AND t.deleted_at IS NULL", false)
+
+	if testID != "" && testID != "all" {
+		query = query.Where("s.test_id = ?", testID)
+	}
 
 	if studentName != "" {
 		query = query.Where("u.name LIKE ?", "%"+studentName+"%")
+	}
+
+	if status != "" && status != "all" {
+		query = query.Where("s.status = ?", status)
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -122,12 +131,12 @@ func (r *PostClassTestRepository) ListSubmissions(testID string, page, limit int
 
 func (r *PostClassTestRepository) GetSubmissionDetail(submissionID string) (*model.PostClassTestSubmission, []model.PostClassTestAnswer, error) {
 	var submission model.PostClassTestSubmission
-	if err := r.DB.First(&submission, "id = ?", submissionID).Error; err != nil {
+	if err := r.DB.Unscoped().First(&submission, "id = ?", submissionID).Error; err != nil {
 		return nil, nil, err
 	}
 
 	var answers []model.PostClassTestAnswer
-	if err := r.DB.Where("submission_id = ?", submissionID).Find(&answers).Error; err != nil {
+	if err := r.DB.Unscoped().Where("submission_id = ?", submissionID).Find(&answers).Error; err != nil {
 		return nil, nil, err
 	}
 
@@ -152,6 +161,44 @@ func (r *PostClassTestRepository) BatchDeleteSubmissions(submissionIDs []string)
 	})
 }
 
+func (r *PostClassTestRepository) CreateSubmissionWithAnswers(submission *model.PostClassTestSubmission, answers []model.PostClassTestAnswer) error {
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(submission).Error; err != nil {
+			return err
+		}
+		for i := range answers {
+			answers[i].SubmissionID = submission.ID
+		}
+		if len(answers) > 0 {
+			if err := tx.Create(&answers).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *PostClassTestRepository) UpdateSubmissionWithAnswers(submission *model.PostClassTestSubmission, answers []model.PostClassTestAnswer) error {
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(submission).Error; err != nil {
+			return err
+		}
+		for i := range answers {
+			answers[i].SubmissionID = submission.ID
+		}
+		if len(answers) > 0 {
+			if err := tx.Create(&answers).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *PostClassTestRepository) CreateSubmission(submission *model.PostClassTestSubmission) error {
+	return r.DB.Create(submission).Error
+}
+
 func (r *PostClassTestRepository) FindSubmissionByUserAndTest(userID uint, testID string) (*model.PostClassTestSubmission, error) {
 	var s model.PostClassTestSubmission
 	err := r.DB.Where("user_id = ? AND test_id = ?", userID, testID).First(&s).Error
@@ -159,6 +206,35 @@ func (r *PostClassTestRepository) FindSubmissionByUserAndTest(userID uint, testI
 		return nil, err
 	}
 	return &s, nil
+}
+
+type PublishedTestForStudent struct {
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Description   string `json:"description"`
+	TimeLimit     int    `json:"timeLimit"`
+	QuestionCount int    `json:"questionCount"`
+	Status        string `json:"status"` // 'pending' or 'completed'
+}
+
+func (r *PostClassTestRepository) GetPublishedTestForStudent(userID uint) (*PublishedTestForStudent, error) {
+	var test PublishedTestForStudent
+	err := r.DB.Table("post_class_tests t").
+		Select("t.id, t.title, t.description, t.time_limit, "+
+			"(SELECT COUNT(*) FROM post_class_test_questions q WHERE q.test_id = t.id AND q.deleted_at IS NULL) as question_count, "+
+			"COALESCE(s.status, 'pending') as status").
+		Joins("LEFT JOIN post_class_test_submissions s ON s.test_id = t.id AND s.user_id = ? AND s.deleted_at IS NULL", userID).
+		Where("t.is_published = ? AND t.deleted_at IS NULL", true).
+		Order("t.published_at desc, t.created_at desc").
+		Scan(&test).Error
+
+	if err != nil {
+		return nil, err
+	}
+	if test.ID == "" {
+		return nil, nil
+	}
+	return &test, nil
 }
 
 func (r *PostClassTestRepository) UnpublishAllExcept(testID string) error {

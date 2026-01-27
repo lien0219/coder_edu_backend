@@ -287,7 +287,7 @@ func (s *PostClassTestService) SubmitTest(userID uint, testID string, req PostCl
 			_ = s.Repo.DB.Create(&model.LearningLog{
 				UserID:   userID,
 				Activity: "post_class_test_score",
-				Content:  "课后测试得分: " + test.Title + " (试卷ID: " + testID + ")",
+				Content:  "课后测试得分: " + test.Title,
 				Duration: 0,
 				Score:    totalScore,
 			})

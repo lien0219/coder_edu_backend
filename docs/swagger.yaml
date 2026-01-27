@@ -816,6 +816,57 @@ definitions:
         description: 距离下一级还差多少分
         type: integer
     type: object
+  service.MigrationAnswerReq:
+    properties:
+      userAnswer:
+        type: string
+      userCode:
+        type: string
+    type: object
+  service.MigrationQuestionReq:
+    properties:
+      description:
+        type: string
+      difficulty:
+        type: string
+      id:
+        type: string
+      order:
+        type: integer
+      points:
+        type: integer
+      standardAnswer:
+        type: string
+      title:
+        type: string
+    required:
+    - description
+    - difficulty
+    - standardAnswer
+    - title
+    type: object
+  service.MigrationSubmissionReq:
+    properties:
+      answers:
+        additionalProperties:
+          $ref: '#/definitions/service.MigrationAnswerReq'
+        type: object
+    type: object
+  service.MigrationTaskReq:
+    properties:
+      description:
+        type: string
+      isPublished:
+        type: boolean
+      questions:
+        items:
+          $ref: '#/definitions/service.MigrationQuestionReq'
+        type: array
+      timeLimit:
+        type: integer
+      title:
+        type: string
+    type: object
   service.PostClassTestAnswerReq:
     properties:
       code:
@@ -872,7 +923,6 @@ definitions:
       answers:
         additionalProperties:
           $ref: '#/definitions/service.PostClassTestAnswerReq'
-        description: 'key: questionID'
         type: object
       isTimeout:
         type: boolean
@@ -4135,6 +4185,88 @@ paths:
       summary: 按模块类型获取资源
       tags:
       - 内容
+  /api/student/migration-tasks/{id}:
+    get:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生获取迁移任务详情（包含题目）
+      tags:
+      - 迁移任务模块
+  /api/student/migration-tasks/{id}/start:
+    post:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生开始迁移任务答题
+      tags:
+      - 迁移任务模块
+  /api/student/migration-tasks/{id}/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 提交信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.MigrationSubmissionReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生提交迁移任务答案
+      tags:
+      - 迁移任务模块
+  /api/student/migration-tasks/published:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生获取已发布的迁移任务列表
+      tags:
+      - 迁移任务模块
   /api/student/post-class-tests/{id}:
     get:
       parameters:
@@ -5589,6 +5721,177 @@ paths:
       summary: 批量发布/下架关卡
       tags:
       - 关卡管理
+  /api/teacher/migration-tasks:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取迁移任务列表
+      tags:
+      - 迁移任务模块
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.MigrationTaskReq'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建迁移任务
+      tags:
+      - 迁移任务模块
+  /api/teacher/migration-tasks/{id}:
+    delete:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除迁移任务
+      tags:
+      - 迁移任务模块
+    get:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取迁移任务详情
+      tags:
+      - 迁移任务模块
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 任务信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.MigrationTaskReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新迁移任务
+      tags:
+      - 迁移任务模块
+  /api/teacher/migration-tasks/{id}/submissions:
+    get:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - description: 学生姓名
+        in: query
+        name: name
+        type: string
+      - description: 状态
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取迁移任务提交情况列表
+      tags:
+      - 迁移任务模块
+  /api/teacher/migration-tasks/submissions/{id}:
+    get:
+      parameters:
+      - description: 提交ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取迁移任务学生答题详情
+      tags:
+      - 迁移任务模块
   /api/teacher/post-class-tests:
     get:
       parameters:

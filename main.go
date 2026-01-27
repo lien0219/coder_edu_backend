@@ -21,6 +21,7 @@ package main
 import (
 	"coder_edu_backend/internal/app"
 	"coder_edu_backend/internal/config"
+	"coder_edu_backend/pkg/logger"
 	"log"
 )
 
@@ -34,5 +35,6 @@ func main() {
 	}
 
 	application := app.NewApp(cfg)
+	defer logger.Log.Sync()
 	application.Run()
 }

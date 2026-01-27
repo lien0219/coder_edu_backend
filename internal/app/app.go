@@ -62,6 +62,7 @@ type repositories struct {
 	assessment         *repository.AssessmentRepository
 	learningPath       *repository.LearningPathRepository
 	postClassTest      *repository.PostClassTestRepository
+	migrationTask      *repository.MigrationTaskRepository
 }
 
 type services struct {
@@ -84,6 +85,7 @@ type services struct {
 	knowledgePoint       *service.KnowledgePointService
 	learningGoal         *service.LearningGoalService
 	postClassTest        *service.PostClassTestService
+	migrationTask        *service.MigrationTaskService
 }
 
 type controllers struct {
@@ -107,6 +109,7 @@ type controllers struct {
 	knowledgePoint *controller.KnowledgePointController
 	knowledgeTag   *controller.KnowledgeTagController
 	postClassTest  *controller.PostClassTestController
+	migrationTask  *controller.MigrationTaskController
 	health         *controller.HealthController
 }
 
@@ -145,6 +148,7 @@ func (a *App) initRepositories(db *gorm.DB) *repositories {
 		assessment:         repository.NewAssessmentRepository(db),
 		learningPath:       repository.NewLearningPathRepository(db),
 		postClassTest:      repository.NewPostClassTestRepository(db),
+		migrationTask:      repository.NewMigrationTaskRepository(db),
 	}
 }
 
@@ -195,6 +199,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB)
 		db,
 	)
 	s.postClassTest = service.NewPostClassTestService(repos.postClassTest, s.user)
+	s.migrationTask = service.NewMigrationTaskService(repos.migrationTask, s.user)
 
 	return s
 }
@@ -221,6 +226,7 @@ func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
 		knowledgePoint: controller.NewKnowledgePointController(s.knowledgePoint),
 		knowledgeTag:   controller.NewKnowledgeTagController(s.knowledgeTag),
 		postClassTest:  controller.NewPostClassTestController(s.postClassTest),
+		migrationTask:  controller.NewMigrationTaskController(s.migrationTask),
 		health:         controller.NewHealthController(db),
 	}
 }
@@ -394,6 +400,13 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	rg.POST("/student/post-class-tests/:id/learning-time", c.postClassTest.RecordLearningTime)
 	rg.POST("/student/post-class-tests/:id/submit", c.postClassTest.SubmitTest)
 
+	// 迁移任务
+	rg.GET("/student/migration-tasks/published", c.migrationTask.GetPublishedTasks)
+	rg.GET("/student/migration-tasks/:id", c.migrationTask.GetStudentTaskDetail)
+	rg.POST("/student/migration-tasks/:id/start", c.migrationTask.StartTask)
+	rg.POST("/student/migration-tasks/:id/submit", c.migrationTask.SubmitTask)
+	rg.POST("/student/migration-tasks/:id/learning-time", c.migrationTask.RecordLearningTime)
+
 	// 学前测试
 	rg.GET("/assessments/questions", c.assessment.GetStudentQuestions)
 	rg.POST("/assessments/submit", c.assessment.SubmitAssessment)
@@ -497,6 +510,15 @@ func (a *App) registerTeacherRoutes(rg *gin.RouterGroup, c *controllers) {
 		teacher.GET("/post-class-tests/:id/submissions", c.postClassTest.ListSubmissions)
 		teacher.GET("/post-class-tests/submissions/:id", c.postClassTest.GetSubmissionDetail)
 		teacher.POST("/post-class-tests/submissions/reset", c.postClassTest.ResetStudentTests)
+
+		// 迁移任务管理
+		teacher.POST("/migration-tasks", c.migrationTask.CreateTask)
+		teacher.GET("/migration-tasks", c.migrationTask.ListTasks)
+		teacher.GET("/migration-tasks/:id", c.migrationTask.GetTask)
+		teacher.PUT("/migration-tasks/:id", c.migrationTask.UpdateTask)
+		teacher.DELETE("/migration-tasks/:id", c.migrationTask.DeleteTask)
+		teacher.GET("/migration-tasks/:id/submissions", c.migrationTask.ListSubmissions)
+		teacher.GET("/migration-tasks/submissions/:id", c.migrationTask.GetSubmissionDetail)
 	}
 
 	// 学习路径管理

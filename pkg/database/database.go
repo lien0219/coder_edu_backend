@@ -87,6 +87,10 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		&model.PostClassTestQuestion{},
 		&model.PostClassTestSubmission{},
 		&model.PostClassTestAnswer{},
+		&model.MigrationTask{},
+		&model.MigrationQuestion{},
+		&model.MigrationSubmission{},
+		&model.MigrationAnswer{},
 	)
 
 	if err != nil {

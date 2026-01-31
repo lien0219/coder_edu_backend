@@ -12,7 +12,7 @@ services:
       - DATABASE_HOST=db
       - DATABASE_PORT=3306
       - DATABASE_USER=root
-      - DATABASE_PASSWORD=lyn123
+      - DATABASE_PASSWORD=*****************
       - DATABASE_NAME=coder_edu_backend
       - JWT_SECRET=coder_edu_backend_secret
     volumes:
@@ -26,7 +26,7 @@ services:
     ports:
       - "3306:3306"
     environment:
-      - MYSQL_ROOT_PASSWORD=lyn123
+      - MYSQL_ROOT_PASSWORD=*****************
       - MYSQL_DATABASE=coder_edu_backend
     volumes:
       - mysql_data:/var/lib/mysql

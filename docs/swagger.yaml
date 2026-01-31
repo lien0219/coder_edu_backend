@@ -31,6 +31,17 @@ definitions:
     - password
     - role
     type: object
+  controller.SaveReflectionRequest:
+    properties:
+      challenges:
+        type: string
+      connections:
+        type: string
+      nextSteps:
+        type: string
+      summary:
+        type: string
+    type: object
   controller.SetRetestRequest:
     properties:
       canTake:
@@ -279,6 +290,29 @@ definitions:
       answer:
         type: string
       questionId:
+        type: integer
+    type: object
+  model.Reflection:
+    properties:
+      challenges:
+        type: string
+      connections:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: integer
+      nextSteps:
+        type: string
+      summary:
+        type: string
+      updatedAt:
+        type: string
+      user:
+        allOf:
+        - $ref: '#/definitions/model.User'
+        description: 关联用户
+      userId:
         type: integer
     type: object
   model.Resource:
@@ -855,6 +889,8 @@ definitions:
   service.MigrationTaskReq:
     properties:
       description:
+        type: string
+      difficulty:
         type: string
       isPublished:
         type: boolean
@@ -4104,6 +4140,55 @@ paths:
       summary: 提交练习题答案（公开接口）
       tags:
       - C语言编程资源
+  /api/reflections/my:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Reflection'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取我的有效反思
+      tags:
+      - 有效反思
+    post:
+      consumes:
+      - application/json
+      description: 学生填写总结关键知识点、识别挑战、连接已有知识、规划下一步
+      parameters:
+      - description: 反思内容
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.SaveReflectionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Reflection'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 学生保存或更新有效反思
+      tags:
+      - 有效反思
   /api/register:
     post:
       consumes:
@@ -4203,6 +4288,34 @@ paths:
       security:
       - BearerAuth: []
       summary: 学生获取迁移任务详情（包含题目）
+      tags:
+      - 迁移任务模块
+  /api/student/migration-tasks/{id}/learning-time:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 学习时长信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.RecordLearningTimeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 学生记录迁移任务学习时长
       tags:
       - 迁移任务模块
   /api/student/migration-tasks/{id}/start:
@@ -6086,6 +6199,62 @@ paths:
       summary: 重置学生测试（支持单人或批量）
       tags:
       - 课后测试模块
+  /api/teacher/reflections:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.Reflection'
+                  type: array
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 老师/管理员列出所有学生的有效反思
+      tags:
+      - 有效反思
+  /api/teacher/reflections/{id}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 反思ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 反思内容
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.SaveReflectionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Reflection'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 老师/管理员修改有效反思数据
+      tags:
+      - 有效反思
   /api/teacher/students/{id}/progress:
     get:
       parameters:

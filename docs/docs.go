@@ -4904,6 +4904,94 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/reflections/my": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "有效反思"
+                ],
+                "summary": "获取我的有效反思",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.Reflection"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "学生填写总结关键知识点、识别挑战、连接已有知识、规划下一步",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "有效反思"
+                ],
+                "summary": "学生保存或更新有效反思",
+                "parameters": [
+                    {
+                        "description": "反思内容",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.SaveReflectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.Reflection"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/register": {
             "post": {
                 "description": "使用提供的信息注册新用户",
@@ -5082,6 +5170,51 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/student/migration-tasks/{id}/learning-time": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "迁移任务模块"
+                ],
+                "summary": "学生记录迁移任务学习时长",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "学习时长信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.RecordLearningTimeRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -8111,6 +8244,105 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/teacher/reflections": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "有效反思"
+                ],
+                "summary": "老师/管理员列出所有学生的有效反思",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/model.Reflection"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/teacher/reflections/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "有效反思"
+                ],
+                "summary": "老师/管理员修改有效反思数据",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "反思ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "反思内容",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.SaveReflectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.Reflection"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/teacher/students/progress": {
             "get": {
                 "security": [
@@ -9011,6 +9243,23 @@ const docTemplate = `{
                 }
             }
         },
+        "controller.SaveReflectionRequest": {
+            "type": "object",
+            "properties": {
+                "challenges": {
+                    "type": "string"
+                },
+                "connections": {
+                    "type": "string"
+                },
+                "nextSteps": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                }
+            }
+        },
         "controller.SetRetestRequest": {
             "type": "object",
             "required": [
@@ -9371,6 +9620,43 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "questionId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.Reflection": {
+            "type": "object",
+            "properties": {
+                "challenges": {
+                    "type": "string"
+                },
+                "connections": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "nextSteps": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "user": {
+                    "description": "关联用户",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.User"
+                        }
+                    ]
+                },
+                "userId": {
                     "type": "integer"
                 }
             }
@@ -10214,6 +10500,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "description": {
+                    "type": "string"
+                },
+                "difficulty": {
                     "type": "string"
                 },
                 "isPublished": {

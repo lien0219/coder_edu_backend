@@ -63,6 +63,7 @@ type repositories struct {
 	learningPath       *repository.LearningPathRepository
 	postClassTest      *repository.PostClassTestRepository
 	migrationTask      *repository.MigrationTaskRepository
+	reflection         *repository.ReflectionRepository
 }
 
 type services struct {
@@ -86,6 +87,7 @@ type services struct {
 	learningGoal         *service.LearningGoalService
 	postClassTest        *service.PostClassTestService
 	migrationTask        *service.MigrationTaskService
+	reflection           *service.ReflectionService
 }
 
 type controllers struct {
@@ -110,6 +112,7 @@ type controllers struct {
 	knowledgeTag   *controller.KnowledgeTagController
 	postClassTest  *controller.PostClassTestController
 	migrationTask  *controller.MigrationTaskController
+	reflection     *controller.ReflectionController
 	health         *controller.HealthController
 }
 
@@ -149,6 +152,7 @@ func (a *App) initRepositories(db *gorm.DB) *repositories {
 		learningPath:       repository.NewLearningPathRepository(db),
 		postClassTest:      repository.NewPostClassTestRepository(db),
 		migrationTask:      repository.NewMigrationTaskRepository(db),
+		reflection:         repository.NewReflectionRepository(db),
 	}
 }
 
@@ -200,6 +204,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB)
 	)
 	s.postClassTest = service.NewPostClassTestService(repos.postClassTest, s.user)
 	s.migrationTask = service.NewMigrationTaskService(repos.migrationTask, s.user)
+	s.reflection = service.NewReflectionService(repos.reflection)
 
 	return s
 }
@@ -227,6 +232,7 @@ func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
 		knowledgeTag:   controller.NewKnowledgeTagController(s.knowledgeTag),
 		postClassTest:  controller.NewPostClassTestController(s.postClassTest),
 		migrationTask:  controller.NewMigrationTaskController(s.migrationTask),
+		reflection:     controller.NewReflectionController(s.reflection),
 		health:         controller.NewHealthController(db),
 	}
 }
@@ -417,6 +423,10 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	rg.GET("/learning-path/levels/:level/materials", c.learningPath.GetMaterialsByLevel)
 	rg.POST("/learning-path/materials/:id/learning-time", c.learningPath.RecordLearningTime)
 	rg.POST("/learning-path/materials/:id/complete", c.learningPath.CompleteMaterial)
+
+	// 有效反思
+	rg.GET("/reflections/my", c.reflection.GetMyReflection)
+	rg.POST("/reflections/my", c.reflection.SaveMyReflection)
 }
 
 func (a *App) registerTeacherRoutes(rg *gin.RouterGroup, c *controllers) {
@@ -519,6 +529,10 @@ func (a *App) registerTeacherRoutes(rg *gin.RouterGroup, c *controllers) {
 		teacher.DELETE("/migration-tasks/:id", c.migrationTask.DeleteTask)
 		teacher.GET("/migration-tasks/:id/submissions", c.migrationTask.ListSubmissions)
 		teacher.GET("/migration-tasks/submissions/:id", c.migrationTask.GetSubmissionDetail)
+
+		// 有效反思管理
+		teacher.GET("/reflections", middleware.RoleMiddleware(model.Teacher, model.Admin), c.reflection.ListAllReflections)
+		teacher.PUT("/reflections/user/:userId", middleware.RoleMiddleware(model.Teacher, model.Admin), c.reflection.UpdateReflection)
 	}
 
 	// 学习路径管理

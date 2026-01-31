@@ -6,7 +6,7 @@ database:
   host: "localhost"
   port: 3306
   user: "root"
-  password: "REDACTED_PASSWORD"
+  password: "*****************"
   dbname: "coder_edu_backend"
   charset: "utf8mb4"
   parseTime: true

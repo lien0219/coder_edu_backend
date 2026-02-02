@@ -14,6 +14,7 @@ type Config struct {
 	Storage  StorageConfig
 	Tracing  TracingConfig
 	Judge0   Judge0Config
+	Redis    RedisConfig
 }
 
 type ServerConfig struct {
@@ -55,6 +56,13 @@ type Judge0Config struct {
 	Host   string
 }
 
+type RedisConfig struct {
+	Host     string
+	Port     int
+	Password string
+	DB       int
+}
+
 func LoadConfig(path string) (*Config, error) {
 	viper.AddConfigPath(path)
 	viper.SetConfigName("config")
@@ -69,6 +77,9 @@ func LoadConfig(path string) (*Config, error) {
 	viper.BindEnv("database.password", "DATABASE_PASSWORD")
 	viper.BindEnv("database.dbname", "DATABASE_NAME")
 	viper.BindEnv("jwt.secret", "JWT_SECRET")
+	viper.BindEnv("redis.host", "REDIS_HOST")
+	viper.BindEnv("redis.port", "REDIS_PORT")
+	viper.BindEnv("redis.password", "REDIS_PASSWORD")
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, err

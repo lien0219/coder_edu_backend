@@ -22,6 +22,7 @@ type User struct {
 	XP                int       `gorm:"default:0"` // 总经验/等级积分
 	Points            int       `gorm:"default:0"` // 独立积分系统（课中知识点测试积分）
 	Language          string    `gorm:"size:10;default:'en'"`
+	Avatar            string    `gorm:"size:255" json:"avatar"`
 	Disabled          bool      `gorm:"default:false"`
 	CanTakeAssessment bool      `gorm:"default:true" json:"canTakeAssessment"`
 	LastLogin         time.Time `gorm:"default:CURRENT_TIMESTAMP(3)"`

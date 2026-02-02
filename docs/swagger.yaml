@@ -1,5 +1,48 @@
 basePath: /api
 definitions:
+  controller.CreateGroupRequest:
+    properties:
+      memberIds:
+        example:
+        - 1
+        - 2
+        - 3
+        items:
+          type: number
+        type: array
+      name:
+        example: 学习小组
+        type: string
+    required:
+    - name
+    type: object
+  controller.CreatePrivateChatRequest:
+    properties:
+      targetUserId:
+        example: 2
+        type: integer
+    required:
+    - targetUserId
+    type: object
+  controller.HandleFriendRequestRequest:
+    properties:
+      action:
+        enum:
+        - accept
+        - reject
+        example: accept
+        type: string
+    required:
+    - action
+    type: object
+  controller.InviteMemberRequest:
+    properties:
+      userId:
+        example: 10
+        type: integer
+    required:
+    - userId
+    type: object
   controller.LoginRequest:
     properties:
       email:
@@ -9,6 +52,14 @@ definitions:
     required:
     - email
     - password
+    type: object
+  controller.MarkAsReadRequest:
+    properties:
+      messageId:
+        example: uuid-msg-123
+        type: string
+    required:
+    - messageId
     type: object
   controller.RegisterRequest:
     properties:
@@ -42,6 +93,32 @@ definitions:
       summary:
         type: string
     type: object
+  controller.SendFriendRequestRequest:
+    properties:
+      message:
+        example: 我是王小明
+        type: string
+      receiverId:
+        example: 1
+        type: integer
+    required:
+    - receiverId
+    type: object
+  controller.SendMessageRequest:
+    properties:
+      clientMsgId:
+        example: uuid-123
+        type: string
+      content:
+        example: 你好
+        type: string
+      type:
+        example: text
+        type: string
+    required:
+    - content
+    - type
+    type: object
   controller.SetRetestRequest:
     properties:
       canTake:
@@ -73,6 +150,23 @@ definitions:
     required:
     - resourceModuleId
     - taskItems
+    type: object
+  controller.TransferAdminRequest:
+    properties:
+      newAdminId:
+        example: 10
+        type: integer
+    required:
+    - newAdminId
+    type: object
+  controller.UpdateGroupRequest:
+    properties:
+      avatar:
+        example: http://...
+        type: string
+      name:
+        example: 新的群名称
+        type: string
     type: object
   controller.UpdateTaskCompletionRequest:
     properties:
@@ -132,6 +226,60 @@ definitions:
         type: integer
       updatedAt:
         type: string
+    type: object
+  model.Conversation:
+    properties:
+      avatar:
+        type: string
+      createdAt:
+        type: string
+      creatorId:
+        description: 指向 User.ID (uint)
+        type: integer
+      id:
+        type: string
+      memberIds:
+        description: 扁平化的成员ID列表，方便前端处理
+        items:
+          type: integer
+        type: array
+      members:
+        items:
+          $ref: '#/definitions/model.ConversationMember'
+        type: array
+      messages:
+        items:
+          $ref: '#/definitions/model.Message'
+        type: array
+      name:
+        type: string
+      type:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  model.ConversationMember:
+    properties:
+      conversationId:
+        type: string
+      joinedAt:
+        type: string
+      lastReadMsgId:
+        description: 记录最后读到的 UUID 消息 ID
+        type: string
+      lastReadMsgTime:
+        description: 最后阅读消息的时间戳
+        type: string
+      nickname:
+        type: string
+      role:
+        type: string
+      user:
+        allOf:
+        - $ref: '#/definitions/model.User'
+        description: 关联用户信息
+      userId:
+        type: integer
     type: object
   model.ExerciseCategory:
     properties:
@@ -200,6 +348,27 @@ definitions:
     - ExFillIn
     - ExTrueFalse
     - ExProgramming
+  model.FriendRequest:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: string
+      message:
+        type: string
+      receiver:
+        $ref: '#/definitions/model.User'
+      receiverId:
+        type: integer
+      sender:
+        $ref: '#/definitions/model.User'
+      senderId:
+        type: integer
+      status:
+        type: string
+      updatedAt:
+        type: string
+    type: object
   model.KnowledgePointType:
     enum:
     - concept
@@ -262,6 +431,39 @@ definitions:
       userID:
         type: integer
     type: object
+  model.Message:
+    properties:
+      clientMsgId:
+        description: 用于前端识别重复消息
+        type: string
+      content:
+        type: string
+      conversation:
+        allOf:
+        - $ref: '#/definitions/model.Conversation'
+        description: 新增：关联会话信息
+      conversationId:
+        type: string
+      createdAt:
+        type: string
+      duration:
+        description: 语音通话时长或音视频时长（秒）
+        type: integer
+      id:
+        type: string
+      isRevoked:
+        type: boolean
+      sender:
+        allOf:
+        - $ref: '#/definitions/model.User'
+        description: 关联发送者用户信息
+      senderId:
+        type: integer
+      type:
+        type: string
+      updatedAt:
+        type: string
+    type: object
   model.Motivation:
     properties:
       content:
@@ -301,7 +503,7 @@ definitions:
       createdAt:
         type: string
       id:
-        type: integer
+        type: string
       nextSteps:
         type: string
       summary:
@@ -453,6 +655,8 @@ definitions:
     - TaskItemExercise
   model.User:
     properties:
+      avatar:
+        type: string
       canTakeAssessment:
         type: boolean
       createdAt:
@@ -1074,6 +1278,16 @@ definitions:
         type: integer
       totalLearningDuration:
         description: 总学习时长（分钟）
+        type: integer
+    type: object
+  util.PageResponse:
+    properties:
+      limit:
+        type: integer
+      list: {}
+      page:
+        type: integer
+      total:
         type: integer
     type: object
   util.Response:
@@ -3051,6 +3265,794 @@ paths:
       summary: 上传C语言编程资源文件
       tags:
       - C语言编程资源
+  /api/chat/conversations:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前用户的所有会话列表，支持分页和模糊搜索
+      parameters:
+      - default: 1
+        description: 页码 (从1开始)
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数
+        in: query
+        name: limit
+        type: integer
+      - description: 搜索关键字 (群名或好友名)
+        in: query
+        name: query
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/util.PageResponse'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/model.Conversation'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 获取会话列表
+      tags:
+      - IM系统
+  /api/chat/conversations/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 仅群主可以解散群聊
+      parameters:
+      - description: 会话ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+        "403":
+          description: 权限不足
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 解散群聊
+      tags:
+      - IM系统
+    put:
+      consumes:
+      - application/json
+      description: 仅管理员可修改群名称和头像
+      parameters:
+      - description: 会话ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 更新内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 修改群信息
+      tags:
+      - IM系统
+  /api/chat/conversations/{id}/leave:
+    post:
+      consumes:
+      - application/json
+      description: 普通成员退出群聊，群主必须先转让或解散
+      parameters:
+      - description: 会话ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 退出群聊
+      tags:
+      - IM系统
+  /api/chat/conversations/{id}/members:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定会话的成员列表，支持模糊筛选和分页，包含成员在线状态
+      parameters:
+      - description: 会话ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 1
+        description: 页码 (从1开始)
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数
+        in: query
+        name: limit
+        type: integer
+      - description: 搜索关键字 (姓名或邮箱)
+        in: query
+        name: query
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/util.PageResponse'
+                  - properties:
+                      list:
+                        items:
+                          type: object
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 获取会话成员列表
+      tags:
+      - IM系统
+    post:
+      consumes:
+      - application/json
+      description: 仅管理员可以邀请新成员
+      parameters:
+      - description: 会话ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 邀请用户ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.InviteMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 邀请成员入群
+      tags:
+      - IM系统
+  /api/chat/conversations/{id}/members/{userId}:
+    delete:
+      consumes:
+      - application/json
+      description: 仅管理员可以踢出成员
+      parameters:
+      - description: 会话ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 被踢出的用户ID
+        in: path
+        name: userId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 踢出群成员
+      tags:
+      - IM系统
+  /api/chat/conversations/{id}/messages:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定会话的历史消息记录，支持模糊搜索内容
+      parameters:
+      - description: 会话ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 20
+        description: 限制条数
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: 偏移量
+        in: query
+        name: offset
+        type: integer
+      - description: 搜索关键字
+        in: query
+        name: query
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  items:
+                    type: object
+                  type: array
+              type: object
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 获取历史消息
+      tags:
+      - IM系统
+    post:
+      consumes:
+      - application/json
+      description: 向指定会话发送消息
+      parameters:
+      - description: 会话ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 发送消息请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.SendMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Message'
+              type: object
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 发送消息
+      tags:
+      - IM系统
+  /api/chat/conversations/{id}/read:
+    put:
+      consumes:
+      - application/json
+      description: 标记指定会话的消息为已读，并通知会话其他成员
+      parameters:
+      - description: 会话ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 已读消息ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.MarkAsReadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 标记消息为已读
+      tags:
+      - IM系统
+  /api/chat/conversations/{id}/transfer:
+    post:
+      consumes:
+      - application/json
+      description: 仅群主可以转让管理权限
+      parameters:
+      - description: 会话ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 新群主ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.TransferAdminRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 转让群主
+      tags:
+      - IM系统
+  /api/chat/friend-requests:
+    get:
+      consumes:
+      - application/json
+      description: 获取所有发送给我的好友申请记录（含历史状态），支持分页和模糊搜索
+      parameters:
+      - default: 1
+        description: 页码 (从1开始)
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页条数
+        in: query
+        name: limit
+        type: integer
+      - description: 搜索关键字 (发送者或接收者昵称/邮箱)
+        in: query
+        name: query
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/util.PageResponse'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/model.FriendRequest'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取好友申请列表
+      tags:
+      - IM系统
+    post:
+      consumes:
+      - application/json
+      description: 向指定用户发送好友申请
+      parameters:
+      - description: 发送好友申请请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.SendFriendRequestRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 发送好友申请
+      tags:
+      - IM系统
+  /api/chat/friend-requests/{id}:
+    put:
+      consumes:
+      - application/json
+      description: 同意或拒绝好友申请
+      parameters:
+      - description: 申请ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 处理动作
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.HandleFriendRequestRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 处理好友申请
+      tags:
+      - IM系统
+  /api/chat/friends:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前用户的好友列表，支持根据昵称或邮箱模糊搜索
+      parameters:
+      - description: 搜索关键字 (昵称或邮箱)
+        in: query
+        name: query
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.User'
+                  type: array
+              type: object
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 获取好友列表
+      tags:
+      - IM系统
+  /api/chat/friends/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 解除与指定用户的好友关系
+      parameters:
+      - description: 好友用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 删除好友
+      tags:
+      - IM系统
+  /api/chat/groups:
+    post:
+      consumes:
+      - application/json
+      description: 创建一个新的群聊会话
+      parameters:
+      - description: 创建群聊请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreateGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Conversation'
+              type: object
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 创建群聊
+      tags:
+      - IM系统
+  /api/chat/privates:
+    post:
+      consumes:
+      - application/json
+      description: 创建一个新的私聊会话，如果已存在则返回现有会话
+      parameters:
+      - description: 创建私聊请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreatePrivateChatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Conversation'
+              type: object
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 创建或获取私聊
+      tags:
+      - IM系统
+  /api/chat/search:
+    get:
+      consumes:
+      - application/json
+      description: 在用户参与的所有会话中搜索包含关键字的消息内容，支持分页
+      parameters:
+      - description: 搜索关键字
+        in: query
+        name: query
+        required: true
+        type: string
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/util.PageResponse'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/model.Message'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 全局搜索聊天记录
+      tags:
+      - IM系统
+  /api/chat/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 上传图片或文件用于聊天，返回文件URL
+      parameters:
+      - description: 文件
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功，返回文件URL
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 上传聊天文件
+      tags:
+      - IM系统
+  /api/chat/users/search:
+    get:
+      consumes:
+      - application/json
+      description: 通过邮箱搜索用户以添加好友
+      parameters:
+      - description: 用户邮箱
+        in: query
+        name: email
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.User'
+              type: object
+        "404":
+          description: 用户不存在
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 搜索用户
+      tags:
+      - IM系统
+  /api/chat/users/search-fuzzy:
+    get:
+      consumes:
+      - application/json
+      description: 通过昵称或邮箱模糊搜索用户
+      parameters:
+      - description: 搜索关键字
+        in: query
+        name: query
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.User'
+                  type: array
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 模糊搜索用户
+      tags:
+      - IM系统
+  /api/chat/ws:
+    get:
+      consumes:
+      - application/json
+      description: 建立 WebSocket 连接以接收实时消息
+      parameters:
+      - description: JWT Token
+        in: query
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "101":
+          description: Switching Protocols
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: WebSocket 连接
+      tags:
+      - IM系统
   /api/community/{type}/{id}/upvote:
     post:
       consumes:
@@ -6203,6 +7205,21 @@ paths:
     get:
       consumes:
       - application/json
+      parameters:
+      - description: 学生姓名筛选
+        in: query
+        name: name
+        type: string
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
       produces:
       - application/json
       responses:
@@ -6213,23 +7230,22 @@ paths:
             - $ref: '#/definitions/util.Response'
             - properties:
                 data:
-                  items:
-                    $ref: '#/definitions/model.Reflection'
-                  type: array
+                  additionalProperties: true
+                  type: object
               type: object
       security:
       - ApiKeyAuth: []
       summary: 老师/管理员列出所有学生的有效反思
       tags:
       - 有效反思
-  /api/teacher/reflections/{id}:
+  /api/teacher/reflections/user/{userId}:
     put:
       consumes:
       - application/json
       parameters:
-      - description: 反思ID
+      - description: 用户ID
         in: path
-        name: id
+        name: userId
         required: true
         type: integer
       - description: 反思内容

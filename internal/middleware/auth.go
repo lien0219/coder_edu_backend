@@ -12,15 +12,17 @@ import (
 
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		tokenString := ""
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			util.Unauthorized(c)
-			c.Abort()
-			return
+		if authHeader != "" {
+			tokenString = strings.TrimPrefix(authHeader, "Bearer ")
 		}
 
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenString == authHeader {
+		if tokenString == "" {
+			tokenString = c.Query("token")
+		}
+
+		if tokenString == "" {
 			util.Unauthorized(c)
 			c.Abort()
 			return

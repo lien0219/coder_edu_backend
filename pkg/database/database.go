@@ -92,6 +92,11 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		&model.MigrationSubmission{},
 		&model.MigrationAnswer{},
 		&model.Reflection{},
+		&model.Conversation{},
+		&model.ConversationMember{},
+		&model.Message{},
+		&model.Friendship{},
+		&model.FriendRequest{},
 	)
 
 	if err != nil {

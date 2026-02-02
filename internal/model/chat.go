@@ -1,0 +1,55 @@
+package model
+
+import (
+	"time"
+)
+
+// Conversation 存储会话（私聊、群聊信息）
+type Conversation struct {
+	UUIDBase
+	Type      string               `gorm:"type:enum('private','group');default:'group'" json:"type"`
+	Name      string               `gorm:"size:100" json:"name"`
+	Avatar    string               `gorm:"size:255" json:"avatar"`
+	CreatorID uint                 `gorm:"index" json:"creatorId"` // 指向 User.ID (uint)
+	Members   []ConversationMember `gorm:"foreignKey:ConversationID" json:"members"`
+	MemberIDs []uint               `gorm:"-" json:"memberIds"` // 扁平化的成员ID列表
+	Messages  []Message            `gorm:"foreignKey:ConversationID" json:"messages"`
+}
+
+func (Conversation) TableName() string {
+	return "conversations"
+}
+
+// ConversationMember 维护成员关系、未读数、角色
+type ConversationMember struct {
+	ConversationID  string     `gorm:"primaryKey;type:varchar(36)" json:"conversationId"`
+	UserID          uint       `gorm:"primaryKey" json:"userId"`
+	User            User       `gorm:"foreignKey:UserID" json:"user"` // 关联用户信息
+	Role            string     `gorm:"type:enum('admin','member');default:'member'" json:"role"`
+	Nickname        string     `gorm:"size:50" json:"nickname"`
+	LastReadMsgID   string     `gorm:"type:varchar(36);default:''" json:"lastReadMsgId"` // 记录最后读到的 UUID 消息 ID
+	LastReadMsgTime *time.Time `json:"lastReadMsgTime"`                                  // 最后阅读消息的时间戳
+	JoinedAt        time.Time  `gorm:"autoCreateTime" json:"joinedAt"`
+}
+
+func (ConversationMember) TableName() string {
+	return "conversation_members"
+}
+
+// Message 消息记录
+type Message struct {
+	UUIDBase
+	ConversationID string       `gorm:"index;type:varchar(36);not null" json:"conversationId"`
+	SenderID       uint         `gorm:"index;not null" json:"senderId"`
+	Sender         User         `gorm:"foreignKey:SenderID" json:"sender"`             // 关联发送者用户信息
+	Conversation   Conversation `gorm:"foreignKey:ConversationID" json:"conversation"` // 关联会话信息
+	Type           string       `gorm:"type:enum('text','image','voice_call','file','system');default:'text'" json:"type"`
+	Content        string       `gorm:"type:text" json:"content"`
+	Duration       int          `gorm:"default:0" json:"duration"` // 语音通话时长或音视频时长（秒）
+	IsRevoked      bool         `gorm:"default:false" json:"isRevoked"`
+	ClientMsgID    string       `gorm:"size:50;index" json:"clientMsgId"` // 用于识别重复消息
+}
+
+func (Message) TableName() string {
+	return "messages"
+}

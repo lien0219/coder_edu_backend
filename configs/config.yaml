@@ -6,7 +6,7 @@ database:
   host: "localhost"
   port: 3306
   user: "root"
-  password: "*****************"
+  password: "******"
   dbname: "coder_edu_backend"
   charset: "utf8mb4"
   parseTime: true
@@ -31,3 +31,9 @@ judge0:
   api_key: "REDACTED_JUDGE0_KEY"
   url: "https://judge0-ce.p.rapidapi.com/submissions?wait=true&base64_encoded=true"
   host: "judge0-ce.p.rapidapi.com"
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: "******"
+  db: 0

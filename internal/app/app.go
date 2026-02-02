@@ -19,6 +19,7 @@ import (
 	"coder_edu_backend/docs"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
@@ -29,6 +30,7 @@ type App struct {
 	Config          *config.Config
 	Router          *gin.Engine
 	DB              *gorm.DB
+	Redis           *redis.Client
 	configCallbacks []func(*config.Config)
 }
 
@@ -64,6 +66,8 @@ type repositories struct {
 	postClassTest      *repository.PostClassTestRepository
 	migrationTask      *repository.MigrationTaskRepository
 	reflection         *repository.ReflectionRepository
+	chat               *repository.ChatRepository
+	friendship         *repository.FriendshipRepository
 }
 
 type services struct {
@@ -88,6 +92,9 @@ type services struct {
 	postClassTest        *service.PostClassTestService
 	migrationTask        *service.MigrationTaskService
 	reflection           *service.ReflectionService
+	chat                 *service.ChatService
+	friendship           *service.FriendshipService
+	chatHub              *service.ChatHub
 }
 
 type controllers struct {
@@ -113,6 +120,7 @@ type controllers struct {
 	postClassTest  *controller.PostClassTestController
 	migrationTask  *controller.MigrationTaskController
 	reflection     *controller.ReflectionController
+	chat           *controller.ChatController
 	health         *controller.HealthController
 }
 
@@ -153,10 +161,12 @@ func (a *App) initRepositories(db *gorm.DB) *repositories {
 		postClassTest:      repository.NewPostClassTestRepository(db),
 		migrationTask:      repository.NewMigrationTaskRepository(db),
 		reflection:         repository.NewReflectionRepository(db),
+		chat:               repository.NewChatRepository(db),
+		friendship:         repository.NewFriendshipRepository(db),
 	}
 }
 
-func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB) *services {
+func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB, rdb *redis.Client) *services {
 	s := &services{}
 
 	s.auth = service.NewAuthService(repos.user, cfg)
@@ -206,6 +216,12 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB)
 	s.migrationTask = service.NewMigrationTaskService(repos.migrationTask, s.user)
 	s.reflection = service.NewReflectionService(repos.reflection)
 
+	s.chatHub = service.NewChatHub(rdb, repos.chat)
+	go s.chatHub.Run()
+
+	s.chat = service.NewChatService(repos.chat)
+	s.friendship = service.NewFriendshipService(repos.friendship, repos.user)
+
 	return s
 }
 
@@ -233,6 +249,7 @@ func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
 		postClassTest:  controller.NewPostClassTestController(s.postClassTest),
 		migrationTask:  controller.NewMigrationTaskController(s.migrationTask),
 		reflection:     controller.NewReflectionController(s.reflection),
+		chat:           controller.NewChatController(s.chat, s.friendship, s.chatHub, a.Config),
 		health:         controller.NewHealthController(db),
 	}
 }
@@ -427,6 +444,35 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	// 有效反思
 	rg.GET("/reflections/my", c.reflection.GetMyReflection)
 	rg.POST("/reflections/my", c.reflection.SaveMyReflection)
+
+	// 协作中心 - 聊天室
+	chat := rg.Group("/chat")
+	{
+		chat.GET("/ws", c.chat.HandleWS)
+		chat.GET("/conversations", c.chat.GetConversations)
+		chat.POST("/groups", c.chat.CreateGroup)
+		chat.POST("/privates", c.chat.CreatePrivateChat)
+		chat.PUT("/conversations/:id", c.chat.UpdateGroupInfo)   // 修改群信息
+		chat.DELETE("/conversations/:id", c.chat.DisbandGroup)   // 解散群聊
+		chat.POST("/conversations/:id/leave", c.chat.LeaveGroup) // 退出群聊
+		chat.GET("/conversations/:id/messages", c.chat.GetHistory)
+		chat.GET("/conversations/:id/members", c.chat.GetMembers)
+		chat.POST("/conversations/:id/members", c.chat.InviteMember)         // 邀请成员
+		chat.DELETE("/conversations/:id/members/:userId", c.chat.KickMember) // 踢出成员
+		chat.POST("/conversations/:id/transfer", c.chat.TransferAdmin)       // 转让群主
+		chat.POST("/conversations/:id/messages", c.chat.SendMessage)
+		chat.PUT("/conversations/:id/read", c.chat.MarkAsRead)
+		chat.GET("/search", c.chat.GlobalSearch) // 全局搜索
+		chat.POST("/upload", c.chat.UploadFile)
+
+		chat.GET("/users/search", c.chat.SearchUser)
+		chat.GET("/users/search-fuzzy", c.chat.SearchUsers)
+		chat.GET("/friends", c.chat.GetFriends)
+		chat.DELETE("/friends/:id", c.chat.DeleteFriend)
+		chat.GET("/friend-requests", c.chat.GetFriendRequests)
+		chat.POST("/friend-requests", c.chat.SendFriendRequest)
+		chat.PUT("/friend-requests/:id", c.chat.HandleFriendRequest)
+	}
 }
 
 func (a *App) registerTeacherRoutes(rg *gin.RouterGroup, c *controllers) {
@@ -623,13 +669,20 @@ func NewApp(cfg *config.Config) *App {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
+	rdb, err := database.InitRedis(&cfg.Redis)
+	if err != nil {
+		logger.Log.Fatal("Failed to initialize redis", zap.Error(err))
+		log.Fatalf("Failed to initialize redis: %v", err)
+	}
+
 	app := &App{
 		Config: cfg,
 		DB:     db,
+		Redis:  rdb,
 	}
 
 	repos := app.initRepositories(db)
-	services := app.initServices(repos, cfg, db)
+	services := app.initServices(repos, cfg, db, rdb)
 	controllers := app.initControllers(services, db)
 
 	// 监控初始化

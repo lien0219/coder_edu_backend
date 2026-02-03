@@ -4,6 +4,7 @@ import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
 	"errors"
+	"fmt"
 
 	"gorm.io/gorm"
 )
@@ -16,7 +17,18 @@ func NewChatService(chatRepo *repository.ChatRepository) *ChatService {
 	return &ChatService{ChatRepo: chatRepo}
 }
 
-func (s *ChatService) CreateGroup(creatorID uint, name string, memberIDs []uint) (*model.Conversation, error) {
+func (s *ChatService) CreateSystemMessage(convID string, content string) (*model.Message, error) {
+	msg := &model.Message{
+		ConversationID: convID,
+		SenderID:       nil, // 系统消息 SenderID 为 nil
+		Type:           "system",
+		Content:        content,
+	}
+	err := s.ChatRepo.CreateMessage(msg)
+	return msg, err
+}
+
+func (s *ChatService) CreateGroup(creatorID uint, name string, memberIDs []uint) (*model.Conversation, *model.Message, error) {
 	conv := &model.Conversation{
 		Type:      "group",
 		Name:      name,
@@ -24,7 +36,7 @@ func (s *ChatService) CreateGroup(creatorID uint, name string, memberIDs []uint)
 	}
 
 	if err := s.ChatRepo.CreateConversation(conv); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	admin := &model.ConversationMember{
@@ -33,8 +45,12 @@ func (s *ChatService) CreateGroup(creatorID uint, name string, memberIDs []uint)
 		Role:           "admin",
 	}
 	if err := s.ChatRepo.AddMember(admin); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	// 获取创建者信息用于系统消息
+	var creator model.User
+	s.ChatRepo.DB.First(&creator, creatorID)
 
 	for _, id := range memberIDs {
 		if id == creatorID {
@@ -48,7 +64,10 @@ func (s *ChatService) CreateGroup(creatorID uint, name string, memberIDs []uint)
 		s.ChatRepo.AddMember(member)
 	}
 
-	return s.ChatRepo.GetConversation(conv.ID)
+	sysMsg, _ := s.CreateSystemMessage(conv.ID, fmt.Sprintf("%s 创建了群聊", creator.Name))
+
+	fullConv, err := s.ChatRepo.GetConversation(conv.ID)
+	return fullConv, sysMsg, err
 }
 
 func (s *ChatService) GetOrCreatePrivateChat(userID1, userID2 uint) (*model.Conversation, error) {
@@ -65,7 +84,7 @@ func (s *ChatService) GetOrCreatePrivateChat(userID1, userID2 uint) (*model.Conv
 	// 2. 如果不存在，则创建新私聊
 	newConv := &model.Conversation{
 		Type:      "private",
-		Name:      "", // 私聊通常不需要名字，前端根据对方昵称显示
+		Name:      "",
 		CreatorID: userID1,
 	}
 
@@ -89,31 +108,31 @@ func (s *ChatService) GetOrCreatePrivateChat(userID1, userID2 uint) (*model.Conv
 	return s.ChatRepo.GetConversation(newConv.ID)
 }
 
-func (s *ChatService) InviteMember(adminID uint, convID string, targetUserID uint) error {
+func (s *ChatService) InviteMember(adminID uint, convID string, targetUserID uint) (*model.Message, error) {
 	// 1. 获取会话信息，确保是群聊
 	conv, err := s.ChatRepo.GetConversation(convID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if conv.Type != "group" {
-		return errors.New("只有群聊可以邀请成员")
+		return nil, errors.New("只有群聊可以邀请成员")
 	}
 
 	// 2. 检查权限：必须是管理员或群主
 	member, err := s.ChatRepo.GetMember(convID, adminID)
 	if err != nil {
-		return errors.New("你不是该群成员")
+		return nil, errors.New("你不是该群成员")
 	}
 	isOwner := conv.CreatorID == adminID
 	isAdmin := member.Role == "admin" || isOwner
 	if !isAdmin {
-		return errors.New("只有管理员可以邀请成员")
+		return nil, errors.New("只有管理员可以邀请成员")
 	}
 
 	// 3. 检查目标是否已在群里
 	_, err = s.ChatRepo.GetMember(convID, targetUserID)
 	if err == nil {
-		return errors.New("该用户已是群成员")
+		return nil, errors.New("该用户已是群成员")
 	}
 
 	newMember := &model.ConversationMember{
@@ -121,74 +140,89 @@ func (s *ChatService) InviteMember(adminID uint, convID string, targetUserID uin
 		UserID:         targetUserID,
 		Role:           "member",
 	}
-	return s.ChatRepo.AddMember(newMember)
+	if err := s.ChatRepo.AddMember(newMember); err != nil {
+		return nil, err
+	}
+
+	// 发送系统消息
+	var targetUser model.User
+	s.ChatRepo.DB.First(&targetUser, targetUserID)
+	return s.CreateSystemMessage(convID, fmt.Sprintf("%s 加入了群聊", targetUser.Name))
 }
 
-func (s *ChatService) KickMember(adminID uint, convID string, targetUserID uint) error {
+func (s *ChatService) KickMember(adminID uint, convID string, targetUserID uint) (*model.Message, error) {
 	if adminID == targetUserID {
-		return errors.New("不能踢出自己")
+		return nil, errors.New("不能踢出自己")
 	}
 
 	// 1. 获取会话信息，确保是群聊
 	conv, err := s.ChatRepo.GetConversation(convID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if conv.Type != "group" {
-		return errors.New("只有群聊可以踢出成员")
+		return nil, errors.New("只有群聊可以踢出成员")
 	}
 
 	// 2. 检查调用者权限
 	caller, err := s.ChatRepo.GetMember(convID, adminID)
 	if err != nil {
-		return errors.New("你不是该群成员")
+		return nil, errors.New("你不是该群成员")
 	}
 	isOwner := conv.CreatorID == adminID
 	isAdmin := caller.Role == "admin" || isOwner
 	if !isAdmin {
-		return errors.New("只有管理员可以踢出成员")
+		return nil, errors.New("只有管理员可以踢出成员")
 	}
 
 	// 3. 不能踢出群主
 	if conv.CreatorID == targetUserID {
-		return errors.New("不能踢出群主")
+		return nil, errors.New("不能踢出群主")
 	}
 
 	// 4. 普通管理员不能踢出其他管理员
 	targetMember, err := s.ChatRepo.GetMember(convID, targetUserID)
 	if err != nil {
-		return errors.New("目标用户不是群成员")
+		return nil, errors.New("目标用户不是群成员")
 	}
 	if targetMember.Role == "admin" && !isOwner {
-		return errors.New("只有群主可以踢出管理员")
+		return nil, errors.New("只有群主可以踢出管理员")
 	}
 
-	return s.ChatRepo.RemoveMember(convID, targetUserID)
+	if err := s.ChatRepo.RemoveMember(convID, targetUserID); err != nil {
+		return nil, err
+	}
+
+	// 发送系统消息
+	var targetUser model.User
+	s.ChatRepo.DB.First(&targetUser, targetUserID)
+	return s.CreateSystemMessage(convID, fmt.Sprintf("%s 被移出了群聊", targetUser.Name))
 }
 
-func (s *ChatService) UpdateGroupInfo(adminID uint, convID string, name string, avatar string) error {
+func (s *ChatService) UpdateGroupInfo(adminID uint, convID string, name string, avatar string) (*model.Message, error) {
 	// 1. 获取会话信息，确保是群聊
 	conv, err := s.ChatRepo.GetConversation(convID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if conv.Type != "group" {
-		return errors.New("只有群聊可以修改信息")
+		return nil, errors.New("只有群聊可以修改信息")
 	}
 
 	// 2. 检查权限：必须是管理员或群主
 	member, err := s.ChatRepo.GetMember(convID, adminID)
 	if err != nil {
-		return errors.New("你不是该群成员")
+		return nil, errors.New("你不是该群成员")
 	}
 	isOwner := conv.CreatorID == adminID
 	isAdmin := member.Role == "admin" || isOwner
 	if !isAdmin {
-		return errors.New("只有管理员可以修改群信息")
+		return nil, errors.New("只有管理员可以修改群信息")
 	}
 
 	updates := make(map[string]interface{})
-	if name != "" {
+	oldName := conv.Name
+	if name != "" && name != oldName {
 		updates["name"] = name
 	}
 	if avatar != "" {
@@ -196,10 +230,20 @@ func (s *ChatService) UpdateGroupInfo(adminID uint, convID string, name string, 
 	}
 
 	if len(updates) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return s.ChatRepo.DB.Model(&model.Conversation{}).Where("id = ? AND type = ?", convID, "group").Updates(updates).Error
+	if err := s.ChatRepo.DB.Model(&model.Conversation{}).Where("id = ? AND type = ?", convID, "group").Updates(updates).Error; err != nil {
+		return nil, err
+	}
+
+	// 如果改了名字，发送系统消息
+	if name != "" && name != oldName {
+		var adminUser model.User
+		s.ChatRepo.DB.First(&adminUser, adminID)
+		return s.CreateSystemMessage(convID, fmt.Sprintf("%s 修改群名为 \"%s\"", adminUser.Name, name))
+	}
+	return nil, nil
 }
 
 func (s *ChatService) TransferAdmin(currentAdminID uint, convID string, newAdminID uint) error {
@@ -258,7 +302,7 @@ func (s *ChatService) SendMessage(senderID uint, convID string, msgType string, 
 
 	msg := &model.Message{
 		ConversationID: convID,
-		SenderID:       senderID,
+		SenderID:       &senderID,
 		Type:           msgType,
 		Content:        content,
 		ClientMsgID:    clientMsgID,
@@ -273,12 +317,32 @@ func (s *ChatService) SendMessage(senderID uint, convID string, msgType string, 
 	return &fullMsg, nil
 }
 
-func (s *ChatService) GetHistory(userID uint, convID string, query string, limit int, offset int) ([]model.Message, error) {
+func (s *ChatService) GetHistory(userID uint, convID string, query string, limit int, offset int, beforeID string, afterID string) ([]model.Message, error) {
 	_, err := s.ChatRepo.GetMember(convID, userID)
 	if err != nil {
 		return nil, errors.New("无权查看此会话历史")
 	}
-	return s.ChatRepo.GetMessages(convID, query, limit, offset)
+	return s.ChatRepo.GetMessages(convID, query, limit, offset, beforeID, afterID)
+}
+
+func (s *ChatService) GetMessageContext(userID uint, msgID string, limit int) ([]model.Message, error) {
+	// 先找到该消息，确定 conversation_id
+	var msg model.Message
+	if err := s.ChatRepo.DB.First(&msg, "id = ?", msgID).Error; err != nil {
+		return nil, err
+	}
+
+	// 验证权限
+	_, err := s.ChatRepo.GetMember(msg.ConversationID, userID)
+	if err != nil {
+		return nil, errors.New("无权查看此会话历史")
+	}
+
+	return s.ChatRepo.GetMessageContext(msgID, limit)
+}
+
+func (s *ChatService) RevokeMessage(userID uint, msgID string) (*model.Message, error) {
+	return s.ChatRepo.RevokeMessage(msgID, userID)
 }
 
 func (s *ChatService) DisbandGroup(userID uint, convID string) ([]uint, error) {

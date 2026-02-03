@@ -239,7 +239,7 @@ definitions:
       id:
         type: string
       memberIds:
-        description: 扁平化的成员ID列表，方便前端处理
+        description: 扁平化的成员ID列表
         items:
           type: integer
         type: array
@@ -433,15 +433,18 @@ definitions:
     type: object
   model.Message:
     properties:
+      canRevoke:
+        description: 动态字段：是否可撤回
+        type: boolean
       clientMsgId:
-        description: 用于前端识别重复消息
+        description: 用于识别重复消息
         type: string
       content:
         type: string
       conversation:
         allOf:
         - $ref: '#/definitions/model.Conversation'
-        description: 新增：关联会话信息
+        description: 关联会话信息
       conversationId:
         type: string
       createdAt:
@@ -459,6 +462,9 @@ definitions:
         description: 关联发送者用户信息
       senderId:
         type: integer
+      thumbnailUrl:
+        description: 缩略图 URL
+        type: string
       type:
         type: string
       updatedAt:
@@ -3512,7 +3518,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: 获取指定会话的历史消息记录，支持模糊搜索内容
+      description: 获取指定会话的历史消息记录，支持模糊搜索内容和 ID 分页
       parameters:
       - description: 会话ID
         in: path
@@ -3532,6 +3538,14 @@ paths:
       - description: 搜索关键字
         in: query
         name: query
+        type: string
+      - description: 在此消息 ID 之前的消息
+        in: query
+        name: before_id
+        type: string
+      - description: 在此消息 ID 之后的消息
+        in: query
+        name: after_id
         type: string
       produces:
       - application/json
@@ -3850,6 +3864,64 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: 创建群聊
+      tags:
+      - IM系统
+  /api/chat/messages/{id}/context:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定消息及其前后的上下文消息
+      parameters:
+      - description: 消息ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 20
+        description: 总条数
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  items:
+                    type: object
+                  type: array
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 获取消息上下文
+      tags:
+      - IM系统
+  /api/chat/messages/{id}/revoke:
+    put:
+      consumes:
+      - application/json
+      description: 撤回自己发送的消息（通常有时间限制）
+      parameters:
+      - description: 消息ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 撤回消息
       tags:
       - IM系统
   /api/chat/privates:

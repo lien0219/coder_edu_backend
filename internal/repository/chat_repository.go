@@ -2,6 +2,8 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -112,7 +114,6 @@ func (r *ChatRepository) UpdateLastReadMessage(convID string, userID uint, msgID
 	if err := r.DB.First(&msg, "id = ?", msgID).Error; err != nil {
 		return err
 	}
-	// 统一使用 UTC 时间并去除纳秒干扰，确保比对一致性
 	readTime := msg.CreatedAt.UTC()
 	return r.DB.Model(&model.ConversationMember{}).
 		Where("conversation_id = ? AND user_id = ?", convID, userID).
@@ -128,7 +129,7 @@ func (r *ChatRepository) GetConversationMembers(convID string, query string, lim
 
 	db := r.DB.Model(&model.ConversationMember{}).
 		Where("conversation_id = ?", convID).
-		Joins("User") // 自动关联 User 表
+		Joins("User")
 
 	if query != "" {
 		searchTerm := "%" + query + "%"
@@ -141,7 +142,7 @@ func (r *ChatRepository) GetConversationMembers(convID string, query string, lim
 
 	err := db.Preload("User").
 		Limit(limit).Offset(offset).
-		Order("role ASC, joined_at ASC"). // 管理员排前面，按加入时间排序
+		Order("role ASC, joined_at ASC").
 		Find(&members).Error
 
 	return members, total, err
@@ -156,7 +157,7 @@ func (r *ChatRepository) CreateMessage(msg *model.Message) error {
 	})
 }
 
-func (r *ChatRepository) GetMessages(convID string, query string, limit int, offset int) ([]model.Message, error) {
+func (r *ChatRepository) GetMessages(convID string, query string, limit int, offset int, beforeID string, afterID string) ([]model.Message, error) {
 	var msgs []model.Message
 	db := r.DB.Preload("Sender").Where("conversation_id = ?", convID)
 
@@ -164,11 +165,92 @@ func (r *ChatRepository) GetMessages(convID string, query string, limit int, off
 		db = db.Where("content LIKE ?", "%"+query+"%")
 	}
 
-	err := db.Order("created_at DESC").
+	if beforeID != "" {
+		var beforeMsg model.Message
+		if err := r.DB.First(&beforeMsg, "id = ?", beforeID).Error; err == nil {
+			db = db.Where("created_at < ?", beforeMsg.CreatedAt)
+		}
+	}
+
+	if afterID != "" {
+		var afterMsg model.Message
+		if err := r.DB.First(&afterMsg, "id = ?", afterID).Error; err == nil {
+			db = db.Where("created_at > ?", afterMsg.CreatedAt)
+		}
+	}
+
+	// 如果是 afterID，说明是在向上滚动加载更新的消息，应该按时间正序取最旧的 N 条
+	order := "created_at DESC"
+	if afterID != "" {
+		order = "created_at ASC"
+	}
+
+	err := db.Order(order).
 		Limit(limit).
 		Offset(offset).
 		Find(&msgs).Error
+
+	// 如果是 ASC 查出来的，反转回 DESC
+	if afterID != "" && err == nil {
+		for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+			msgs[i], msgs[j] = msgs[j], msgs[i]
+		}
+	}
+
 	return msgs, err
+}
+
+func (r *ChatRepository) GetMessageContext(msgID string, limit int) ([]model.Message, error) {
+	var targetMsg model.Message
+	if err := r.DB.First(&targetMsg, "id = ?", msgID).Error; err != nil {
+		return nil, err
+	}
+
+	half := limit / 2
+	var prevMsgs []model.Message
+	var nextMsgs []model.Message
+
+	// 获取之前的消息（含自己）
+	r.DB.Preload("Sender").
+		Where("conversation_id = ? AND created_at <= ?", targetMsg.ConversationID, targetMsg.CreatedAt).
+		Order("created_at DESC").
+		Limit(half + 1).
+		Find(&prevMsgs)
+
+	// 获取之后的消息
+	r.DB.Preload("Sender").
+		Where("conversation_id = ? AND created_at > ?", targetMsg.ConversationID, targetMsg.CreatedAt).
+		Order("created_at ASC").
+		Limit(half).
+		Find(&nextMsgs)
+
+	// 合并并排序
+	for i, j := 0, len(prevMsgs)-1; i < j; i, j = i+1, j-1 {
+		prevMsgs[i], prevMsgs[j] = prevMsgs[j], prevMsgs[i]
+	}
+
+	return append(prevMsgs, nextMsgs...), nil
+}
+
+func (r *ChatRepository) RevokeMessage(msgID string, senderID uint) (*model.Message, error) {
+	var msg model.Message
+	if err := r.DB.First(&msg, "id = ? AND sender_id = ?", msgID, senderID).Error; err != nil {
+		return nil, err
+	}
+
+	if msg.IsRevoked {
+		return &msg, nil
+	}
+
+	// 限制撤回时间
+	if time.Since(msg.CreatedAt) > 2*time.Minute {
+		return nil, fmt.Errorf("消息发送已超过 2 分钟，无法撤回")
+	}
+
+	msg.IsRevoked = true
+	msg.Content = "消息已撤回"
+	err := r.DB.Save(&msg).Error
+	return &msg, err
 }
 
 func (r *ChatRepository) SearchMessages(userID uint, query string, limit, offset int) ([]model.Message, int64, error) {

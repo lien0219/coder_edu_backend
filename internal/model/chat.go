@@ -40,13 +40,15 @@ func (ConversationMember) TableName() string {
 type Message struct {
 	UUIDBase
 	ConversationID string       `gorm:"index;type:varchar(36);not null" json:"conversationId"`
-	SenderID       uint         `gorm:"index;not null" json:"senderId"`
+	SenderID       *uint        `gorm:"index" json:"senderId"`
 	Sender         User         `gorm:"foreignKey:SenderID" json:"sender"`             // 关联发送者用户信息
 	Conversation   Conversation `gorm:"foreignKey:ConversationID" json:"conversation"` // 关联会话信息
 	Type           string       `gorm:"type:enum('text','image','voice_call','file','system');default:'text'" json:"type"`
 	Content        string       `gorm:"type:text" json:"content"`
 	Duration       int          `gorm:"default:0" json:"duration"` // 语音通话时长或音视频时长（秒）
 	IsRevoked      bool         `gorm:"default:false" json:"isRevoked"`
+	CanRevoke      bool         `gorm:"-" json:"canRevoke"`               // 动态字段：是否可撤回
+	ThumbnailURL   string       `gorm:"size:255" json:"thumbnailUrl"`     // 缩略图 URL
 	ClientMsgID    string       `gorm:"size:50;index" json:"clientMsgId"` // 用于识别重复消息
 }
 

@@ -3545,7 +3545,7 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取指定会话的历史消息记录，支持模糊搜索内容",
+                "description": "获取指定会话的历史消息记录，支持模糊搜索内容和 ID 分页",
                 "consumes": [
                     "application/json"
                 ],
@@ -3582,6 +3582,18 @@
                         "type": "string",
                         "description": "搜索关键字",
                         "name": "query",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "在此消息 ID 之前的消息",
+                        "name": "before_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "在此消息 ID 之后的消息",
+                        "name": "after_id",
                         "in": "query"
                     }
                 ],
@@ -4098,6 +4110,102 @@
                     },
                     "500": {
                         "description": "服务器内部错误",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/chat/messages/{id}/context": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "获取指定消息及其前后的上下文消息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IM系统"
+                ],
+                "summary": "获取消息上下文",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "消息ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "总条数",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/chat/messages/{id}/revoke": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "撤回自己发送的消息（通常有时间限制）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IM系统"
+                ],
+                "summary": "撤回消息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "消息ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
                         "schema": {
                             "$ref": "#/definitions/util.Response"
                         }
@@ -10872,7 +10980,7 @@
                     "type": "string"
                 },
                 "memberIds": {
-                    "description": "扁平化的成员ID列表，方便前端处理",
+                    "description": "扁平化的成员ID列表",
                     "type": "array",
                     "items": {
                         "type": "integer"
@@ -11153,15 +11261,19 @@
         "model.Message": {
             "type": "object",
             "properties": {
+                "canRevoke": {
+                    "description": "动态字段：是否可撤回",
+                    "type": "boolean"
+                },
                 "clientMsgId": {
-                    "description": "用于前端识别重复消息",
+                    "description": "用于识别重复消息",
                     "type": "string"
                 },
                 "content": {
                     "type": "string"
                 },
                 "conversation": {
-                    "description": "新增：关联会话信息",
+                    "description": "关联会话信息",
                     "allOf": [
                         {
                             "$ref": "#/definitions/model.Conversation"
@@ -11194,6 +11306,10 @@
                 },
                 "senderId": {
                     "type": "integer"
+                },
+                "thumbnailUrl": {
+                    "description": "缩略图 URL",
+                    "type": "string"
                 },
                 "type": {
                     "type": "string"

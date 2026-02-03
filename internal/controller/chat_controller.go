@@ -101,11 +101,24 @@ func (ctrl *ChatController) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	conv, err := ctrl.ChatService.CreateGroup(userID, req.Name, req.MemberIDs)
+	conv, sysMsg, err := ctrl.ChatService.CreateGroup(userID, req.Name, req.MemberIDs)
 	if err != nil {
 		util.Error(c, 500, err.Error())
 		return
 	}
+
+	// 推送系统消息
+	if sysMsg != nil {
+		var memberIDs []uint
+		for _, m := range conv.Members {
+			memberIDs = append(memberIDs, m.UserID)
+		}
+		ctrl.Hub.PushToUsers(memberIDs, service.WSMessage{
+			Type: "NEW_MESSAGE",
+			Data: sysMsg,
+		})
+	}
+
 	util.Success(c, conv)
 }
 
@@ -269,6 +282,9 @@ func (ctrl *ChatController) SendMessage(c *gin.Context) {
 		return
 	}
 
+	// 刚发送的消息默认可以撤回
+	msg.CanRevoke = true
+
 	// 补充在线状态发送给 WS
 	type msgWithStatus struct {
 		*model.Message
@@ -278,7 +294,7 @@ func (ctrl *ChatController) SendMessage(c *gin.Context) {
 	}
 	wsData := msgWithStatus{
 		Message:   msg,
-		IsOnline:  true, // 自己肯定在线
+		IsOnline:  true,
 		IsRead:    false,
 		ReadCount: 0,
 	}
@@ -298,7 +314,7 @@ func (ctrl *ChatController) SendMessage(c *gin.Context) {
 
 // GetHistory godoc
 // @Summary 获取历史消息
-// @Description 获取指定会话的历史消息记录，支持模糊搜索内容
+// @Description 获取指定会话的历史消息记录，支持模糊搜索内容和 ID 分页
 // @Tags IM系统
 // @Accept  json
 // @Produce  json
@@ -307,6 +323,8 @@ func (ctrl *ChatController) SendMessage(c *gin.Context) {
 // @Param   limit query int false "限制条数" default(20)
 // @Param   offset query int false "偏移量" default(0)
 // @Param   query query string false "搜索关键字"
+// @Param   before_id query string false "在此消息 ID 之前的消息"
+// @Param   after_id query string false "在此消息 ID 之后的消息"
 // @Success 200 {object} util.Response{data=[]object} "成功"
 // @Failure 500 {object} util.Response "服务器内部错误"
 // @Router /api/chat/conversations/{id}/messages [get]
@@ -321,8 +339,10 @@ func (ctrl *ChatController) GetHistory(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	query := c.Query("query")
+	beforeID := c.Query("before_id")
+	afterID := c.Query("after_id")
 
-	msgs, err := ctrl.ChatService.GetHistory(userID, convID, query, limit, offset)
+	msgs, err := ctrl.ChatService.GetHistory(userID, convID, query, limit, offset, beforeID, afterID)
 	if err != nil {
 		util.Error(c, 500, err.Error())
 		return
@@ -354,8 +374,8 @@ func (ctrl *ChatController) GetHistory(c *gin.Context) {
 
 		// 计算已读人数：遍历成员已读时间
 		for uid, lastReadTime := range memberReadTimes {
-			if uid == m.SenderID {
-				continue // 发送者不计入已读人数
+			if m.SenderID != nil && uid == *m.SenderID {
+				continue
 			}
 			if !lastReadTime.Before(m.CreatedAt) { // lastReadTime >= m.CreatedAt
 				readCount++
@@ -364,27 +384,113 @@ func (ctrl *ChatController) GetHistory(c *gin.Context) {
 
 		if conv.Type == "private" {
 			// 私聊逻辑：ReadCount > 0 即为对方已读
-			if m.SenderID == userID {
+			if m.SenderID != nil && *m.SenderID == userID {
 				isRead = readCount > 0
 			} else {
 				isRead = true
 			}
 		} else {
 			// 群聊逻辑：如果是自己发的，显示 ReadCount；如果是别人发的，自己查到历史说明自己已看过
-			if m.SenderID != userID {
+			if m.SenderID == nil || *m.SenderID != userID {
 				isRead = true
 			}
 		}
 
+		// 计算是否可撤回：必须是自己发的，且在 2 分钟内，且未被撤回
+		m.CanRevoke = m.SenderID != nil && *m.SenderID == userID && !m.IsRevoked && time.Since(m.CreatedAt) < 2*time.Minute
+
+		senderID := uint(0)
+		if m.SenderID != nil {
+			senderID = *m.SenderID
+		}
+
 		list = append(list, msgWithStatus{
 			Message:   m,
-			IsOnline:  ctrl.Hub.IsUserOnline(m.SenderID),
+			IsOnline:  ctrl.Hub.IsUserOnline(senderID),
 			IsRead:    isRead,
 			ReadCount: readCount,
 		})
 	}
 
 	util.Success(c, list)
+}
+
+// GetMessageContext godoc
+// @Summary 获取消息上下文
+// @Description 获取指定消息及其前后的上下文消息
+// @Tags IM系统
+// @Accept  json
+// @Produce  json
+// @Security ApiKeyAuth
+// @Param   id path string true "消息ID"
+// @Param   limit query int false "总条数" default(20)
+// @Success 200 {object} util.Response{data=[]object} "成功"
+// @Router /api/chat/messages/{id}/context [get]
+func (ctrl *ChatController) GetMessageContext(c *gin.Context) {
+	claims := util.GetUserFromContext(c)
+	if claims == nil {
+		util.Unauthorized(c)
+		return
+	}
+	userID := claims.UserID
+	msgID := c.Param("id")
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+	msgs, err := ctrl.ChatService.GetMessageContext(userID, msgID, limit)
+	if err != nil {
+		util.Error(c, 500, err.Error())
+		return
+	}
+
+	for i := range msgs {
+		msgs[i].CanRevoke = msgs[i].SenderID != nil && *msgs[i].SenderID == userID && !msgs[i].IsRevoked && time.Since(msgs[i].CreatedAt) < 2*time.Minute
+	}
+
+	util.Success(c, msgs)
+}
+
+// RevokeMessage godoc
+// @Summary 撤回消息
+// @Description 撤回自己发送的消息（通常有时间限制）
+// @Tags IM系统
+// @Accept  json
+// @Produce  json
+// @Security ApiKeyAuth
+// @Param   id path string true "消息ID"
+// @Success 200 {object} util.Response "成功"
+// @Router /api/chat/messages/{id}/revoke [put]
+func (ctrl *ChatController) RevokeMessage(c *gin.Context) {
+	claims := util.GetUserFromContext(c)
+	if claims == nil {
+		util.Unauthorized(c)
+		return
+	}
+	userID := claims.UserID
+	msgID := c.Param("id")
+
+	msg, err := ctrl.ChatService.RevokeMessage(userID, msgID)
+	if err != nil {
+		util.Error(c, 500, err.Error())
+		return
+	}
+
+	// 推送撤回事件
+	conv, _ := ctrl.ChatService.ChatRepo.GetConversation(msg.ConversationID)
+	var memberIDs []uint
+	for _, m := range conv.Members {
+		memberIDs = append(memberIDs, m.UserID)
+	}
+
+	ctrl.Hub.PushToUsers(memberIDs, service.WSMessage{
+		Type: "MESSAGE_REVOKE",
+		Data: map[string]interface{}{
+			"conversationId": msg.ConversationID,
+			"messageId":      msgID,
+			"senderId":       userID,
+		},
+	})
+
+	util.Success(c, nil)
 }
 
 // DisbandGroup godoc
@@ -514,9 +620,23 @@ func (ctrl *ChatController) UpdateGroupInfo(c *gin.Context) {
 		return
 	}
 
-	if err := ctrl.ChatService.UpdateGroupInfo(userID, convID, req.Name, req.Avatar); err != nil {
+	sysMsg, err := ctrl.ChatService.UpdateGroupInfo(userID, convID, req.Name, req.Avatar)
+	if err != nil {
 		util.Error(c, 500, err.Error())
 		return
+	}
+
+	// 推送系统消息
+	if sysMsg != nil {
+		conv, _ := ctrl.ChatService.ChatRepo.GetConversation(convID)
+		var memberIDs []uint
+		for _, m := range conv.Members {
+			memberIDs = append(memberIDs, m.UserID)
+		}
+		ctrl.Hub.PushToUsers(memberIDs, service.WSMessage{
+			Type: "NEW_MESSAGE",
+			Data: sysMsg,
+		})
 	}
 
 	// 推送群信息更新事件
@@ -558,9 +678,23 @@ func (ctrl *ChatController) InviteMember(c *gin.Context) {
 		return
 	}
 
-	if err := ctrl.ChatService.InviteMember(userID, convID, req.UserID); err != nil {
+	sysMsg, err := ctrl.ChatService.InviteMember(userID, convID, req.UserID)
+	if err != nil {
 		util.Error(c, 500, err.Error())
 		return
+	}
+
+	// 推送系统消息
+	if sysMsg != nil {
+		conv, _ := ctrl.ChatService.ChatRepo.GetConversation(convID)
+		var memberIDs []uint
+		for _, m := range conv.Members {
+			memberIDs = append(memberIDs, m.UserID)
+		}
+		ctrl.Hub.PushToUsers(memberIDs, service.WSMessage{
+			Type: "NEW_MESSAGE",
+			Data: sysMsg,
+		})
 	}
 
 	util.Success(c, nil)
@@ -588,9 +722,34 @@ func (ctrl *ChatController) KickMember(c *gin.Context) {
 	targetIDStr := c.Param("userId")
 	targetID, _ := strconv.ParseUint(targetIDStr, 10, 32)
 
-	if err := ctrl.ChatService.KickMember(userID, convID, uint(targetID)); err != nil {
+	sysMsg, err := ctrl.ChatService.KickMember(userID, convID, uint(targetID))
+	if err != nil {
 		util.Error(c, 500, err.Error())
 		return
+	}
+
+	// 推送系统消息
+	if sysMsg != nil {
+		conv, _ := ctrl.ChatService.ChatRepo.GetConversation(convID)
+		var memberIDs []uint
+		for _, m := range conv.Members {
+			memberIDs = append(memberIDs, m.UserID)
+		}
+		memberIDs = append(memberIDs, uint(targetID))
+
+		ctrl.Hub.PushToUsers(memberIDs, service.WSMessage{
+			Type: "NEW_MESSAGE",
+			Data: sysMsg,
+		})
+
+		ctrl.Hub.PushToUsers(memberIDs, service.WSMessage{
+			Type: "MEMBER_LEFT",
+			Data: map[string]interface{}{
+				"conversationId": convID,
+				"userId":         uint(targetID),
+				"reason":         "kicked",
+			},
+		})
 	}
 
 	util.Success(c, nil)
@@ -906,7 +1065,7 @@ func (ctrl *ChatController) GlobalSearch(c *gin.Context) {
 		return
 	}
 
-	// 统一处理私聊会话的名称显示（与会话列表逻辑一致）
+	// 统一处理私聊会话的名称显示
 	for i := range msgs {
 		if msgs[i].Conversation.Type == "private" {
 			for _, m := range msgs[i].Conversation.Members {
@@ -986,7 +1145,6 @@ func (ctrl *ChatController) GetFriendRequests(c *gin.Context) {
 		page = 1
 	}
 
-	// 计算数据库需要的偏移量 (offset)
 	offset := (page - 1) * limit
 
 	reqs, total, err := ctrl.FriendshipService.GetFriendRequests(userID, query, limit, offset)
@@ -1065,7 +1223,7 @@ func (ctrl *ChatController) UploadFile(c *gin.Context) {
 	}
 
 	ext := strings.ToLower(filepath.Ext(file.Filename))
-	// 简单校验支持的扩展名
+	// 支持的扩展名
 	allowedExts := map[string]bool{
 		".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
 		".pdf": true, ".docx": true, ".txt": true, ".zip": true,
@@ -1076,7 +1234,7 @@ func (ctrl *ChatController) UploadFile(c *gin.Context) {
 		return
 	}
 
-	// 生成唯一文件名，防止重名覆盖
+	// 生成唯一文件名
 	newFilename := fmt.Sprintf("%s-%s", time.Now().Format("20060102150405"), strings.ReplaceAll(file.Filename, " ", "-"))
 
 	var fileURL string

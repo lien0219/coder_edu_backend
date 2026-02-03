@@ -456,6 +456,8 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 		chat.DELETE("/conversations/:id", c.chat.DisbandGroup)   // 解散群聊
 		chat.POST("/conversations/:id/leave", c.chat.LeaveGroup) // 退出群聊
 		chat.GET("/conversations/:id/messages", c.chat.GetHistory)
+		chat.GET("/messages/:id/context", c.chat.GetMessageContext) // 获取消息上下文
+		chat.PUT("/messages/:id/revoke", c.chat.RevokeMessage)      // 撤回消息
 		chat.GET("/conversations/:id/members", c.chat.GetMembers)
 		chat.POST("/conversations/:id/members", c.chat.InviteMember)         // 邀请成员
 		chat.DELETE("/conversations/:id/members/:userId", c.chat.KickMember) // 踢出成员

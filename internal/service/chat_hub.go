@@ -82,14 +82,20 @@ func (c *Client) readPump() {
 	}
 }
 
-// HandleTransientEvent 处理不需要存库的瞬时事件转发 (如 TYPING)
+// HandleTransientEvent 处理不需要存库的瞬时事件转发
 func (h *ChatHub) HandleTransientEvent(senderID uint, convID string, msg WSMessage) {
 	if data, ok := msg.Data.(map[string]interface{}); ok {
-		// 补充发送者 ID，让接收方知道是谁在输入
+		if msg.Type == "TYPING" && h.ChatRepo != nil {
+			conv, err := h.ChatRepo.GetConversation(convID)
+			if err == nil && conv.Type == "group" {
+				return // 拦截群聊的输入状态转发
+			}
+		}
+
 		data["userId"] = senderID
 		msg.Data = data
 
-		// 优先级 1: 如果前端传了目标用户 ID 列表，则直接推送
+		// 如果前端传了目标用户 ID 列表，则直接推送
 		if targets, ok := data["targetUserIds"].([]interface{}); ok && len(targets) > 0 {
 			var ids []uint
 			for _, t := range targets {
@@ -103,7 +109,7 @@ func (h *ChatHub) HandleTransientEvent(senderID uint, convID string, msg WSMessa
 			return
 		}
 
-		// 优先级 2: 如果没传目标 ID，则根据 convID 查找所有成员进行推送 (适用于群聊)
+		// 如果没传目标 ID，则根据 convID 查找所有成员进行推送 (适用于群聊)
 		if h.ChatRepo != nil {
 			conv, err := h.ChatRepo.GetConversation(convID)
 			if err == nil {

@@ -326,7 +326,7 @@ func (ctrl *ChatController) SendMessage(c *gin.Context) {
 // @Param   before_id query string false "在此消息 ID 之前的消息"
 // @Param   after_id query string false "在此消息 ID 之后的消息"
 // @Param   after_seq query int false "获取此 SeqID 之后的消息 (用于增量同步)"
-// @Success 200 {object} util.Response{data=[]object} "成功"
+// @Success 200 {object} util.Response{data=object} "成功"
 // @Failure 500 {object} util.Response "服务器内部错误"
 // @Router /api/chat/conversations/{id}/messages [get]
 func (ctrl *ChatController) GetHistory(c *gin.Context) {
@@ -414,7 +414,10 @@ func (ctrl *ChatController) GetHistory(c *gin.Context) {
 		})
 	}
 
-	util.Success(c, list)
+	util.Success(c, gin.H{
+		"list":     list,
+		"has_more": len(list) >= limit,
+	})
 }
 
 // GetMessageContext godoc

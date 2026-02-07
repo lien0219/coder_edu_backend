@@ -3566,9 +3566,7 @@ paths:
             - $ref: '#/definitions/util.Response'
             - properties:
                 data:
-                  items:
-                    type: object
-                  type: array
+                  type: object
               type: object
         "500":
           description: 服务器内部错误

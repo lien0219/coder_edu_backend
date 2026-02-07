@@ -167,7 +167,7 @@ func (a *App) initRepositories(db *gorm.DB, rdb *redis.Client) *repositories {
 		migrationTask:      repository.NewMigrationTaskRepository(db),
 		reflection:         repository.NewReflectionRepository(db),
 		chat:               repository.NewChatRepository(db, rdb),
-		friendship:         repository.NewFriendshipRepository(db),
+		friendship:         repository.NewFriendshipRepository(db, rdb),
 	}
 }
 

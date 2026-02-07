@@ -2,20 +2,30 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"context"
+	"fmt"
+	"time"
 
+	"github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
 )
 
 type FriendshipRepository struct {
-	DB *gorm.DB
+	DB    *gorm.DB
+	Redis *redis.Client
+	ctx   context.Context
 }
 
-func NewFriendshipRepository(db *gorm.DB) *FriendshipRepository {
-	return &FriendshipRepository{DB: db}
+func NewFriendshipRepository(db *gorm.DB, rdb *redis.Client) *FriendshipRepository {
+	return &FriendshipRepository{
+		DB:    db,
+		Redis: rdb,
+		ctx:   context.Background(),
+	}
 }
 
 func (r *FriendshipRepository) CreateFriendship(f *model.Friendship) error {
-	return r.DB.Transaction(func(tx *gorm.DB) error {
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(f).Error; err != nil {
 			return err
 		}
@@ -26,6 +36,13 @@ func (r *FriendshipRepository) CreateFriendship(f *model.Friendship) error {
 		}
 		return tx.Create(reverse).Error
 	})
+
+	if err == nil && r.Redis != nil {
+		// 清除关系缓存
+		r.Redis.Del(r.ctx, fmt.Sprintf("chat:relation:friends:%d", f.UserID))
+		r.Redis.Del(r.ctx, fmt.Sprintf("chat:relation:friends:%d", f.FriendID))
+	}
+	return err
 }
 
 func (r *FriendshipRepository) GetFriends(userID uint, query string) ([]model.User, error) {
@@ -48,6 +65,43 @@ func (r *FriendshipRepository) GetFriendIDs(userID uint) ([]uint, error) {
 	err := r.DB.Table("friendships").
 		Where("user_id = ? AND status = ?", userID, "accepted").
 		Pluck("friend_id", &ids).Error
+	return ids, err
+}
+
+// GetFriendIDsCached 获取好友 ID 列表 (带缓存)
+func (r *FriendshipRepository) GetFriendIDsCached(userID uint) ([]uint, error) {
+	if r.Redis == nil {
+		return r.GetFriendIDs(userID)
+	}
+
+	key := fmt.Sprintf("chat:relation:friends:%d", userID)
+	cached, err := r.Redis.SMembers(r.ctx, key).Result()
+	if err == nil && len(cached) > 0 {
+		var ids []uint
+		for _, s := range cached {
+			var id uint
+			fmt.Sscanf(s, "%d", &id)
+			if id > 0 {
+				ids = append(ids, id)
+			}
+		}
+		return ids, nil
+	}
+
+	// 缓存失效，回源数据库
+	ids, err := r.GetFriendIDs(userID)
+	if err == nil && len(ids) > 0 {
+		pipe := r.Redis.Pipeline()
+		for _, id := range ids {
+			pipe.SAdd(r.ctx, key, id)
+		}
+		pipe.Expire(r.ctx, key, 24*time.Hour)
+		pipe.Exec(r.ctx)
+	} else if err == nil {
+		// 防止缓存穿透：存一个特殊值或设置短过期时间
+		r.Redis.SAdd(r.ctx, key, 0)
+		r.Redis.Expire(r.ctx, key, 5*time.Minute)
+	}
 	return ids, err
 }
 
@@ -110,10 +164,17 @@ func (r *FriendshipRepository) GetPendingRequests(userID uint) ([]model.FriendRe
 }
 
 func (r *FriendshipRepository) DeleteFriendship(userID, friendID uint) error {
-	return r.DB.Transaction(func(tx *gorm.DB) error {
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ? AND friend_id = ?", userID, friendID).Delete(&model.Friendship{}).Error; err != nil {
 			return err
 		}
 		return tx.Where("user_id = ? AND friend_id = ?", friendID, userID).Delete(&model.Friendship{}).Error
 	})
+
+	if err == nil && r.Redis != nil {
+		// 清除关系缓存
+		r.Redis.Del(r.ctx, fmt.Sprintf("chat:relation:friends:%d", userID))
+		r.Redis.Del(r.ctx, fmt.Sprintf("chat:relation:friends:%d", friendID))
+	}
+	return err
 }

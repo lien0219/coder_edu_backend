@@ -38,12 +38,12 @@ type JWTConfig struct {
 }
 
 type StorageConfig struct {
-	Type          string
-	LocalPath     string
-	MinioEndpoint string
-	MinioAccessID string
-	MinioSecret   string
-	MinioBucket   string
+	Type          string `mapstructure:"type"`
+	LocalPath     string `mapstructure:"local_path"`
+	MinioEndpoint string `mapstructure:"minio_endpoint"`
+	MinioAccessID string `mapstructure:"minio_access_key"`
+	MinioSecret   string `mapstructure:"minio_secret_key"`
+	MinioBucket   string `mapstructure:"minio_bucket"`
 }
 type TracingConfig struct {
 	Enabled           bool

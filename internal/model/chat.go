@@ -23,8 +23,8 @@ func (Conversation) TableName() string {
 // ConversationMember 维护成员关系、未读数、角色
 type ConversationMember struct {
 	ConversationID  string     `gorm:"primaryKey;type:varchar(36)" json:"conversationId"`
-	UserID          uint       `gorm:"primaryKey" json:"userId"`
-	User            User       `gorm:"foreignKey:UserID" json:"user"` // 关联用户信息
+	UserID          uint       `gorm:"primaryKey;index" json:"userId"` // 优化按用户查询会话
+	User            User       `gorm:"foreignKey:UserID" json:"user"`  // 关联用户信息
 	Role            string     `gorm:"type:enum('admin','member');default:'member'" json:"role"`
 	Nickname        string     `gorm:"size:50" json:"nickname"`
 	LastReadMsgID   string     `gorm:"type:varchar(36);default:''" json:"lastReadMsgId"` // 记录最后读到的 UUID 消息 ID
@@ -39,7 +39,8 @@ func (ConversationMember) TableName() string {
 // Message 消息记录
 type Message struct {
 	UUIDBase
-	ConversationID string       `gorm:"index;type:varchar(36);not null" json:"conversationId"`
+	ConversationID string       `gorm:"index;index:idx_conv_created;type:varchar(36);not null" json:"conversationId"`
+	CreatedAt      time.Time    `gorm:"index:idx_conv_created" json:"createdAt"` // 优化历史消息查询 (conversation_id, created_at)
 	SenderID       *uint        `gorm:"index" json:"senderId"`
 	Sender         User         `gorm:"foreignKey:SenderID" json:"sender"`             // 关联发送者用户信息
 	Conversation   Conversation `gorm:"foreignKey:ConversationID" json:"conversation"` // 关联会话信息

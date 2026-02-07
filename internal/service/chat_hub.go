@@ -201,9 +201,13 @@ type ChatHub struct {
 	ChatRepo       *repository.ChatRepository
 	FriendshipRepo *repository.FriendshipRepository
 	ctx            context.Context
+	instanceID     string // 实例唯一标识
 }
 
 func NewChatHub(rdb *redis.Client, chatRepo *repository.ChatRepository, friendRepo *repository.FriendshipRepository) *ChatHub {
+	// 暂时生成简单的实例ID(生产环境需要从配置或环境变量中读取)
+	id := fmt.Sprintf("node_%d", time.Now().UnixNano())
+
 	h := &ChatHub{
 		broadcast:      make(chan []byte),
 		register:       make(chan *Client),
@@ -212,6 +216,7 @@ func NewChatHub(rdb *redis.Client, chatRepo *repository.ChatRepository, friendRe
 		ChatRepo:       chatRepo,
 		FriendshipRepo: friendRepo,
 		ctx:            context.Background(),
+		instanceID:     id,
 	}
 	for i := 0; i < shardCount; i++ {
 		h.shards[i] = &shard{
@@ -231,7 +236,8 @@ type PubSubMessage struct {
 }
 
 func (h *ChatHub) Run() {
-	pubsub := h.Redis.Subscribe(h.ctx, "chat_channel")
+	// 订阅本节点的专属频道和全局广播频道
+	pubsub := h.Redis.Subscribe(h.ctx, fmt.Sprintf("chat:node:%s", h.instanceID), "chat:global")
 	go func() {
 		ch := pubsub.Channel()
 		for msg := range ch {
@@ -267,7 +273,7 @@ func (h *ChatHub) Run() {
 			s.clients[client.UserID] = client
 			s.mu.Unlock()
 			pendingUpdates = append(pendingUpdates, statusUpdate{client.UserID, "online"})
-			monitoring.IMOnlineUsers.Inc() // 增加在线人数
+			monitoring.IMOnlineUsers.Inc()
 
 		case client := <-h.unregister:
 			s := h.getShard(client.UserID)
@@ -275,13 +281,12 @@ func (h *ChatHub) Run() {
 			if _, ok := s.clients[client.UserID]; ok {
 				delete(s.clients, client.UserID)
 				close(client.Send)
-				monitoring.IMOnlineUsers.Dec() // 减少在线人数
+				monitoring.IMOnlineUsers.Dec()
 			}
 			s.mu.Unlock()
 			pendingUpdates = append(pendingUpdates, statusUpdate{client.UserID, "offline"})
 
 		case <-heartbeatTicker.C:
-			// 为本地在线用户批量续期
 			h.refreshOnlineStatus()
 
 		case <-ticker.C:
@@ -293,7 +298,8 @@ func (h *ChatHub) Run() {
 			for _, update := range pendingUpdates {
 				key := fmt.Sprintf("user:online:%d", update.userID)
 				if update.status == "online" {
-					pipe.Set(h.ctx, key, "true", onlineTTL) // 增加 TTL
+					// 存储实例ID，实现精准路由
+					pipe.Set(h.ctx, key, h.instanceID, onlineTTL)
 				} else {
 					pipe.Del(h.ctx, key)
 				}
@@ -303,7 +309,6 @@ func (h *ChatHub) Run() {
 				logger.Log.Error("Redis pipeline error", zap.Error(err))
 			}
 
-			// 发送状态通知
 			for _, update := range pendingUpdates {
 				h.NotifyStatus(update.userID, update.status)
 			}
@@ -320,7 +325,8 @@ func (h *ChatHub) refreshOnlineStatus() {
 		s := h.shards[i]
 		s.mu.RLock()
 		for userID := range s.clients {
-			pipe.Expire(h.ctx, fmt.Sprintf("user:online:%d", userID), onlineTTL)
+			// 使用Set放弃Expire，确保即使key意外丢失也能恢复，并锁定在当前实例
+			pipe.Set(h.ctx, fmt.Sprintf("user:online:%d", userID), h.instanceID, onlineTTL)
 			count++
 		}
 		s.mu.RUnlock()
@@ -408,13 +414,49 @@ func (h *ChatHub) Stop() {
 func (h *ChatHub) PushToUsers(userIDs []uint, msg WSMessage) {
 	// 避免二次序列化
 	msgBytes, _ := json.Marshal(msg)
-	psMsg := PubSubMessage{
-		TargetUsers: userIDs,
-		Payload:     msgBytes,
+
+	// 如果没有指定用户，则进行全服广播
+	if len(userIDs) == 0 {
+		psMsg := PubSubMessage{
+			TargetUsers: nil,
+			Payload:     msgBytes,
+		}
+		payload, _ := json.Marshal(psMsg)
+		h.Redis.Publish(h.ctx, "chat:global", payload)
+		monitoring.IMMessageCounter.WithLabelValues(msg.Type, "out").Inc()
+		return
 	}
-	payload, _ := json.Marshal(psMsg)
-	h.Redis.Publish(h.ctx, "chat_channel", payload)
-	monitoring.IMMessageCounter.WithLabelValues(msg.Type, "out").Inc() // 记录下行消息
+
+	// 精准路由
+	// 1. 批量查询用户所在的实例 ID
+	keys := make([]string, len(userIDs))
+	for i, id := range userIDs {
+		keys[i] = fmt.Sprintf("user:online:%d", id)
+	}
+
+	instanceMap := make(map[string][]uint)
+	locations, err := h.Redis.MGet(h.ctx, keys...).Result()
+	if err == nil {
+		for i, loc := range locations {
+			if loc == nil {
+				continue
+			}
+			instanceID := loc.(string)
+			instanceMap[instanceID] = append(instanceMap[instanceID], userIDs[i])
+		}
+	}
+
+	// 2. 按实例进行定向发布
+	for instanceID, ids := range instanceMap {
+		psMsg := PubSubMessage{
+			TargetUsers: ids,
+			Payload:     msgBytes,
+		}
+		payload, _ := json.Marshal(psMsg)
+		h.Redis.Publish(h.ctx, fmt.Sprintf("chat:node:%s", instanceID), payload)
+	}
+
+	monitoring.IMMessageCounter.WithLabelValues(msg.Type, "out").Inc()
 }
 
 func (h *ChatHub) pushToLocalRawUsers(userIDs []uint, payload []byte) {
@@ -458,7 +500,7 @@ func (h *ChatHub) IsUserOnline(userID uint) bool {
 
 	// 查 Redis (多实例部署)
 	val, err := h.Redis.Get(h.ctx, fmt.Sprintf("user:online:%d", userID)).Result()
-	return err == nil && val == "true"
+	return err == nil && val != ""
 }
 
 func ServeWs(hub *ChatHub, w http.ResponseWriter, r *http.Request, userID uint) {

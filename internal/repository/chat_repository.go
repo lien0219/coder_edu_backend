@@ -2,18 +2,27 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
 )
 
 type ChatRepository struct {
-	DB *gorm.DB
+	DB    *gorm.DB
+	Redis *redis.Client
+	ctx   context.Context
 }
 
-func NewChatRepository(db *gorm.DB) *ChatRepository {
-	return &ChatRepository{DB: db}
+func NewChatRepository(db *gorm.DB, rdb *redis.Client) *ChatRepository {
+	return &ChatRepository{
+		DB:    db,
+		Redis: rdb,
+		ctx:   context.Background(),
+	}
 }
 
 func (r *ChatRepository) CreateConversation(conv *model.Conversation) error {
@@ -55,7 +64,7 @@ func (r *ChatRepository) GetUserConversations(userID uint, query string, limit, 
 
 func (r *ChatRepository) FindPrivateConversation(userID1, userID2 uint) (*model.Conversation, error) {
 	var conv model.Conversation
-	// 查找两个用户共同参与且类型为 private 的会话
+	// 查找两个用户共同参与且类型为private的会话
 	err := r.DB.Table("conversations").
 		Joins("JOIN conversation_members cm1 ON cm1.conversation_id = conversations.id").
 		Joins("JOIN conversation_members cm2 ON cm2.conversation_id = conversations.id").
@@ -148,16 +157,58 @@ func (r *ChatRepository) GetConversationMembers(convID string, query string, lim
 	return members, total, err
 }
 
+const maxCacheMessages = 50 // 每个会话缓存最近50条消息
+
 func (r *ChatRepository) CreateMessage(msg *model.Message) error {
-	return r.DB.Transaction(func(tx *gorm.DB) error {
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(msg).Error; err != nil {
 			return err
 		}
 		return tx.Model(&model.Conversation{}).Where("id = ?", msg.ConversationID).Update("updated_at", msg.CreatedAt).Error
 	})
+
+	if err == nil && r.Redis != nil {
+		// 异步缓存消息，避免阻塞主流程
+		go r.cacheMessage(msg)
+	}
+	return err
+}
+
+func (r *ChatRepository) cacheMessage(msg *model.Message) {
+	// 确保 Sender 信息已加载
+	if msg.SenderID != nil && msg.Sender.ID == 0 {
+		r.DB.Preload("Sender").First(msg, "id = ?", msg.ID)
+	}
+
+	key := fmt.Sprintf("chat:cache:%s", msg.ConversationID)
+	data, _ := json.Marshal(msg)
+
+	pipe := r.Redis.Pipeline()
+	pipe.LPush(r.ctx, key, data)
+	pipe.LTrim(r.ctx, key, 0, maxCacheMessages-1)
+	pipe.Expire(r.ctx, key, 24*time.Hour) // 缓存 24 小时
+	pipe.Exec(r.ctx)
 }
 
 func (r *ChatRepository) GetMessages(convID string, query string, limit int, offset int, beforeID string, afterID string) ([]model.Message, error) {
+	// 尝试从缓存读取 (仅针对第一页无搜索条件的请求)
+	if query == "" && offset == 0 && beforeID == "" && afterID == "" && r.Redis != nil {
+		key := fmt.Sprintf("chat:cache:%s", convID)
+		cached, err := r.Redis.LRange(r.ctx, key, 0, int64(limit-1)).Result()
+		if err == nil && len(cached) > 0 {
+			var msgs []model.Message
+			for _, item := range cached {
+				var m model.Message
+				if err := json.Unmarshal([]byte(item), &m); err == nil {
+					msgs = append(msgs, m)
+				}
+			}
+			if len(msgs) > 0 {
+				return msgs, nil
+			}
+		}
+	}
+
 	var msgs []model.Message
 	db := r.DB.Preload("Sender").Where("conversation_id = ?", convID)
 
@@ -261,6 +312,12 @@ func (r *ChatRepository) RevokeMessage(msgID string, senderID uint) (*model.Mess
 	msg.IsRevoked = true
 	msg.Content = "消息已撤回"
 	err := r.DB.Save(&msg).Error
+
+	if err == nil && r.Redis != nil {
+		// 撤回消息后清除缓存，强制下次拉取时回源数据库并更新缓存
+		r.Redis.Del(r.ctx, fmt.Sprintf("chat:cache:%s", msg.ConversationID))
+	}
+
 	return &msg, err
 }
 

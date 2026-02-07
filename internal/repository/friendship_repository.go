@@ -42,6 +42,15 @@ func (r *FriendshipRepository) GetFriends(userID uint, query string) ([]model.Us
 	return friends, err
 }
 
+// GetFriendIDs 只获取好友的 ID 列表
+func (r *FriendshipRepository) GetFriendIDs(userID uint) ([]uint, error) {
+	var ids []uint
+	err := r.DB.Table("friendships").
+		Where("user_id = ? AND status = ?", userID, "accepted").
+		Pluck("friend_id", &ids).Error
+	return ids, err
+}
+
 func (r *FriendshipRepository) IsFriend(userID, friendID uint) (bool, error) {
 	var count int64
 	err := r.DB.Model(&model.Friendship{}).

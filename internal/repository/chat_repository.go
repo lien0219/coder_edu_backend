@@ -232,6 +232,17 @@ func (r *ChatRepository) GetMessageContext(msgID string, limit int) ([]model.Mes
 	return append(prevMsgs, nextMsgs...), nil
 }
 
+// GetUserRelatedIDs 获取用户参与的所有会话中的所有成员 ID
+func (r *ChatRepository) GetUserRelatedIDs(userID uint) ([]uint, error) {
+	var ids []uint
+	err := r.DB.Table("conversation_members").
+		Where("conversation_id IN (SELECT conversation_id FROM conversation_members WHERE user_id = ?)", userID).
+		Where("user_id != ?", userID).
+		Distinct("user_id").
+		Pluck("user_id", &ids).Error
+	return ids, err
+}
+
 func (r *ChatRepository) RevokeMessage(msgID string, senderID uint) (*model.Message, error) {
 	var msg model.Message
 	if err := r.DB.First(&msg, "id = ? AND sender_id = ?", msgID, senderID).Error; err != nil {

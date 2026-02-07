@@ -3621,10 +3621,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "object"
-                                            }
+                                            "type": "object"
                                         }
                                     }
                                 }

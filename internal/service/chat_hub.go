@@ -188,8 +188,9 @@ func (c *Client) writePump() {
 }
 
 type shard struct {
-	clients map[uint]*Client
-	mu      sync.RWMutex
+	clients           map[uint]*Client
+	localGroupMembers map[string]map[uint]bool // convID -> UserIDSet
+	mu                sync.RWMutex
 }
 
 type ChatHub struct {
@@ -201,7 +202,7 @@ type ChatHub struct {
 	ChatRepo       *repository.ChatRepository
 	FriendshipRepo *repository.FriendshipRepository
 	ctx            context.Context
-	instanceID     string // 实例唯一标识
+	instanceID     string
 }
 
 func NewChatHub(rdb *redis.Client, chatRepo *repository.ChatRepository, friendRepo *repository.FriendshipRepository) *ChatHub {
@@ -220,7 +221,8 @@ func NewChatHub(rdb *redis.Client, chatRepo *repository.ChatRepository, friendRe
 	}
 	for i := 0; i < shardCount; i++ {
 		h.shards[i] = &shard{
-			clients: make(map[uint]*Client),
+			clients:           make(map[uint]*Client),
+			localGroupMembers: make(map[string]map[uint]bool),
 		}
 	}
 	return h
@@ -236,8 +238,12 @@ type PubSubMessage struct {
 }
 
 func (h *ChatHub) Run() {
-	// 订阅本节点的专属频道和全局广播频道
-	pubsub := h.Redis.Subscribe(h.ctx, fmt.Sprintf("chat:node:%s", h.instanceID), "chat:global")
+	// 订阅本节点的专属频道、全局广播频道、节点级群组广播频道
+	pubsub := h.Redis.Subscribe(h.ctx,
+		fmt.Sprintf("chat:node:%s", h.instanceID),
+		"chat:global",
+		"chat:node_broadcast",
+	)
 	go func() {
 		ch := pubsub.Channel()
 		for msg := range ch {
@@ -246,7 +252,13 @@ func (h *ChatHub) Run() {
 				logger.Log.Error("PubSub unmarshal error", zap.Error(err))
 				continue
 			}
-			h.pushToLocalRawUsers(psMsg.TargetUsers, psMsg.Payload)
+
+			// 如果是节点级广播psMsg.TargetUsers为空且来自chat:node_broadcast)
+			if msg.Channel == "chat:node_broadcast" {
+				h.pushToLocalGroupUsers(psMsg.Payload)
+			} else {
+				h.pushToLocalRawUsers(psMsg.TargetUsers, psMsg.Payload)
+			}
 		}
 	}()
 
@@ -271,6 +283,8 @@ func (h *ChatHub) Run() {
 			s := h.getShard(client.UserID)
 			s.mu.Lock()
 			s.clients[client.UserID] = client
+			// 预加载该用户的本地群组映射
+			h.updateLocalGroupMapping(client.UserID, true)
 			s.mu.Unlock()
 			pendingUpdates = append(pendingUpdates, statusUpdate{client.UserID, "online"})
 			monitoring.IMOnlineUsers.Inc()
@@ -279,6 +293,7 @@ func (h *ChatHub) Run() {
 			s := h.getShard(client.UserID)
 			s.mu.Lock()
 			if _, ok := s.clients[client.UserID]; ok {
+				h.updateLocalGroupMapping(client.UserID, false)
 				delete(s.clients, client.UserID)
 				close(client.Send)
 				monitoring.IMOnlineUsers.Dec()
@@ -356,22 +371,32 @@ func (h *ChatHub) NotifyStatus(userID uint, status string) {
 func (h *ChatHub) getRelatedUserIDs(userID uint) []uint {
 	userMap := make(map[uint]bool)
 
-	// 1. 获取好友id
+	// 1. 获取好友id (带缓存)
 	if h.FriendshipRepo != nil {
-		ids, err := h.FriendshipRepo.GetFriendIDs(userID)
+		ids, err := h.FriendshipRepo.GetFriendIDsCached(userID)
 		if err == nil {
 			for _, id := range ids {
-				userMap[id] = true
+				if id > 0 { // 排除防止穿透的 0
+					userMap[id] = true
+				}
 			}
 		}
 	}
 
-	// 2. 获取所在群聊的所有成员id
+	// 2. 获取所在群聊的所有成员id (带缓存)
 	if h.ChatRepo != nil {
-		ids, err := h.ChatRepo.GetUserRelatedIDs(userID)
+		// 先获取用户参加的所有群id(带缓存)
+		convIDs, err := h.ChatRepo.GetUserGroupIDsCached(userID)
 		if err == nil {
-			for _, id := range ids {
-				userMap[id] = true
+			for _, convID := range convIDs {
+				memberIDs, err := h.ChatRepo.GetGroupMemberIDsCached(convID)
+				if err == nil {
+					for _, mid := range memberIDs {
+						if mid != userID {
+							userMap[mid] = true
+						}
+					}
+				}
 			}
 		}
 	}
@@ -411,6 +436,34 @@ func (h *ChatHub) Stop() {
 	logger.Log.Info("ChatHub stopped", zap.Int("closedConnections", len(allUserIDs)))
 }
 
+func (h *ChatHub) updateLocalGroupMapping(userID uint, isRegister bool) {
+	if h.ChatRepo == nil {
+		return
+	}
+	convIDs, err := h.ChatRepo.GetUserGroupIDsCached(userID)
+	if err != nil {
+		return
+	}
+
+	for _, convID := range convIDs {
+		// 仅在用户所属的shard中记录其所在的群
+		s := h.getShard(userID)
+		if isRegister {
+			if s.localGroupMembers[convID] == nil {
+				s.localGroupMembers[convID] = make(map[uint]bool)
+			}
+			s.localGroupMembers[convID][userID] = true
+		} else {
+			if s.localGroupMembers[convID] != nil {
+				delete(s.localGroupMembers[convID], userID)
+				if len(s.localGroupMembers[convID]) == 0 {
+					delete(s.localGroupMembers, convID)
+				}
+			}
+		}
+	}
+}
+
 func (h *ChatHub) PushToUsers(userIDs []uint, msg WSMessage) {
 	// 避免二次序列化
 	msgBytes, _ := json.Marshal(msg)
@@ -427,8 +480,30 @@ func (h *ChatHub) PushToUsers(userIDs []uint, msg WSMessage) {
 		return
 	}
 
-	// 精准路由
-	// 1. 批量查询用户所在的实例 ID
+	// 如果是群消息，采用节点级发布
+	// 判断是否是群消息 (通过 WSMessage 的 Data 或补充 convID 参数)
+	// 这里通过 data 中的 conversationId 尝试识别
+	var convID string
+	if data, ok := msg.Data.(map[string]interface{}); ok {
+		convID, _ = data["conversationId"].(string)
+	}
+
+	if convID != "" {
+		// 节点级发布：不再查每个人的位置，直接往全局频道发
+		// 每台机器收到后在本地寻找该群成员
+		psMsg := PubSubMessage{
+			TargetUsers: nil, // 特殊标记：由接收端根据本地映射过滤
+			Payload:     msgBytes,
+		}
+		// 复用chat:global或新建chat:node_broadcast频道
+		// 让所有节点订阅 chat:node_broadcast
+		payload, _ := json.Marshal(psMsg)
+		h.Redis.Publish(h.ctx, "chat:node_broadcast", payload)
+		monitoring.IMMessageCounter.WithLabelValues(msg.Type, "out").Inc()
+		return
+	}
+
+	// 1：精准路由 (针对私聊)
 	keys := make([]string, len(userIDs))
 	for i, id := range userIDs {
 		keys[i] = fmt.Sprintf("user:online:%d", id)
@@ -446,7 +521,6 @@ func (h *ChatHub) PushToUsers(userIDs []uint, msg WSMessage) {
 		}
 	}
 
-	// 2. 按实例进行定向发布
 	for instanceID, ids := range instanceMap {
 		psMsg := PubSubMessage{
 			TargetUsers: ids,
@@ -482,6 +556,40 @@ func (h *ChatHub) pushToLocalRawUsers(userIDs []uint, payload []byte) {
 			select {
 			case client.Send <- payload:
 			default:
+			}
+		}
+		s.mu.RUnlock()
+	}
+}
+
+// pushToLocalGroupUsers 在本地寻找该群成员并推送
+func (h *ChatHub) pushToLocalGroupUsers(payload []byte) {
+	// 解析出 convID
+	var wsMsg WSMessage
+	if err := json.Unmarshal(payload, &wsMsg); err != nil {
+		return
+	}
+	data, ok := wsMsg.Data.(map[string]interface{})
+	if !ok {
+		return
+	}
+	convID, _ := data["conversationId"].(string)
+	if convID == "" {
+		return
+	}
+
+	// 遍历分片，只推送本地在该群的用户
+	for i := 0; i < shardCount; i++ {
+		s := h.shards[i]
+		s.mu.RLock()
+		if memberMap, ok := s.localGroupMembers[convID]; ok {
+			for userID := range memberMap {
+				if client, ok := s.clients[userID]; ok {
+					select {
+					case client.Send <- payload:
+					default:
+					}
+				}
 			}
 		}
 		s.mu.RUnlock()

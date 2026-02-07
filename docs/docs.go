@@ -3551,7 +3551,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "获取指定会话的历史消息记录，支持模糊搜索内容和 ID 分页",
+                "description": "获取指定会话的历史消息记录，支持模糊搜索内容和 ID 分页，以及 SeqID 增量同步",
                 "consumes": [
                     "application/json"
                 ],
@@ -3600,6 +3600,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "在此消息 ID 之后的消息",
                         "name": "after_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "获取此 SeqID 之后的消息 (用于增量同步)",
+                        "name": "after_seq",
                         "in": "query"
                     }
                 ],
@@ -11047,6 +11053,7 @@ const docTemplate = `{
                     ]
                 },
                 "userId": {
+                    "description": "优化按用户查询会话",
                     "type": "integer"
                 }
             }
@@ -11290,6 +11297,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "createdAt": {
+                    "description": "优化历史消息查询 (conversation_id, created_at)",
                     "type": "string"
                 },
                 "duration": {
@@ -11311,6 +11319,10 @@ const docTemplate = `{
                     ]
                 },
                 "senderId": {
+                    "type": "integer"
+                },
+                "seqId": {
+                    "description": "消息序列号，用于可靠性保证",
                     "type": "integer"
                 },
                 "thumbnailUrl": {

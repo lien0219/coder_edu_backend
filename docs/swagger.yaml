@@ -279,6 +279,7 @@ definitions:
         - $ref: '#/definitions/model.User'
         description: 关联用户信息
       userId:
+        description: 优化按用户查询会话
         type: integer
     type: object
   model.ExerciseCategory:
@@ -448,6 +449,7 @@ definitions:
       conversationId:
         type: string
       createdAt:
+        description: 优化历史消息查询 (conversation_id, created_at)
         type: string
       duration:
         description: 语音通话时长或音视频时长（秒）
@@ -461,6 +463,9 @@ definitions:
         - $ref: '#/definitions/model.User'
         description: 关联发送者用户信息
       senderId:
+        type: integer
+      seqId:
+        description: 消息序列号，用于可靠性保证
         type: integer
       thumbnailUrl:
         description: 缩略图 URL
@@ -3518,7 +3523,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: 获取指定会话的历史消息记录，支持模糊搜索内容和 ID 分页
+      description: 获取指定会话的历史消息记录，支持模糊搜索内容和 ID 分页，以及 SeqID 增量同步
       parameters:
       - description: 会话ID
         in: path
@@ -3547,6 +3552,10 @@ paths:
         in: query
         name: after_id
         type: string
+      - description: 获取此 SeqID 之后的消息 (用于增量同步)
+        in: query
+        name: after_seq
+        type: integer
       produces:
       - application/json
       responses:

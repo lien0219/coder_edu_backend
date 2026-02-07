@@ -29,3 +29,7 @@ func (b *UUIDBase) BeforeCreate(tx *gorm.DB) (err error) {
 	}
 	return
 }
+
+func GenerateUUID() string {
+	return uuid.New().String()
+}

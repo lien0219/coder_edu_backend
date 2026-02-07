@@ -307,22 +307,25 @@ func (s *ChatService) SendMessage(senderID uint, convID string, msgType string, 
 		Content:        content,
 		ClientMsgID:    clientMsgID,
 	}
+
+	// 提前填充发送者信息，适配异步写入架构
+	var user model.User
+	s.ChatRepo.DB.First(&user, senderID)
+	msg.Sender = user
+
 	if err := s.ChatRepo.CreateMessage(msg); err != nil {
 		return nil, err
 	}
 
-	// 重新查询一遍以填充 Sender 信息
-	var fullMsg model.Message
-	s.ChatRepo.DB.Preload("Sender").First(&fullMsg, "id = ?", msg.ID)
-	return &fullMsg, nil
+	return msg, nil
 }
 
-func (s *ChatService) GetHistory(userID uint, convID string, query string, limit int, offset int, beforeID string, afterID string) ([]model.Message, error) {
+func (s *ChatService) GetHistory(userID uint, convID string, query string, limit int, offset int, beforeID string, afterID string, afterSeq uint64) ([]model.Message, error) {
 	_, err := s.ChatRepo.GetMember(convID, userID)
 	if err != nil {
 		return nil, errors.New("无权查看此会话历史")
 	}
-	return s.ChatRepo.GetMessages(convID, query, limit, offset, beforeID, afterID)
+	return s.ChatRepo.GetMessages(convID, query, limit, offset, beforeID, afterID, afterSeq)
 }
 
 func (s *ChatService) GetMessageContext(userID uint, msgID string, limit int) ([]model.Message, error) {

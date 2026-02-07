@@ -12,17 +12,32 @@ import (
 )
 
 type ChatRepository struct {
-	DB    *gorm.DB
-	Redis *redis.Client
-	ctx   context.Context
+	DB         *gorm.DB
+	Redis      *redis.Client
+	ctx        context.Context
+	streamName string
+	groupName  string
+	bufferSize int
 }
 
 func NewChatRepository(db *gorm.DB, rdb *redis.Client) *ChatRepository {
-	return &ChatRepository{
-		DB:    db,
-		Redis: rdb,
-		ctx:   context.Background(),
+	r := &ChatRepository{
+		DB:         db,
+		Redis:      rdb,
+		ctx:        context.Background(),
+		streamName: "chat:messages:stream",
+		groupName:  "chat:messages:group",
+		bufferSize: 100,
 	}
+
+	if rdb != nil {
+		// 初始化Redis Stream消费组
+		rdb.XGroupCreateMkStream(r.ctx, r.streamName, r.groupName, "0")
+		// 启动后台Redis Stream消费者
+		go r.messageStreamConsumer()
+	}
+
+	return r
 }
 
 func (r *ChatRepository) CreateConversation(conv *model.Conversation) error {
@@ -81,11 +96,21 @@ func (r *ChatRepository) FindPrivateConversation(userID1, userID2 uint) (*model.
 }
 
 func (r *ChatRepository) AddMember(member *model.ConversationMember) error {
-	return r.DB.Create(member).Error
+	err := r.DB.Create(member).Error
+	if err == nil && r.Redis != nil {
+		r.Redis.Del(r.ctx, fmt.Sprintf("chat:relation:group_members:%s", member.ConversationID))
+		r.Redis.Del(r.ctx, fmt.Sprintf("chat:relation:user_groups:%d", member.UserID))
+	}
+	return err
 }
 
 func (r *ChatRepository) RemoveMember(convID string, userID uint) error {
-	return r.DB.Delete(&model.ConversationMember{}, "conversation_id = ? AND user_id = ?", convID, userID).Error
+	err := r.DB.Delete(&model.ConversationMember{}, "conversation_id = ? AND user_id = ?", convID, userID).Error
+	if err == nil && r.Redis != nil {
+		r.Redis.Del(r.ctx, fmt.Sprintf("chat:relation:group_members:%s", convID))
+		r.Redis.Del(r.ctx, fmt.Sprintf("chat:relation:user_groups:%d", userID))
+	}
+	return err
 }
 
 func (r *ChatRepository) UpdateMemberRole(convID string, userID uint, role string) error {
@@ -101,7 +126,11 @@ func (r *ChatRepository) GetMember(convID string, userID uint) (*model.Conversat
 }
 
 func (r *ChatRepository) DeleteConversation(convID string) error {
-	return r.DB.Transaction(func(tx *gorm.DB) error {
+	// 获取所有成员 ID 以便清除缓存
+	var memberIDs []uint
+	r.DB.Table("conversation_members").Where("conversation_id = ?", convID).Pluck("user_id", &memberIDs)
+
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		// 1. 删除消息
 		if err := tx.Where("conversation_id = ?", convID).Delete(&model.Message{}).Error; err != nil {
 			return err
@@ -116,6 +145,14 @@ func (r *ChatRepository) DeleteConversation(convID string) error {
 		}
 		return nil
 	})
+
+	if err == nil && r.Redis != nil {
+		r.Redis.Del(r.ctx, fmt.Sprintf("chat:relation:group_members:%s", convID))
+		for _, uid := range memberIDs {
+			r.Redis.Del(r.ctx, fmt.Sprintf("chat:relation:user_groups:%d", uid))
+		}
+	}
+	return err
 }
 
 func (r *ChatRepository) UpdateLastReadMessage(convID string, userID uint, msgID string) error {
@@ -160,18 +197,114 @@ func (r *ChatRepository) GetConversationMembers(convID string, query string, lim
 const maxCacheMessages = 50 // 每个会话缓存最近50条消息
 
 func (r *ChatRepository) CreateMessage(msg *model.Message) error {
-	err := r.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(msg).Error; err != nil {
-			return err
-		}
-		return tx.Model(&model.Conversation{}).Where("id = ?", msg.ConversationID).Update("updated_at", msg.CreatedAt).Error
-	})
-
-	if err == nil && r.Redis != nil {
-		// 异步缓存消息，避免阻塞主流程
-		go r.cacheMessage(msg)
+	// 1. 预先设置好 ID 和时间戳
+	if msg.ID == "" {
+		msg.ID = model.GenerateUUID()
 	}
-	return err
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = time.Now()
+	}
+
+	// 2. 生成会话内的连续 SeqID (使用 Redis 原子递增)
+	if r.Redis != nil {
+		seqKey := fmt.Sprintf("chat:seq:%s", msg.ConversationID)
+		seq, err := r.Redis.Incr(r.ctx, seqKey).Result()
+		if err == nil {
+			msg.SeqID = uint64(seq)
+		}
+	}
+
+	// 3. 写入 Redis Stream 实现持久化异步队列
+	if r.Redis != nil {
+		msgData, _ := json.Marshal(msg)
+		_, err := r.Redis.XAdd(r.ctx, &redis.XAddArgs{
+			Stream: r.streamName,
+			Values: map[string]interface{}{"data": msgData},
+		}).Result()
+
+		if err != nil {
+			// 如果 Redis 写入失败，降级为同步写入 MySQL
+			return r.DB.Transaction(func(tx *gorm.DB) error {
+				if err := tx.Create(msg).Error; err != nil {
+					return err
+				}
+				return tx.Model(&model.Conversation{}).Where("id = ?", msg.ConversationID).Update("updated_at", msg.CreatedAt).Error
+			})
+		}
+		// 3. 实时更新缓存
+		go r.cacheMessage(msg)
+	} else {
+		// 无 Redis 环境，同步写入
+		return r.DB.Create(msg).Error
+	}
+
+	return nil
+}
+
+func (r *ChatRepository) messageStreamConsumer() {
+	consumerName := fmt.Sprintf("consumer-%d", time.Now().UnixNano())
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		// 批量读取消息
+		streams, err := r.Redis.XReadGroup(r.ctx, &redis.XReadGroupArgs{
+			Group:    r.groupName,
+			Consumer: consumerName,
+			Streams:  []string{r.streamName, ">"},
+			Count:    int64(r.bufferSize),
+			Block:    0,
+		}).Result()
+
+		if err != nil || len(streams) == 0 {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		var batch []*model.Message
+		var msgIDs []string
+
+		for _, xmsg := range streams[0].Messages {
+			var msg model.Message
+			if data, ok := xmsg.Values["data"].(string); ok {
+				if err := json.Unmarshal([]byte(data), &msg); err == nil {
+					batch = append(batch, &msg)
+					msgIDs = append(msgIDs, xmsg.ID)
+				}
+			}
+		}
+
+		if len(batch) > 0 {
+			r.flushMessages(batch)
+			// 确认消息处理完毕
+			r.Redis.XAck(r.ctx, r.streamName, r.groupName, msgIDs...)
+		}
+	}
+}
+
+func (r *ChatRepository) flushMessages(messages []*model.Message) {
+	if len(messages) == 0 {
+		return
+	}
+
+	// 1. 批量插入消息
+	err := r.DB.Create(&messages).Error
+	if err != nil {
+		// 生产环境增加错误重试或者持久化日志
+		return
+	}
+
+	// 2. 批量更新会话的活跃时间
+	convUpdates := make(map[string]time.Time)
+	for _, m := range messages {
+		if t, ok := convUpdates[m.ConversationID]; !ok || m.CreatedAt.After(t) {
+			convUpdates[m.ConversationID] = m.CreatedAt
+		}
+	}
+
+	for convID, lastTime := range convUpdates {
+		r.DB.Model(&model.Conversation{}).Where("id = ?", convID).Update("updated_at", lastTime)
+	}
 }
 
 func (r *ChatRepository) cacheMessage(msg *model.Message) {
@@ -190,9 +323,9 @@ func (r *ChatRepository) cacheMessage(msg *model.Message) {
 	pipe.Exec(r.ctx)
 }
 
-func (r *ChatRepository) GetMessages(convID string, query string, limit int, offset int, beforeID string, afterID string) ([]model.Message, error) {
+func (r *ChatRepository) GetMessages(convID string, query string, limit int, offset int, beforeID string, afterID string, afterSeq uint64) ([]model.Message, error) {
 	// 尝试从缓存读取 (仅针对第一页无搜索条件的请求)
-	if query == "" && offset == 0 && beforeID == "" && afterID == "" && r.Redis != nil {
+	if query == "" && offset == 0 && beforeID == "" && afterID == "" && afterSeq == 0 && r.Redis != nil {
 		key := fmt.Sprintf("chat:cache:%s", convID)
 		cached, err := r.Redis.LRange(r.ctx, key, 0, int64(limit-1)).Result()
 		if err == nil && len(cached) > 0 {
@@ -216,6 +349,11 @@ func (r *ChatRepository) GetMessages(convID string, query string, limit int, off
 		db = db.Where("content LIKE ?", "%"+query+"%")
 	}
 
+	// 支持基于 SeqID 的增量同步 (用于空洞修复)
+	if afterSeq > 0 {
+		db = db.Where("seq_id > ?", afterSeq)
+	}
+
 	if beforeID != "" {
 		var beforeMsg model.Message
 		if err := r.DB.First(&beforeMsg, "id = ?", beforeID).Error; err == nil {
@@ -230,9 +368,9 @@ func (r *ChatRepository) GetMessages(convID string, query string, limit int, off
 		}
 	}
 
-	// 如果是 afterID，说明是在向上滚动加载更新的消息，应该按时间正序取最旧的 N 条
+	// 如果是 afterID 或 afterSeq，说明是在获取更新的消息，按时间正序
 	order := "created_at DESC"
-	if afterID != "" {
+	if afterID != "" || afterSeq > 0 {
 		order = "created_at ASC"
 	}
 
@@ -241,8 +379,8 @@ func (r *ChatRepository) GetMessages(convID string, query string, limit int, off
 		Offset(offset).
 		Find(&msgs).Error
 
-	// 如果是 ASC 查出来的，反转回 DESC
-	if afterID != "" && err == nil {
+	// 如果是正序查出来的，反转回 DESC (保持前端展示一致性)
+	if (afterID != "" || afterSeq > 0) && err == nil {
 		for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
 			msgs[i], msgs[j] = msgs[j], msgs[i]
 		}
@@ -283,6 +421,80 @@ func (r *ChatRepository) GetMessageContext(msgID string, limit int) ([]model.Mes
 	return append(prevMsgs, nextMsgs...), nil
 }
 
+// GetUserGroupIDs 获取用户参与的所有会话 ID
+func (r *ChatRepository) GetUserGroupIDs(userID uint) ([]string, error) {
+	var ids []string
+	err := r.DB.Table("conversation_members").
+		Where("user_id = ?", userID).
+		Pluck("conversation_id", &ids).Error
+	return ids, err
+}
+
+// GetUserGroupIDsCached 获取用户参与的所有会话 ID (带缓存)
+func (r *ChatRepository) GetUserGroupIDsCached(userID uint) ([]string, error) {
+	if r.Redis == nil {
+		return r.GetUserGroupIDs(userID)
+	}
+
+	key := fmt.Sprintf("chat:relation:user_groups:%d", userID)
+	cached, err := r.Redis.SMembers(r.ctx, key).Result()
+	if err == nil && len(cached) > 0 {
+		return cached, nil
+	}
+
+	ids, err := r.GetUserGroupIDs(userID)
+	if err == nil && len(ids) > 0 {
+		pipe := r.Redis.Pipeline()
+		for _, id := range ids {
+			pipe.SAdd(r.ctx, key, id)
+		}
+		pipe.Expire(r.ctx, key, 24*time.Hour)
+		pipe.Exec(r.ctx)
+	}
+	return ids, err
+}
+
+// GetGroupMemberIDs 获取会话中的所有成员 ID
+func (r *ChatRepository) GetGroupMemberIDs(convID string) ([]uint, error) {
+	var ids []uint
+	err := r.DB.Table("conversation_members").
+		Where("conversation_id = ?", convID).
+		Pluck("user_id", &ids).Error
+	return ids, err
+}
+
+// GetGroupMemberIDsCached 获取会话成员 ID (带缓存)
+func (r *ChatRepository) GetGroupMemberIDsCached(convID string) ([]uint, error) {
+	if r.Redis == nil {
+		return r.GetGroupMemberIDs(convID)
+	}
+
+	key := fmt.Sprintf("chat:relation:group_members:%s", convID)
+	cached, err := r.Redis.SMembers(r.ctx, key).Result()
+	if err == nil && len(cached) > 0 {
+		var ids []uint
+		for _, s := range cached {
+			var id uint
+			fmt.Sscanf(s, "%d", &id)
+			if id > 0 {
+				ids = append(ids, id)
+			}
+		}
+		return ids, nil
+	}
+
+	ids, err := r.GetGroupMemberIDs(convID)
+	if err == nil && len(ids) > 0 {
+		pipe := r.Redis.Pipeline()
+		for _, id := range ids {
+			pipe.SAdd(r.ctx, key, id)
+		}
+		pipe.Expire(r.ctx, key, 24*time.Hour)
+		pipe.Exec(r.ctx)
+	}
+	return ids, err
+}
+
 // GetUserRelatedIDs 获取用户参与的所有会话中的所有成员 ID
 func (r *ChatRepository) GetUserRelatedIDs(userID uint) ([]uint, error) {
 	var ids []uint
@@ -292,6 +504,18 @@ func (r *ChatRepository) GetUserRelatedIDs(userID uint) ([]uint, error) {
 		Distinct("user_id").
 		Pluck("user_id", &ids).Error
 	return ids, err
+}
+
+// SetupPartitions 为消息表创建分区-----暂时不用，留作后续优化
+func (r *ChatRepository) SetupPartitions() error {
+	_ = `
+	ALTER TABLE messages PARTITION BY RANGE (TO_DAYS(created_at)) (
+		PARTITION p202501 VALUES LESS THAN (TO_DAYS('2025-02-01')),
+		PARTITION p202502 VALUES LESS THAN (TO_DAYS('2025-03-01')),
+		PARTITION p202503 VALUES LESS THAN (TO_DAYS('2025-04-01')),
+		PARTITION p_future VALUES LESS THAN MAXVALUE
+	);`
+	return nil
 }
 
 func (r *ChatRepository) RevokeMessage(msgID string, senderID uint) (*model.Message, error) {

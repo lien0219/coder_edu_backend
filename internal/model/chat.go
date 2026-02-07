@@ -51,6 +51,7 @@ type Message struct {
 	CanRevoke      bool         `gorm:"-" json:"canRevoke"`               // 动态字段：是否可撤回
 	ThumbnailURL   string       `gorm:"size:255" json:"thumbnailUrl"`     // 缩略图 URL
 	ClientMsgID    string       `gorm:"size:50;index" json:"clientMsgId"` // 用于识别重复消息
+	SeqID          uint64       `gorm:"index" json:"seqId"`               // 消息序列号，用于可靠性保证
 }
 
 func (Message) TableName() string {

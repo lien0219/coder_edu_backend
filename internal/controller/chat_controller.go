@@ -314,7 +314,7 @@ func (ctrl *ChatController) SendMessage(c *gin.Context) {
 
 // GetHistory godoc
 // @Summary 获取历史消息
-// @Description 获取指定会话的历史消息记录，支持模糊搜索内容和 ID 分页
+// @Description 获取指定会话的历史消息记录，支持模糊搜索内容和 ID 分页，以及 SeqID 增量同步
 // @Tags IM系统
 // @Accept  json
 // @Produce  json
@@ -325,6 +325,7 @@ func (ctrl *ChatController) SendMessage(c *gin.Context) {
 // @Param   query query string false "搜索关键字"
 // @Param   before_id query string false "在此消息 ID 之前的消息"
 // @Param   after_id query string false "在此消息 ID 之后的消息"
+// @Param   after_seq query int false "获取此 SeqID 之后的消息 (用于增量同步)"
 // @Success 200 {object} util.Response{data=[]object} "成功"
 // @Failure 500 {object} util.Response "服务器内部错误"
 // @Router /api/chat/conversations/{id}/messages [get]
@@ -341,8 +342,9 @@ func (ctrl *ChatController) GetHistory(c *gin.Context) {
 	query := c.Query("query")
 	beforeID := c.Query("before_id")
 	afterID := c.Query("after_id")
+	afterSeq, _ := strconv.ParseUint(c.Query("after_seq"), 10, 64)
 
-	msgs, err := ctrl.ChatService.GetHistory(userID, convID, query, limit, offset, beforeID, afterID)
+	msgs, err := ctrl.ChatService.GetHistory(userID, convID, query, limit, offset, beforeID, afterID, afterSeq)
 	if err != nil {
 		util.Error(c, 500, err.Error())
 		return

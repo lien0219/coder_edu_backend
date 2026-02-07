@@ -133,7 +133,7 @@ func (a *App) RegisterConfigCallback(callback func(*config.Config)) {
 	a.configCallbacks = append(a.configCallbacks, callback)
 }
 
-func (a *App) initRepositories(db *gorm.DB) *repositories {
+func (a *App) initRepositories(db *gorm.DB, rdb *redis.Client) *repositories {
 	return &repositories{
 		user:               repository.NewUserRepository(db),
 		resource:           repository.NewResourceRepository(db),
@@ -166,7 +166,7 @@ func (a *App) initRepositories(db *gorm.DB) *repositories {
 		postClassTest:      repository.NewPostClassTestRepository(db),
 		migrationTask:      repository.NewMigrationTaskRepository(db),
 		reflection:         repository.NewReflectionRepository(db),
-		chat:               repository.NewChatRepository(db),
+		chat:               repository.NewChatRepository(db, rdb),
 		friendship:         repository.NewFriendshipRepository(db),
 	}
 }
@@ -688,7 +688,7 @@ func NewApp(cfg *config.Config) *App {
 		Redis:  rdb,
 	}
 
-	repos := app.initRepositories(db)
+	repos := app.initRepositories(db, rdb)
 	services := app.initServices(repos, cfg, db, rdb)
 	app.services = services
 	controllers := app.initControllers(services, db)

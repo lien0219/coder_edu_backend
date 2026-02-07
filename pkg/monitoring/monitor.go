@@ -26,11 +26,29 @@ var (
 		},
 		[]string{"method", "endpoint"},
 	)
+
+	// IM 相关指标
+	IMOnlineUsers = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "im_online_users",
+			Help: "Current number of online users in IM system",
+		},
+	)
+
+	IMMessageCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "im_messages_total",
+			Help: "Total number of messages processed by IM system",
+		},
+		[]string{"type", "direction"}, // type: chat, status, typing; direction: in, out
+	)
 )
 
 func Init() {
 	prometheus.MustRegister(RequestCounter)
 	prometheus.MustRegister(RequestDuration)
+	prometheus.MustRegister(IMOnlineUsers)
+	prometheus.MustRegister(IMMessageCounter)
 }
 
 func MetricsMiddleware() gin.HandlerFunc {

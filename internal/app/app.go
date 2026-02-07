@@ -14,6 +14,10 @@ import (
 	"coder_edu_backend/pkg/tracing"
 	"context"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"coder_edu_backend/docs"
@@ -31,6 +35,7 @@ type App struct {
 	Router          *gin.Engine
 	DB              *gorm.DB
 	Redis           *redis.Client
+	services        *services
 	configCallbacks []func(*config.Config)
 }
 
@@ -685,6 +690,7 @@ func NewApp(cfg *config.Config) *App {
 
 	repos := app.initRepositories(db)
 	services := app.initServices(repos, cfg, db, rdb)
+	app.services = services
 	controllers := app.initControllers(services, db)
 
 	// 监控初始化
@@ -720,9 +726,36 @@ func NewApp(cfg *config.Config) *App {
 }
 
 func (a *App) Run() {
-	log.Printf("Server running on port %s", a.Config.Server.Port)
-
-	if err := a.Router.Run("127.0.0.1:" + a.Config.Server.Port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	srv := &http.Server{
+		Addr:    ":" + a.Config.Server.Port,
+		Handler: a.Router,
 	}
+
+	// 启动服务器
+	go func() {
+		log.Printf("Server running on port %s", a.Config.Server.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+
+	// 等待中断信号优雅地关闭服务器（设置5秒的超时时间）
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down server...")
+
+	// 清理 WebSocket连接和Redis在线状态
+	if a.services != nil && a.services.chatHub != nil {
+		a.services.chatHub.Stop()
+	}
+
+	// 关闭服务
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("Server forced to shutdown:", err)
+	}
+
+	log.Println("Server exiting")
 }

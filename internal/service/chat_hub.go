@@ -2,16 +2,18 @@ package service
 
 import (
 	"coder_edu_backend/internal/repository"
+	"coder_edu_backend/pkg/logger"
+	"coder_edu_backend/pkg/monitoring"
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 )
 
@@ -21,6 +23,7 @@ const (
 	pingPeriod     = (pongWait * 9) / 10
 	maxMessageSize = 512
 	shardCount     = 32
+	onlineTTL      = 2 * time.Minute // 在线状态过期时间
 )
 
 var (
@@ -65,7 +68,7 @@ func (c *Client) readPump() {
 		_, message, err := c.Conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
+				logger.Log.Error("WebSocket unexpected close", zap.Error(err), zap.Uint("userId", c.UserID))
 			}
 			break
 		}
@@ -82,7 +85,8 @@ func (c *Client) readPump() {
 			continue
 		}
 
-		// 处理正在输入状态 (TYPING)
+		monitoring.IMMessageCounter.WithLabelValues(wsMsg.Type, "in").Inc() // 记录上行消息
+
 		if wsMsg.Type == "TYPING" {
 			data, ok := wsMsg.Data.(map[string]interface{})
 			if !ok {
@@ -95,7 +99,6 @@ func (c *Client) readPump() {
 				continue
 			}
 
-			// 获取该会话的其他成员并转发
 			c.Hub.HandleTransientEvent(c.UserID, convID, *wsMsg)
 		}
 		messagePool.Put(wsMsg)
@@ -234,16 +237,21 @@ func (h *ChatHub) Run() {
 		for msg := range ch {
 			var psMsg PubSubMessage
 			if err := json.Unmarshal([]byte(msg.Payload), &psMsg); err != nil {
-				log.Printf("PubSub unmarshal error: %v", err)
+				logger.Log.Error("PubSub unmarshal error", zap.Error(err))
 				continue
 			}
 			h.pushToLocalRawUsers(psMsg.TargetUsers, psMsg.Payload)
 		}
 	}()
 
-	// 优化 3: 批量处理状态更新 (使用 Pipeline)
+	// 批量处理状态更新
 	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
+	// 状态续期定时器 (Heartbeat)
+	heartbeatTicker := time.NewTicker(1 * time.Minute)
+	defer func() {
+		ticker.Stop()
+		heartbeatTicker.Stop()
+	}()
 
 	type statusUpdate struct {
 		userID uint
@@ -259,6 +267,7 @@ func (h *ChatHub) Run() {
 			s.clients[client.UserID] = client
 			s.mu.Unlock()
 			pendingUpdates = append(pendingUpdates, statusUpdate{client.UserID, "online"})
+			monitoring.IMOnlineUsers.Inc() // 增加在线人数
 
 		case client := <-h.unregister:
 			s := h.getShard(client.UserID)
@@ -266,9 +275,14 @@ func (h *ChatHub) Run() {
 			if _, ok := s.clients[client.UserID]; ok {
 				delete(s.clients, client.UserID)
 				close(client.Send)
+				monitoring.IMOnlineUsers.Dec() // 减少在线人数
 			}
 			s.mu.Unlock()
 			pendingUpdates = append(pendingUpdates, statusUpdate{client.UserID, "offline"})
+
+		case <-heartbeatTicker.C:
+			// 为本地在线用户批量续期
+			h.refreshOnlineStatus()
 
 		case <-ticker.C:
 			if len(pendingUpdates) == 0 {
@@ -279,14 +293,14 @@ func (h *ChatHub) Run() {
 			for _, update := range pendingUpdates {
 				key := fmt.Sprintf("user:online:%d", update.userID)
 				if update.status == "online" {
-					pipe.Set(h.ctx, key, "true", 0)
+					pipe.Set(h.ctx, key, "true", onlineTTL) // 增加 TTL
 				} else {
 					pipe.Del(h.ctx, key)
 				}
 			}
 			_, err := pipe.Exec(h.ctx)
 			if err != nil {
-				log.Printf("Redis pipeline error: %v", err)
+				logger.Log.Error("Redis pipeline error", zap.Error(err))
 			}
 
 			// 发送状态通知
@@ -295,6 +309,25 @@ func (h *ChatHub) Run() {
 			}
 			pendingUpdates = pendingUpdates[:0]
 		}
+	}
+}
+
+// refreshOnlineStatus 刷新当前服务器所有在线用户的过期时间
+func (h *ChatHub) refreshOnlineStatus() {
+	pipe := h.Redis.Pipeline()
+	count := 0
+	for i := 0; i < shardCount; i++ {
+		s := h.shards[i]
+		s.mu.RLock()
+		for userID := range s.clients {
+			pipe.Expire(h.ctx, fmt.Sprintf("user:online:%d", userID), onlineTTL)
+			count++
+		}
+		s.mu.RUnlock()
+	}
+	if count > 0 {
+		pipe.Exec(h.ctx)
+		logger.Log.Debug("Refreshed online status", zap.Int("count", count))
 	}
 }
 
@@ -313,30 +346,26 @@ func (h *ChatHub) NotifyStatus(userID uint, status string) {
 	}
 }
 
-// getRelatedUserIDs 获取与该用户有关联的所有用户 ID (好友 + 所在群成员)
+// getRelatedUserIDs 获取与该用户有关联的所有用户ID(好友 + 所在群成员)
 func (h *ChatHub) getRelatedUserIDs(userID uint) []uint {
 	userMap := make(map[uint]bool)
 
-	// 1. 获取好友 ID
+	// 1. 获取好友id
 	if h.FriendshipRepo != nil {
-		friends, err := h.FriendshipRepo.GetFriends(userID, "")
+		ids, err := h.FriendshipRepo.GetFriendIDs(userID)
 		if err == nil {
-			for _, f := range friends {
-				userMap[f.ID] = true
+			for _, id := range ids {
+				userMap[id] = true
 			}
 		}
 	}
 
-	// 2. 获取所在群聊的所有成员 ID
+	// 2. 获取所在群聊的所有成员id
 	if h.ChatRepo != nil {
-		convs, _, err := h.ChatRepo.GetUserConversations(userID, "", 100, 0)
+		ids, err := h.ChatRepo.GetUserRelatedIDs(userID)
 		if err == nil {
-			for _, conv := range convs {
-				for _, member := range conv.Members {
-					if member.UserID != userID {
-						userMap[member.UserID] = true
-					}
-				}
+			for _, id := range ids {
+				userMap[id] = true
 			}
 		}
 	}
@@ -348,8 +377,36 @@ func (h *ChatHub) getRelatedUserIDs(userID uint) []uint {
 	return ids
 }
 
+// 关闭所有连接并清理在线状态
+func (h *ChatHub) Stop() {
+	logger.Log.Info("ChatHub stopping: clearing online status and closing connections...")
+
+	var allUserIDs []uint
+	for i := 0; i < shardCount; i++ {
+		s := h.shards[i]
+		s.mu.Lock()
+		for userID, client := range s.clients {
+			allUserIDs = append(allUserIDs, userID)
+			close(client.Send)
+			delete(s.clients, userID)
+		}
+		s.mu.Unlock()
+	}
+
+	if len(allUserIDs) > 0 {
+		pipe := h.Redis.Pipeline()
+		for _, userID := range allUserIDs {
+			pipe.Del(h.ctx, fmt.Sprintf("user:online:%d", userID))
+		}
+		pipe.Exec(h.ctx)
+	}
+
+	monitoring.IMOnlineUsers.Set(0) // 停机时清空指标
+	logger.Log.Info("ChatHub stopped", zap.Int("closedConnections", len(allUserIDs)))
+}
+
 func (h *ChatHub) PushToUsers(userIDs []uint, msg WSMessage) {
-	// 优化 1: 避免二次序列化
+	// 避免二次序列化
 	msgBytes, _ := json.Marshal(msg)
 	psMsg := PubSubMessage{
 		TargetUsers: userIDs,
@@ -357,6 +414,7 @@ func (h *ChatHub) PushToUsers(userIDs []uint, msg WSMessage) {
 	}
 	payload, _ := json.Marshal(psMsg)
 	h.Redis.Publish(h.ctx, "chat_channel", payload)
+	monitoring.IMMessageCounter.WithLabelValues(msg.Type, "out").Inc() // 记录下行消息
 }
 
 func (h *ChatHub) pushToLocalRawUsers(userIDs []uint, payload []byte) {
@@ -406,7 +464,7 @@ func (h *ChatHub) IsUserOnline(userID uint) bool {
 func ServeWs(hub *ChatHub, w http.ResponseWriter, r *http.Request, userID uint) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		logger.Log.Error("WebSocket upgrade failed", zap.Error(err), zap.Uint("userId", userID))
 		return
 	}
 	client := &Client{

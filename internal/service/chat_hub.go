@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/websocket"
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -19,6 +20,16 @@ const (
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
 	maxMessageSize = 512
+	shardCount     = 32
+)
+
+var (
+	// 内存复用 (sync.Pool)
+	messagePool = sync.Pool{
+		New: func() interface{} {
+			return &WSMessage{}
+		},
+	}
 )
 
 var upgrader = websocket.Upgrader{
@@ -35,10 +46,11 @@ type WSMessage struct {
 }
 
 type Client struct {
-	Hub    *ChatHub
-	Conn   *websocket.Conn
-	Send   chan []byte
-	UserID uint
+	Hub     *ChatHub
+	Conn    *websocket.Conn
+	Send    chan []byte
+	UserID  uint
+	Limiter *rate.Limiter // 限流器
 }
 
 func (c *Client) readPump() {
@@ -58,9 +70,15 @@ func (c *Client) readPump() {
 			break
 		}
 
-		// 解析前端发来的实时信号
-		var wsMsg WSMessage
-		if err := json.Unmarshal(message, &wsMsg); err != nil {
+		// 限流校验 (每秒最多 30 条消息，允许突发 50 条)
+		if !c.Limiter.Allow() {
+			continue
+		}
+
+		// 对象池解析消息
+		wsMsg := messagePool.Get().(*WSMessage)
+		if err := json.Unmarshal(message, wsMsg); err != nil {
+			messagePool.Put(wsMsg)
 			continue
 		}
 
@@ -68,17 +86,19 @@ func (c *Client) readPump() {
 		if wsMsg.Type == "TYPING" {
 			data, ok := wsMsg.Data.(map[string]interface{})
 			if !ok {
+				messagePool.Put(wsMsg)
 				continue
 			}
 			convID, _ := data["conversationId"].(string)
 			if convID == "" {
+				messagePool.Put(wsMsg)
 				continue
 			}
 
 			// 获取该会话的其他成员并转发
-			// 这里简单起见直接调用一个 Hub 内部方法进行转发
-			c.Hub.HandleTransientEvent(c.UserID, convID, wsMsg)
+			c.Hub.HandleTransientEvent(c.UserID, convID, *wsMsg)
 		}
+		messagePool.Put(wsMsg)
 	}
 }
 
@@ -88,14 +108,14 @@ func (h *ChatHub) HandleTransientEvent(senderID uint, convID string, msg WSMessa
 		if msg.Type == "TYPING" && h.ChatRepo != nil {
 			conv, err := h.ChatRepo.GetConversation(convID)
 			if err == nil && conv.Type == "group" {
-				return // 拦截群聊的输入状态转发
+				return
 			}
 		}
 
 		data["userId"] = senderID
 		msg.Data = data
 
-		// 如果前端传了目标用户 ID 列表，则直接推送
+		// 如果传了目标用户 ID 列表，则直接推送
 		if targets, ok := data["targetUserIds"].([]interface{}); ok && len(targets) > 0 {
 			var ids []uint
 			for _, t := range targets {
@@ -164,32 +184,47 @@ func (c *Client) writePump() {
 	}
 }
 
-type ChatHub struct {
-	clients    map[uint]*Client
-	broadcast  chan []byte
-	register   chan *Client
-	unregister chan *Client
-	mu         sync.RWMutex
-	Redis      *redis.Client
-	ChatRepo   *repository.ChatRepository
-	ctx        context.Context
+type shard struct {
+	clients map[uint]*Client
+	mu      sync.RWMutex
 }
 
-func NewChatHub(rdb *redis.Client, chatRepo *repository.ChatRepository) *ChatHub {
-	return &ChatHub{
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		clients:    make(map[uint]*Client),
-		Redis:      rdb,
-		ChatRepo:   chatRepo,
-		ctx:        context.Background(),
+type ChatHub struct {
+	shards         [shardCount]*shard
+	broadcast      chan []byte
+	register       chan *Client
+	unregister     chan *Client
+	Redis          *redis.Client
+	ChatRepo       *repository.ChatRepository
+	FriendshipRepo *repository.FriendshipRepository
+	ctx            context.Context
+}
+
+func NewChatHub(rdb *redis.Client, chatRepo *repository.ChatRepository, friendRepo *repository.FriendshipRepository) *ChatHub {
+	h := &ChatHub{
+		broadcast:      make(chan []byte),
+		register:       make(chan *Client),
+		unregister:     make(chan *Client),
+		Redis:          rdb,
+		ChatRepo:       chatRepo,
+		FriendshipRepo: friendRepo,
+		ctx:            context.Background(),
 	}
+	for i := 0; i < shardCount; i++ {
+		h.shards[i] = &shard{
+			clients: make(map[uint]*Client),
+		}
+	}
+	return h
+}
+
+func (h *ChatHub) getShard(userID uint) *shard {
+	return h.shards[userID%shardCount]
 }
 
 type PubSubMessage struct {
-	TargetUsers []uint    `json:"targetUsers"`
-	Payload     WSMessage `json:"payload"`
+	TargetUsers []uint          `json:"targetUsers"`
+	Payload     json.RawMessage `json:"payload"`
 }
 
 func (h *ChatHub) Run() {
@@ -202,27 +237,63 @@ func (h *ChatHub) Run() {
 				log.Printf("PubSub unmarshal error: %v", err)
 				continue
 			}
-			h.pushToLocalUsers(psMsg.TargetUsers, psMsg.Payload)
+			h.pushToLocalRawUsers(psMsg.TargetUsers, psMsg.Payload)
 		}
 	}()
+
+	// 优化 3: 批量处理状态更新 (使用 Pipeline)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	type statusUpdate struct {
+		userID uint
+		status string
+	}
+	var pendingUpdates []statusUpdate
 
 	for {
 		select {
 		case client := <-h.register:
-			h.mu.Lock()
-			h.clients[client.UserID] = client
-			h.mu.Unlock()
-			h.Redis.Set(h.ctx, fmt.Sprintf("user:online:%d", client.UserID), "true", 0)
-			h.NotifyStatus(client.UserID, "online")
+			s := h.getShard(client.UserID)
+			s.mu.Lock()
+			s.clients[client.UserID] = client
+			s.mu.Unlock()
+			pendingUpdates = append(pendingUpdates, statusUpdate{client.UserID, "online"})
+
 		case client := <-h.unregister:
-			h.mu.Lock()
-			if _, ok := h.clients[client.UserID]; ok {
-				delete(h.clients, client.UserID)
+			s := h.getShard(client.UserID)
+			s.mu.Lock()
+			if _, ok := s.clients[client.UserID]; ok {
+				delete(s.clients, client.UserID)
 				close(client.Send)
 			}
-			h.mu.Unlock()
-			h.Redis.Del(h.ctx, fmt.Sprintf("user:online:%d", client.UserID))
-			h.NotifyStatus(client.UserID, "offline")
+			s.mu.Unlock()
+			pendingUpdates = append(pendingUpdates, statusUpdate{client.UserID, "offline"})
+
+		case <-ticker.C:
+			if len(pendingUpdates) == 0 {
+				continue
+			}
+
+			pipe := h.Redis.Pipeline()
+			for _, update := range pendingUpdates {
+				key := fmt.Sprintf("user:online:%d", update.userID)
+				if update.status == "online" {
+					pipe.Set(h.ctx, key, "true", 0)
+				} else {
+					pipe.Del(h.ctx, key)
+				}
+			}
+			_, err := pipe.Exec(h.ctx)
+			if err != nil {
+				log.Printf("Redis pipeline error: %v", err)
+			}
+
+			// 发送状态通知
+			for _, update := range pendingUpdates {
+				h.NotifyStatus(update.userID, update.status)
+			}
+			pendingUpdates = pendingUpdates[:0]
 		}
 	}
 }
@@ -235,44 +306,99 @@ func (h *ChatHub) NotifyStatus(userID uint, status string) {
 			"status": status,
 		},
 	}
-	h.PushToUsers(nil, msg)
+
+	relatedIDs := h.getRelatedUserIDs(userID)
+	if len(relatedIDs) > 0 {
+		h.PushToUsers(relatedIDs, msg)
+	}
+}
+
+// getRelatedUserIDs 获取与该用户有关联的所有用户 ID (好友 + 所在群成员)
+func (h *ChatHub) getRelatedUserIDs(userID uint) []uint {
+	userMap := make(map[uint]bool)
+
+	// 1. 获取好友 ID
+	if h.FriendshipRepo != nil {
+		friends, err := h.FriendshipRepo.GetFriends(userID, "")
+		if err == nil {
+			for _, f := range friends {
+				userMap[f.ID] = true
+			}
+		}
+	}
+
+	// 2. 获取所在群聊的所有成员 ID
+	if h.ChatRepo != nil {
+		convs, _, err := h.ChatRepo.GetUserConversations(userID, "", 100, 0)
+		if err == nil {
+			for _, conv := range convs {
+				for _, member := range conv.Members {
+					if member.UserID != userID {
+						userMap[member.UserID] = true
+					}
+				}
+			}
+		}
+	}
+
+	var ids []uint
+	for id := range userMap {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func (h *ChatHub) PushToUsers(userIDs []uint, msg WSMessage) {
+	// 优化 1: 避免二次序列化
+	msgBytes, _ := json.Marshal(msg)
 	psMsg := PubSubMessage{
 		TargetUsers: userIDs,
-		Payload:     msg,
+		Payload:     msgBytes,
 	}
 	payload, _ := json.Marshal(psMsg)
 	h.Redis.Publish(h.ctx, "chat_channel", payload)
 }
 
-func (h *ChatHub) pushToLocalUsers(userIDs []uint, msg WSMessage) {
-	payload, _ := json.Marshal(msg)
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
+func (h *ChatHub) pushToLocalRawUsers(userIDs []uint, payload []byte) {
 	if len(userIDs) == 0 {
-		for _, client := range h.clients {
-			select {
-			case client.Send <- payload:
-			default:
+		for i := 0; i < shardCount; i++ {
+			s := h.shards[i]
+			s.mu.RLock()
+			for _, client := range s.clients {
+				select {
+				case client.Send <- payload:
+				default:
+				}
 			}
+			s.mu.RUnlock()
 		}
 		return
 	}
 
 	for _, id := range userIDs {
-		if client, ok := h.clients[id]; ok {
+		s := h.getShard(id)
+		s.mu.RLock()
+		if client, ok := s.clients[id]; ok {
 			select {
 			case client.Send <- payload:
 			default:
 			}
 		}
+		s.mu.RUnlock()
 	}
 }
 
 func (h *ChatHub) IsUserOnline(userID uint) bool {
+	// 查本地分片
+	s := h.getShard(userID)
+	s.mu.RLock()
+	_, ok := s.clients[userID]
+	s.mu.RUnlock()
+	if ok {
+		return true
+	}
+
+	// 查 Redis (多实例部署)
 	val, err := h.Redis.Get(h.ctx, fmt.Sprintf("user:online:%d", userID)).Result()
 	return err == nil && val == "true"
 }
@@ -283,7 +409,13 @@ func ServeWs(hub *ChatHub, w http.ResponseWriter, r *http.Request, userID uint) 
 		log.Println(err)
 		return
 	}
-	client := &Client{Hub: hub, Conn: conn, Send: make(chan []byte, 256), UserID: userID}
+	client := &Client{
+		Hub:     hub,
+		Conn:    conn,
+		Send:    make(chan []byte, 256),
+		UserID:  userID,
+		Limiter: rate.NewLimiter(rate.Limit(30), 50), // 每秒30条，允许突发50条
+	}
 	client.Hub.register <- client
 
 	go client.writePump()

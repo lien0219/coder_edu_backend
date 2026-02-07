@@ -216,7 +216,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 	s.migrationTask = service.NewMigrationTaskService(repos.migrationTask, s.user)
 	s.reflection = service.NewReflectionService(repos.reflection)
 
-	s.chatHub = service.NewChatHub(rdb, repos.chat)
+	s.chatHub = service.NewChatHub(rdb, repos.chat, repos.friendship)
 	go s.chatHub.Run()
 
 	s.chat = service.NewChatService(repos.chat)

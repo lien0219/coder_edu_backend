@@ -42,6 +42,35 @@ func AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
+func TryAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenString := ""
+		authHeader := c.GetHeader("Authorization")
+		if authHeader != "" {
+			tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+
+		if tokenString == "" {
+			tokenString = c.Query("token")
+		}
+
+		if tokenString == "" {
+			c.Next()
+			return
+		}
+
+		cfg := c.MustGet("config").(*config.Config)
+		claims, err := util.ParseJWT(tokenString, cfg.JWT.Secret)
+		if err != nil {
+			c.Next()
+			return
+		}
+
+		c.Set("user", claims)
+		c.Next()
+	}
+}
+
 func RoleMiddleware(roles ...model.UserRole) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := util.GetUserFromContext(c)

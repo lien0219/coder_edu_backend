@@ -51,6 +51,7 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		&model.Comment{},
 		&model.Question{},
 		&model.Answer{},
+		&model.CommunityLike{},
 		&model.CProgrammingResource{},
 		&model.ExerciseCategory{},
 		&model.ExerciseQuestion{},

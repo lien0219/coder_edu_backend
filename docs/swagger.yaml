@@ -805,6 +805,20 @@ definitions:
         description: '0: success, 1: compilation error, 2: runtime error, 3: timeout'
         type: integer
     type: object
+  service.CommentCreateRequest:
+    properties:
+      content:
+        maxLength: 1000
+        type: string
+      parentId:
+        description: 一级评论的 ID
+        type: string
+      toUserId:
+        description: 被回复者的用户 ID
+        type: integer
+    required:
+    - content
+    type: object
   service.CreateExerciseRequest:
     properties:
       answer:
@@ -4151,7 +4165,7 @@ paths:
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
@@ -4164,11 +4178,34 @@ paths:
       summary: 点赞内容
       tags:
       - 社区
+  /api/community/comments/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除自己的评论或回复。如果删除的是一级评论，其下的所有回复也会被级联删除。
+      parameters:
+      - description: 评论ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除评论/回复
+      tags:
+      - 社区
   /api/community/posts:
     get:
       consumes:
       - application/json
-      description: 获取社区讨论帖子列表
+      description: 获取社区讨论帖子列表，支持搜索和分类
       parameters:
       - default: 1
         description: 页码
@@ -4180,17 +4217,22 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: 标签筛选
+      - description: 搜索关键词
         in: query
-        name: tag
+        name: search
         type: string
       - default: new
-        description: 排序方式
+        description: 分类
         enum:
         - new
         - popular
+        - my
         in: query
-        name: sort
+        name: tab
+        type: string
+      - description: 标签筛选
+        in: query
+        name: tag
         type: string
       produces:
       - application/json
@@ -4199,8 +4241,6 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/util.Response'
-      security:
-      - BearerAuth: []
       summary: 获取讨论帖子
       tags:
       - 社区
@@ -4225,6 +4265,174 @@ paths:
       security:
       - BearerAuth: []
       summary: 创建讨论帖子
+      tags:
+      - 社区
+  /api/community/posts/{id}:
+    delete:
+      description: 删除已有的讨论帖子及其关联内容
+      parameters:
+      - description: 帖子ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除讨论帖子
+      tags:
+      - 社区
+    get:
+      consumes:
+      - application/json
+      description: 获取帖子主体内容以及评论树结构
+      parameters:
+      - description: 帖子ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      summary: 获取帖子详情
+      tags:
+      - 社区
+    put:
+      consumes:
+      - application/json
+      description: 更新已有的讨论帖子
+      parameters:
+      - description: 帖子ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 帖子内容
+        in: body
+        name: post
+        required: true
+        schema:
+          $ref: '#/definitions/service.PostRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 更新讨论帖子
+      tags:
+      - 社区
+  /api/community/posts/{id}/comments:
+    get:
+      consumes:
+      - application/json
+      description: 分页获取帖子的评论列表（树形结构）
+      parameters:
+      - description: 帖子ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      summary: 获取帖子分页评论
+      tags:
+      - 社区
+    post:
+      consumes:
+      - application/json
+      description: 在帖子下发表评论，或回复某条评论
+      parameters:
+      - description: 帖子ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 评论内容
+        in: body
+        name: comment
+        required: true
+        schema:
+          $ref: '#/definitions/service.CommentCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 发表评论/回复
+      tags:
+      - 社区
+  /api/community/posts/list:
+    get:
+      consumes:
+      - application/json
+      description: 专门用于“查看更多”页面的帖子列表接口，支持分页和筛选
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - description: 搜索关键词
+        in: query
+        name: search
+        type: string
+      - description: 分类
+        enum:
+        - new
+        - popular
+        - my
+        in: query
+        name: tab
+        type: string
+      - description: 标签筛选
+        in: query
+        name: tag
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      summary: 获取帖子列表(独立分页接口)
       tags:
       - 社区
   /api/community/questions:
@@ -4296,7 +4504,7 @@ paths:
         in: path
         name: questionId
         required: true
-        type: integer
+        type: string
       - description: 回答内容
         in: body
         name: answer

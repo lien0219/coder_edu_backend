@@ -3,9 +3,13 @@ package service
 import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"context"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	"gorm.io/gorm"
 )
 
 type CommunityService struct {
@@ -14,6 +18,7 @@ type CommunityService struct {
 	QuestionRepo *repository.QuestionRepository
 	AnswerRepo   *repository.AnswerRepository
 	UserRepo     *repository.UserRepository
+	Redis        *redis.Client
 }
 
 func NewCommunityService(
@@ -22,6 +27,7 @@ func NewCommunityService(
 	questionRepo *repository.QuestionRepository,
 	answerRepo *repository.AnswerRepository,
 	userRepo *repository.UserRepository,
+	rdb *redis.Client,
 ) *CommunityService {
 	return &CommunityService{
 		PostRepo:     postRepo,
@@ -29,6 +35,7 @@ func NewCommunityService(
 		QuestionRepo: questionRepo,
 		AnswerRepo:   answerRepo,
 		UserRepo:     userRepo,
+		Redis:        rdb,
 	}
 }
 
@@ -36,6 +43,19 @@ type PostRequest struct {
 	Title   string   `json:"title" binding:"required"`
 	Content string   `json:"content" binding:"required"`
 	Tags    []string `json:"tags"`
+}
+
+type PostResponse struct {
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	Content      string    `json:"content"`
+	Author       string    `json:"author"`
+	Avatar       string    `json:"avatar"`
+	Tags         []string  `json:"tags"`
+	CreatedAt    time.Time `json:"createdAt"`
+	Likes        int       `json:"likes"`
+	Views        int       `json:"views"`
+	CommentCount int       `json:"commentCount"`
 }
 
 type QuestionRequest struct {
@@ -48,26 +68,323 @@ type AnswerRequest struct {
 	Content string `json:"content" binding:"required"`
 }
 
-func (s *CommunityService) GetPosts(page, limit int, tag, sort string) ([]model.Post, int, error) {
-	offset := (page - 1) * limit
-	return s.PostRepo.FindWithPagination(offset, limit, tag, sort)
+type CommentCreateRequest struct {
+	Content  string  `json:"content" binding:"required,max=1000"`
+	ParentID *string `json:"parentId"` // 一级评论的 ID
+	ToUserID *uint   `json:"toUserId"` // 被回复者的用户 ID
 }
 
-func (s *CommunityService) CreatePost(userID uint, req PostRequest) (*model.Post, error) {
-	post := &model.Post{
-		Title:     req.Title,
-		Content:   req.Content,
-		AuthorID:  userID,
-		Tags:      strings.Join(req.Tags, ","),
-		CreatedAt: time.Now(),
+type ReplyResponse struct {
+	ID        string    `json:"id"`
+	Author    string    `json:"author"`
+	AuthorID  uint      `json:"authorId"`
+	Avatar    string    `json:"avatar"`
+	Content   string    `json:"content"`
+	ToUser    string    `json:"toUser,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	Likes     int       `json:"likes"`
+	IsLiked   bool      `json:"isLiked"`
+}
+
+type CommentResponse struct {
+	ID        string          `json:"id"`
+	Author    string          `json:"author"`
+	AuthorID  uint            `json:"authorId"`
+	Avatar    string          `json:"avatar"`
+	Content   string          `json:"content"`
+	ToUser    string          `json:"toUser,omitempty"`
+	CreatedAt time.Time       `json:"createdAt"`
+	Likes     int             `json:"likes"`
+	Replies   []ReplyResponse `json:"replies"`
+	IsLiked   bool            `json:"isLiked"`
+}
+
+type DiscussionDetailResponse struct {
+	PostResponse
+	IsLiked  bool              `json:"isLiked"`
+	Comments []CommentResponse `json:"comments"`
+}
+
+func (s *CommunityService) GetPosts(page, limit int, tag, search, tab string, userID uint) ([]PostResponse, int, error) {
+	offset := (page - 1) * limit
+	posts, total, err := s.PostRepo.FindWithPagination(offset, limit, tag, search, tab, userID)
+	if err != nil {
+		return nil, 0, err
 	}
 
-	err := s.PostRepo.Create(post)
+	responses := make([]PostResponse, len(posts))
+	for i, post := range posts {
+		tags := []string{}
+		if post.Tags != "" {
+			tags = strings.Split(post.Tags, ",")
+		}
+
+		responses[i] = PostResponse{
+			ID:           post.ID,
+			Title:        post.Title,
+			Content:      post.Content,
+			Author:       post.Author.Name,
+			Avatar:       post.Author.Avatar,
+			Tags:         tags,
+			CreatedAt:    post.CreatedAt,
+			Likes:        post.Upvotes,
+			Views:        post.Views,
+			CommentCount: len(post.Comments),
+		}
+	}
+
+	return responses, total, nil
+}
+
+func (s *CommunityService) GetPostDetail(postID string, userID uint, ip string) (*DiscussionDetailResponse, error) {
+	post, err := s.PostRepo.FindByID(postID)
 	if err != nil {
 		return nil, err
 	}
 
-	return post, nil
+	// 防刷机制 (Redis)
+	var userKey string
+	if userID > 0 {
+		userKey = fmt.Sprintf("post_v:%s:u:%d", postID, userID)
+	} else {
+		userKey = fmt.Sprintf("post_v:%s:ip:%s", postID, ip)
+	}
+
+	ctx := context.Background()
+	// 使用 SetNX (If Not Exists) 设置标识，有效期 10 分钟
+	isNewVisit, _ := s.Redis.SetNX(ctx, userKey, "1", 10*time.Minute).Result()
+
+	// 异步增加阅读量
+	if isNewVisit {
+		go func(pid string) {
+			s.PostRepo.DB.Model(&model.Post{}).Where("id = ?", pid).Update("views", gorm.Expr("views + 1"))
+		}(post.ID)
+		post.Views += 1 // 本次返回的数据 +1
+	}
+
+	tags := []string{}
+	if post.Tags != "" {
+		tags = strings.Split(post.Tags, ",")
+	}
+
+	// 统计总评论数（包含回复）
+	var commentCount int64
+	s.PostRepo.DB.Model(&model.Comment{}).Where("post_id = ?", postID).Count(&commentCount)
+
+	res := &DiscussionDetailResponse{
+		PostResponse: PostResponse{
+			ID:           post.ID,
+			Title:        post.Title,
+			Content:      post.Content,
+			Author:       post.Author.Name,
+			Avatar:       post.Author.Avatar,
+			Tags:         tags,
+			CreatedAt:    post.CreatedAt,
+			Likes:        post.Upvotes,
+			Views:        post.Views,
+			CommentCount: int(commentCount),
+		},
+		IsLiked:  s.PostRepo.HasLiked(userID, "post", post.ID),
+		Comments: []CommentResponse{}, // 详情页不再直接返回评论列表，由前端分页请求
+	}
+
+	return res, nil
+}
+
+func (s *CommunityService) GetPostComments(postID string, page, limit int, userID uint) ([]CommentResponse, int64, error) {
+	offset := (page - 1) * limit
+	allComments, total, err := s.PostRepo.FindCommentsWithPagination(postID, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// 转换并组装树形结构
+	commentMap := make(map[string]*CommentResponse)
+	var rootComments []CommentResponse
+
+	// 第一遍：识别一级评论
+	for _, c := range allComments {
+		if c.ParentID == nil {
+			cr := &CommentResponse{
+				ID:        c.ID,
+				Author:    c.Author.Name,
+				AuthorID:  c.AuthorID,
+				Avatar:    c.Author.Avatar,
+				Content:   c.Content,
+				CreatedAt: c.CreatedAt,
+				Likes:     c.Upvotes,
+				Replies:   []ReplyResponse{},
+				IsLiked:   s.PostRepo.HasLiked(userID, "comment", c.ID),
+			}
+			commentMap[c.ID] = cr
+			rootComments = append(rootComments, *cr)
+		}
+	}
+
+	// 第二遍：填充二级回复
+	for _, c := range allComments {
+		if c.ParentID != nil {
+			if parent, ok := commentMap[*c.ParentID]; ok {
+				toUser := ""
+				if c.ReplyToUser != nil {
+					toUser = c.ReplyToUser.Name
+				}
+				parent.Replies = append(parent.Replies, ReplyResponse{
+					ID:        c.ID,
+					Author:    c.Author.Name,
+					AuthorID:  c.AuthorID,
+					Avatar:    c.Author.Avatar,
+					Content:   c.Content,
+					ToUser:    toUser,
+					CreatedAt: c.CreatedAt,
+					Likes:     c.Upvotes,
+					IsLiked:   s.PostRepo.HasLiked(userID, "comment", c.ID),
+				})
+			}
+		}
+	}
+
+	// 同步 Map 里的更新到结果切片
+	for i := range rootComments {
+		if updated, ok := commentMap[rootComments[i].ID]; ok {
+			rootComments[i] = *updated
+		}
+	}
+
+	return rootComments, total, nil
+}
+
+func (s *CommunityService) CreatePost(userID uint, req PostRequest) (*PostResponse, error) {
+	user, err := s.UserRepo.FindByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	post := &model.Post{
+		Title:    req.Title,
+		Content:  req.Content,
+		AuthorID: userID,
+		Tags:     strings.Join(req.Tags, ","),
+	}
+
+	err = s.PostRepo.Create(post)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PostResponse{
+		ID:        post.ID,
+		Title:     post.Title,
+		Content:   post.Content,
+		Author:    user.Name,
+		Avatar:    user.Avatar,
+		Tags:      req.Tags,
+		CreatedAt: post.CreatedAt,
+		Likes:     post.Upvotes,
+		Views:     post.Views,
+	}, nil
+}
+
+func (s *CommunityService) UpdatePost(userID uint, postID string, req PostRequest, userRole model.UserRole) (*PostResponse, error) {
+	post, err := s.PostRepo.FindByID(postID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 作者本人或管理员可以修改
+	if post.AuthorID != userID && userRole != model.Admin {
+		return nil, fmt.Errorf("permission denied")
+	}
+
+	post.Title = req.Title
+	post.Content = req.Content
+	post.Tags = strings.Join(req.Tags, ",")
+
+	if err := s.PostRepo.Update(post); err != nil {
+		return nil, err
+	}
+
+	user, _ := s.UserRepo.FindByID(post.AuthorID)
+
+	return &PostResponse{
+		ID:        post.ID,
+		Title:     post.Title,
+		Content:   post.Content,
+		Author:    user.Name,
+		Avatar:    user.Avatar,
+		Tags:      req.Tags,
+		CreatedAt: post.CreatedAt,
+		Likes:     post.Upvotes,
+		Views:     post.Views,
+	}, nil
+}
+
+func (s *CommunityService) DeletePost(userID uint, postID string, userRole model.UserRole) error {
+	post, err := s.PostRepo.FindByID(postID)
+	if err != nil {
+		return err
+	}
+
+	// 作者本人或管理员可以删除
+	if post.AuthorID != userID && userRole != model.Admin {
+		return fmt.Errorf("permission denied")
+	}
+
+	return s.PostRepo.Delete(postID)
+}
+
+func (s *CommunityService) CreateComment(userID uint, postID string, req CommentCreateRequest) (*CommentResponse, error) {
+	user, err := s.UserRepo.FindByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	comment := &model.Comment{
+		PostID:     postID,
+		AuthorID:   userID,
+		Content:    req.Content,
+		ParentID:   req.ParentID,
+		ReplyToUID: req.ToUserID,
+	}
+
+	if err := s.CommentRepo.Create(comment); err != nil {
+		return nil, err
+	}
+
+	toUser := ""
+	if req.ToUserID != nil {
+		target, err := s.UserRepo.FindByID(*req.ToUserID)
+		if err == nil {
+			toUser = target.Name
+		}
+	}
+
+	return &CommentResponse{
+		ID:        comment.ID,
+		Author:    user.Name,
+		AuthorID:  userID,
+		Avatar:    user.Avatar,
+		Content:   comment.Content,
+		CreatedAt: comment.CreatedAt,
+		Likes:     0,
+		IsLiked:   false,
+		ToUser:    toUser,
+		Replies:   []ReplyResponse{},
+	}, nil
+}
+
+func (s *CommunityService) DeleteComment(userID uint, commentID string, userRole model.UserRole) error {
+	comment, err := s.CommentRepo.FindByID(commentID)
+	if err != nil {
+		return err
+	}
+
+	// 权限检查：只有作者本人或管理员可以删除
+	if comment.AuthorID != userID && userRole != model.Admin {
+		return fmt.Errorf("permission denied")
+	}
+
+	return s.CommentRepo.Delete(commentID)
 }
 
 func (s *CommunityService) GetQuestions(page, limit int, tag string, solved *bool) ([]model.Question, int, error) {
@@ -77,11 +394,10 @@ func (s *CommunityService) GetQuestions(page, limit int, tag string, solved *boo
 
 func (s *CommunityService) CreateQuestion(userID uint, req QuestionRequest) (*model.Question, error) {
 	question := &model.Question{
-		Title:     req.Title,
-		Content:   req.Content,
-		AuthorID:  userID,
-		Tags:      strings.Join(req.Tags, ","),
-		CreatedAt: time.Now(),
+		Title:    req.Title,
+		Content:  req.Content,
+		AuthorID: userID,
+		Tags:     strings.Join(req.Tags, ","),
 	}
 
 	err := s.QuestionRepo.Create(question)
@@ -92,12 +408,11 @@ func (s *CommunityService) CreateQuestion(userID uint, req QuestionRequest) (*mo
 	return question, nil
 }
 
-func (s *CommunityService) AnswerQuestion(userID, questionID uint, req AnswerRequest) (*model.Answer, error) {
+func (s *CommunityService) AnswerQuestion(userID uint, questionID string, req AnswerRequest) (*model.Answer, error) {
 	answer := &model.Answer{
 		QuestionID: questionID,
 		AuthorID:   userID,
 		Content:    req.Content,
-		CreatedAt:  time.Now(),
 	}
 
 	err := s.AnswerRepo.Create(answer)
@@ -108,15 +423,6 @@ func (s *CommunityService) AnswerQuestion(userID, questionID uint, req AnswerReq
 	return answer, nil
 }
 
-func (s *CommunityService) Upvote(userID uint, contentType string, contentID uint) error {
-	switch contentType {
-	case "post":
-		return s.PostRepo.IncrementUpvotes(contentID)
-	case "comment":
-		return s.CommentRepo.IncrementUpvotes(contentID)
-	case "answer":
-		return s.AnswerRepo.IncrementUpvotes(contentID)
-	default:
-		return fmt.Errorf("unknown content type: %s", contentType)
-	}
+func (s *CommunityService) Upvote(userID uint, contentType string, contentID string) (bool, error) {
+	return s.PostRepo.ToggleLike(userID, contentType, contentID)
 }

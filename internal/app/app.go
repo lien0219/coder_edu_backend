@@ -50,6 +50,7 @@ type repositories struct {
 	quiz               *repository.QuizRepository
 	achievement        *repository.AchievementRepository
 	post               *repository.PostRepository
+	comment            *repository.CommentRepository
 	question           *repository.QuestionRepository
 	answer             *repository.AnswerRepository
 	session            *repository.SessionRepository
@@ -145,6 +146,7 @@ func (a *App) initRepositories(db *gorm.DB, rdb *redis.Client) *repositories {
 		quiz:               repository.NewQuizRepository(db),
 		achievement:        repository.NewAchievementRepository(db),
 		post:               repository.NewPostRepository(db),
+		comment:            repository.NewCommentRepository(db),
 		question:           repository.NewQuestionRepository(db),
 		answer:             repository.NewAnswerRepository(db),
 		session:            repository.NewSessionRepository(db),
@@ -180,7 +182,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 	s.dashboard = service.NewDashboardService(repos.user, repos.task, repos.resource, repos.goal, s.motivation)
 	s.learning = service.NewLearningService(repos.module, repos.task, repos.resource, repos.progress, repos.learningLog, repos.quiz, cfg, db)
 	s.achievement = service.NewAchievementService(repos.achievement, repos.user, repos.goal)
-	s.community = service.NewCommunityService(repos.post, nil, repos.question, repos.answer, repos.user)
+	s.community = service.NewCommunityService(repos.post, repos.comment, repos.question, repos.answer, repos.user, rdb)
 	s.analytics = service.NewAnalyticsService(repos.progress, repos.session, repos.skill, repos.learningLog, repos.recommendation, repos.levelAttempt, db)
 	s.user = service.NewUserServiceWithDB(repos.user, repos.checkin, db)
 
@@ -283,10 +285,13 @@ func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *reposito
 
 	router.GET("/metrics", monitoring.PrometheusHandler())
 
-	// 1. 公共路由 (无需登录)
+	// 1. 公共路由(无需登录)
 	a.registerPublicRoutes(router, c)
 
-	// 2. 需要授权的路由
+	// 2. 社区模块
+	a.registerCommunityRoutes(router, c)
+
+	// 3. 需要授权的路由
 	authGroup := router.Group("/api")
 	authGroup.Use(middleware.AuthMiddleware(), middleware.ActivityMiddleware(repos.user))
 	{
@@ -297,8 +302,34 @@ func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *reposito
 		a.registerTeacherRoutes(authGroup, c)
 	}
 
-	// 3. 管理员相关接口
+	// 4. 管理员相关接口
 	a.registerAdminRoutes(router, c)
+}
+
+func (a *App) registerCommunityRoutes(router *gin.Engine, c *controllers) {
+	community := router.Group("/api/community")
+	{
+		// 列表类：可选认证，允许游客访问，登录用户可看我的
+		community.GET("/posts", middleware.TryAuthMiddleware(), c.community.GetPosts)
+		community.GET("/posts/list", middleware.TryAuthMiddleware(), c.community.ListPosts)
+		community.GET("/posts/:id", middleware.TryAuthMiddleware(), c.community.GetPostDetail)
+		community.GET("/posts/:id/comments", middleware.TryAuthMiddleware(), c.community.GetPostComments)
+		community.GET("/questions", middleware.TryAuthMiddleware(), c.community.GetQuestions)
+
+		// 交互类：强制认证
+		authorized := community.Group("/")
+		authorized.Use(middleware.AuthMiddleware())
+		{
+			authorized.POST("/posts", c.community.CreatePost)
+			authorized.PUT("/posts/:id", c.community.UpdatePost)
+			authorized.DELETE("/posts/:id", c.community.DeletePost)
+			authorized.POST("/posts/:id/comments", c.community.CreateComment)
+			authorized.DELETE("/comments/:id", c.community.DeleteComment)
+			authorized.POST("/questions", c.community.CreateQuestion)
+			authorized.POST("/questions/:questionId/answers", c.community.AnswerQuestion)
+			authorized.POST("/:type/:id/upvote", c.community.Upvote)
+		}
+	}
 }
 
 func (a *App) registerPublicRoutes(router *gin.Engine, c *controllers) {
@@ -347,14 +378,6 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	rg.GET("/achievements/goals", c.achievement.GetUserGoals)
 	rg.POST("/achievements/goals", c.achievement.CreateGoal)
 	rg.PATCH("/achievements/goals/:goalId", c.achievement.UpdateGoalProgress)
-
-	// 社区
-	rg.GET("/community/posts", c.community.GetPosts)
-	rg.POST("/community/posts", c.community.CreatePost)
-	rg.GET("/community/questions", c.community.GetQuestions)
-	rg.POST("/community/questions", c.community.CreateQuestion)
-	rg.POST("/community/questions/:questionId/answers", c.community.AnswerQuestion)
-	rg.POST("/community/:type/:id/upvote", c.community.Upvote)
 
 	// 分析
 	rg.GET("/analytics/overview", c.analytics.GetOverview)

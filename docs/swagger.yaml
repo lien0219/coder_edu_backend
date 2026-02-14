@@ -227,6 +227,18 @@ definitions:
       updatedAt:
         type: string
     type: object
+  model.CommunityResourceType:
+    enum:
+    - pdf
+    - video
+    - word
+    - article
+    type: string
+    x-enum-varnames:
+    - ResourcePDF
+    - ResourceVideo
+    - ResourceWord
+    - ResourceArticle
   model.Conversation:
     properties:
       avatar:
@@ -1235,6 +1247,24 @@ definitions:
         type: integer
     required:
     - duration
+    type: object
+  service.ResourceShareRequest:
+    properties:
+      content:
+        description: 用于手写文章
+        type: string
+      description:
+        type: string
+      fileUrl:
+        description: 用于文件上传
+        type: string
+      title:
+        type: string
+      type:
+        $ref: '#/definitions/model.CommunityResourceType'
+    required:
+    - title
+    - type
     type: object
   service.RewardStudentItem:
     properties:
@@ -4521,6 +4551,151 @@ paths:
       security:
       - BearerAuth: []
       summary: 回答问题
+      tags:
+      - 社区
+  /api/community/resources:
+    get:
+      consumes:
+      - application/json
+      description: 获取社区分享的资源列表
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - description: 资源类型
+        enum:
+        - pdf
+        - video
+        - word
+        - article
+        in: query
+        name: type
+        type: string
+      - description: 搜索关键词
+        in: query
+        name: search
+        type: string
+      - description: 排序方式(views:按观看量从高到低)
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      summary: 获取资源列表
+      tags:
+      - 社区
+    post:
+      consumes:
+      - application/json
+      description: 上传并分享一个资源（文件或文章）
+      parameters:
+      - description: 资源内容
+        in: body
+        name: resource
+        required: true
+        schema:
+          $ref: '#/definitions/service.ResourceShareRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 分享资源
+      tags:
+      - 社区
+  /api/community/resources/{id}:
+    delete:
+      description: 删除分享的资源，仅限老师或管理员
+      parameters:
+      - description: 资源ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 删除资源
+      tags:
+      - 社区
+    get:
+      consumes:
+      - application/json
+      description: 获取资源的详细内容，并增加观看量
+      parameters:
+      - description: 资源ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      summary: 获取资源详情
+      tags:
+      - 社区
+  /api/community/resources/{id}/download:
+    get:
+      description: 下载资源文件，并增加下载量
+      parameters:
+      - description: 资源ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: 文件流
+          schema:
+            type: string
+      summary: 下载资源文件
+      tags:
+      - 社区
+  /api/community/resources/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 上传PDF、视频、Word文件到服务器
+      parameters:
+      - description: 资源文件
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - BearerAuth: []
+      summary: 上传资源文件
       tags:
       - 社区
   /api/dashboard:

@@ -81,3 +81,30 @@ type CommunityLike struct {
 func (CommunityLike) TableName() string {
 	return "community_likes"
 }
+
+type CommunityResourceType string
+
+const (
+	ResourcePDF     CommunityResourceType = "pdf"
+	ResourceVideo   CommunityResourceType = "video"
+	ResourceWord    CommunityResourceType = "word"
+	ResourceArticle CommunityResourceType = "article"
+)
+
+type CommunityResource struct {
+	UUIDBase
+	Title         string                `gorm:"size:255;not null" json:"title"`
+	Description   string                `gorm:"type:text" json:"description"`
+	AuthorID      uint                  `gorm:"index;type:bigint unsigned" json:"authorId"`
+	Author        User                  `gorm:"foreignKey:AuthorID" json:"author"`
+	Type          CommunityResourceType `gorm:"size:20;not null" json:"type"`
+	FileURL       string                `gorm:"size:255" json:"fileUrl"`
+	Content       string                `gorm:"type:text" json:"content"` // 用于手写文章
+	DownloadCount int                   `gorm:"default:0" json:"downloadCount"`
+	ViewCount     int                   `gorm:"default:0" json:"viewCount"`
+	Upvotes       int                   `gorm:"default:0" json:"likes"`
+}
+
+func (CommunityResource) TableName() string {
+	return "community_resources"
+}

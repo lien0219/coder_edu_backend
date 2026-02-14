@@ -18,6 +18,7 @@ type CommunityService struct {
 	QuestionRepo *repository.QuestionRepository
 	AnswerRepo   *repository.AnswerRepository
 	UserRepo     *repository.UserRepository
+	ResourceRepo *repository.CommunityResourceRepository
 	Redis        *redis.Client
 }
 
@@ -27,6 +28,7 @@ func NewCommunityService(
 	questionRepo *repository.QuestionRepository,
 	answerRepo *repository.AnswerRepository,
 	userRepo *repository.UserRepository,
+	resourceRepo *repository.CommunityResourceRepository,
 	rdb *redis.Client,
 ) *CommunityService {
 	return &CommunityService{
@@ -35,6 +37,7 @@ func NewCommunityService(
 		QuestionRepo: questionRepo,
 		AnswerRepo:   answerRepo,
 		UserRepo:     userRepo,
+		ResourceRepo: resourceRepo,
 		Redis:        rdb,
 	}
 }
@@ -66,6 +69,30 @@ type QuestionRequest struct {
 
 type AnswerRequest struct {
 	Content string `json:"content" binding:"required"`
+}
+
+type ResourceShareRequest struct {
+	Title       string                      `json:"title" binding:"required"`
+	Description string                      `json:"description"`
+	Type        model.CommunityResourceType `json:"type" binding:"required"`
+	Content     string                      `json:"content"` // 用于手写文章
+	FileURL     string                      `json:"fileUrl"` // 用于文件上传
+}
+
+type ResourceResponse struct {
+	ID            string                      `json:"id"`
+	Title         string                      `json:"title"`
+	Description   string                      `json:"description"`
+	Author        string                      `json:"author"`
+	AuthorID      uint                        `json:"authorId"`
+	Type          model.CommunityResourceType `json:"type"`
+	FileURL       string                      `json:"fileUrl"`
+	Content       string                      `json:"content,omitempty"`
+	DownloadCount int                         `json:"downloadCount"`
+	ViewCount     int                         `json:"viewCount"`
+	Likes         int                         `json:"likes"`
+	CreatedAt     time.Time                   `json:"createdAt"`
+	IsLiked       bool                        `json:"isLiked"`
 }
 
 type CommentCreateRequest struct {
@@ -425,4 +452,140 @@ func (s *CommunityService) AnswerQuestion(userID uint, questionID string, req An
 
 func (s *CommunityService) Upvote(userID uint, contentType string, contentID string) (bool, error) {
 	return s.PostRepo.ToggleLike(userID, contentType, contentID)
+}
+
+func (s *CommunityService) GetResources(page, limit int, resourceType string, search string, userID uint, sort string) ([]ResourceResponse, int, error) {
+	offset := (page - 1) * limit
+	resources, total, err := s.ResourceRepo.FindWithPagination(offset, limit, resourceType, search, sort)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	responses := make([]ResourceResponse, len(resources))
+	for i, r := range resources {
+		responses[i] = ResourceResponse{
+			ID:            r.ID,
+			Title:         r.Title,
+			Description:   r.Description,
+			Author:        r.Author.Name,
+			AuthorID:      r.AuthorID,
+			Type:          r.Type,
+			FileURL:       r.FileURL,
+			DownloadCount: r.DownloadCount,
+			ViewCount:     r.ViewCount,
+			Likes:         r.Upvotes,
+			CreatedAt:     r.CreatedAt,
+			IsLiked:       s.PostRepo.HasLiked(userID, "resource", r.ID),
+		}
+	}
+	return responses, total, nil
+}
+
+func (s *CommunityService) CreateResource(userID uint, role model.UserRole, req ResourceShareRequest) (*ResourceResponse, error) {
+	// 学生限额检查
+	if role == model.Student {
+		count, err := s.ResourceRepo.GetTodayCount(userID)
+		if err != nil {
+			return nil, err
+		}
+		if count >= 3 {
+			return nil, fmt.Errorf("daily share limit reached (max 3)")
+		}
+	}
+
+	resource := &model.CommunityResource{
+		Title:       req.Title,
+		Description: req.Description,
+		AuthorID:    userID,
+		Type:        req.Type,
+		FileURL:     req.FileURL,
+		Content:     req.Content,
+	}
+
+	if err := s.ResourceRepo.Create(resource); err != nil {
+		return nil, err
+	}
+
+	user, _ := s.UserRepo.FindByID(userID)
+
+	return &ResourceResponse{
+		ID:            resource.ID,
+		Title:         resource.Title,
+		Description:   resource.Description,
+		Author:        user.Name,
+		AuthorID:      userID,
+		Type:          resource.Type,
+		FileURL:       resource.FileURL,
+		DownloadCount: 0,
+		ViewCount:     0,
+		Likes:         0,
+		CreatedAt:     resource.CreatedAt,
+	}, nil
+}
+
+func (s *CommunityService) GetResourceDetail(id string, userID uint) (*ResourceResponse, error) {
+	resource, err := s.ResourceRepo.FindByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	// 增加观看量 (Redis 去重，防止同一用户重复增加)
+	viewKey := fmt.Sprintf("resource_view:%s:%d", id, userID)
+	if userID == 0 {
+		// 这里暂定未登录用户每次进入都增加
+		s.ResourceRepo.IncrementView(id)
+		resource.ViewCount++
+	} else {
+		// 已登录用户，10分钟内不重复计算观看量
+		success, _ := s.Redis.SetNX(context.Background(), viewKey, "1", 10*time.Minute).Result()
+		if success {
+			s.ResourceRepo.IncrementView(id)
+			resource.ViewCount++
+		}
+	}
+
+	return &ResourceResponse{
+		ID:            resource.ID,
+		Title:         resource.Title,
+		Description:   resource.Description,
+		Author:        resource.Author.Name,
+		AuthorID:      resource.AuthorID,
+		Type:          resource.Type,
+		FileURL:       resource.FileURL,
+		Content:       resource.Content,
+		DownloadCount: resource.DownloadCount,
+		ViewCount:     resource.ViewCount,
+		Likes:         resource.Upvotes,
+		CreatedAt:     resource.CreatedAt,
+		IsLiked:       s.PostRepo.HasLiked(userID, "resource", resource.ID),
+	}, nil
+}
+
+func (s *CommunityService) DownloadResource(id string) (string, error) {
+	resource, err := s.ResourceRepo.FindByID(id)
+	if err != nil {
+		return "", err
+	}
+
+	if resource.Type == model.ResourceArticle {
+		return "", fmt.Errorf("articles cannot be downloaded")
+	}
+
+	s.ResourceRepo.IncrementDownload(id)
+	return resource.FileURL, nil
+}
+
+func (s *CommunityService) DeleteResource(id string, userID uint, role model.UserRole) error {
+	_, err := s.ResourceRepo.FindByID(id)
+	if err != nil {
+		return err
+	}
+
+	// 只允许老师或者管理员可以删除
+	if role != model.Teacher && role != model.Admin {
+		return fmt.Errorf("permission denied")
+	}
+
+	// 如果有物理文件，可以选择是否删除物理文件。这里暂时只删除数据库记录
+	return s.ResourceRepo.Delete(id)
 }

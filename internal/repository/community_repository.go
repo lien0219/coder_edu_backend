@@ -2,6 +2,7 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -192,8 +193,86 @@ func (r *PostRepository) getModel(contentType string) interface{} {
 		return &model.Comment{}
 	case "answer":
 		return &model.Answer{}
+	case "resource":
+		return &model.CommunityResource{}
 	}
 	return nil
+}
+
+type CommunityResourceRepository struct {
+	DB *gorm.DB
+}
+
+func NewCommunityResourceRepository(db *gorm.DB) *CommunityResourceRepository {
+	return &CommunityResourceRepository{DB: db}
+}
+
+func (r *CommunityResourceRepository) Create(resource *model.CommunityResource) error {
+	return r.DB.Create(resource).Error
+}
+
+func (r *CommunityResourceRepository) FindWithPagination(offset, limit int, resourceType string, search string, sort string) ([]model.CommunityResource, int, error) {
+	var resources []model.CommunityResource
+	var total int64
+
+	query := r.DB.Model(&model.CommunityResource{})
+
+	if resourceType != "" {
+		query = query.Where("type = ?", resourceType)
+	}
+
+	if search != "" {
+		query = query.Where("title LIKE ? OR description LIKE ?", "%"+search+"%", "%"+search+"%")
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// 排序逻辑
+	order := "created_at DESC"
+	if sort == "views" {
+		order = "view_count DESC"
+	}
+
+	err := query.Offset(offset).Limit(limit).
+		Preload("Author").
+		Order(order).
+		Find(&resources).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return resources, int(total), nil
+}
+
+func (r *CommunityResourceRepository) FindByID(id string) (*model.CommunityResource, error) {
+	var resource model.CommunityResource
+	err := r.DB.Preload("Author").First(&resource, "id = ?", id).Error
+	return &resource, err
+}
+
+func (r *CommunityResourceRepository) Delete(id string) error {
+	return r.DB.Delete(&model.CommunityResource{}, "id = ?", id).Error
+}
+
+func (r *CommunityResourceRepository) IncrementDownload(id string) error {
+	return r.DB.Model(&model.CommunityResource{}).Where("id = ?", id).
+		Update("download_count", gorm.Expr("download_count + 1")).Error
+}
+
+func (r *CommunityResourceRepository) IncrementView(id string) error {
+	return r.DB.Model(&model.CommunityResource{}).Where("id = ?", id).
+		Update("view_count", gorm.Expr("view_count + 1")).Error
+}
+
+func (r *CommunityResourceRepository) GetTodayCount(userID uint) (int64, error) {
+	var count int64
+	today := time.Now().Format("2006-01-02")
+	err := r.DB.Model(&model.CommunityResource{}).
+		Where("author_id = ? AND created_at >= ?", userID, today).
+		Count(&count).Error
+	return count, err
 }
 
 type CommentRepository struct {

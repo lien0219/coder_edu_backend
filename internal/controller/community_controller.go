@@ -3,7 +3,10 @@ package controller
 import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
+	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -503,4 +506,198 @@ func (c *CommunityController) Upvote(ctx *gin.Context) {
 		"message": msg,
 		"isLiked": isLiked,
 	})
+}
+
+// @Summary 获取资源列表
+// @Description 获取社区分享的资源列表
+// @Tags 社区
+// @Accept json
+// @Produce json
+// @Param page query int false "页码" default(1)
+// @Param limit query int false "每页数量" default(10)
+// @Param type query string false "资源类型" Enums(pdf, video, word, article)
+// @Param search query string false "搜索关键词"
+// @Param sort query string false "排序方式(views:按观看量从高到低)"
+// @Success 200 {object} util.Response
+// @Router /api/community/resources [get]
+func (c *CommunityController) GetResources(ctx *gin.Context) {
+	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "10"))
+	resourceType := ctx.Query("type")
+	search := ctx.Query("search")
+	sort := ctx.Query("sort")
+
+	var userID uint
+	if user := util.GetUserFromContext(ctx); user != nil {
+		userID = user.UserID
+	}
+
+	resources, total, err := c.CommunityService.GetResources(page, limit, resourceType, search, userID, sort)
+	if err != nil {
+		util.LogInternalError(ctx, err)
+		return
+	}
+
+	util.Success(ctx, gin.H{
+		"items": resources,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
+// @Summary 获取资源详情
+// @Description 获取资源的详细内容，并增加观看量
+// @Tags 社区
+// @Accept json
+// @Produce json
+// @Param id path string true "资源ID"
+// @Success 200 {object} util.Response
+// @Router /api/community/resources/{id} [get]
+func (c *CommunityController) GetResourceDetail(ctx *gin.Context) {
+	id := ctx.Param("id")
+	var userID uint
+	if user := util.GetUserFromContext(ctx); user != nil {
+		userID = user.UserID
+	}
+
+	detail, err := c.CommunityService.GetResourceDetail(id, userID)
+	if err != nil {
+		util.LogInternalError(ctx, err)
+		return
+	}
+
+	util.Success(ctx, detail)
+}
+
+// @Summary 分享资源
+// @Description 上传并分享一个资源（文件或文章）
+// @Tags 社区
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param resource body service.ResourceShareRequest true "资源内容"
+// @Success 200 {object} util.Response
+// @Router /api/community/resources [post]
+func (c *CommunityController) CreateResource(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	var req service.ResourceShareRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(ctx, "请求格式错误")
+		return
+	}
+
+	res, err := c.CommunityService.CreateResource(user.UserID, user.Role, req)
+	if err != nil {
+		if err.Error() == "daily share limit reached (max 3)" {
+			util.BadRequest(ctx, "每天最多只能分享3次资源")
+		} else {
+			util.LogInternalError(ctx, err)
+		}
+		return
+	}
+
+	util.Success(ctx, res)
+}
+
+// @Summary 上传资源文件
+// @Description 上传PDF、视频、Word文件到服务器
+// @Tags 社区
+// @Accept multipart/form-data
+// @Produce json
+// @Security BearerAuth
+// @Param file formData file true "资源文件"
+// @Success 200 {object} util.Response
+// @Router /api/community/resources/upload [post]
+func (c *CommunityController) UploadResourceFile(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	file, err := ctx.FormFile("file")
+	if err != nil {
+		util.BadRequest(ctx, "未找到上传的文件")
+		return
+	}
+
+	// 检查目录是否存在
+	if _, err := os.Stat("resource_file"); os.IsNotExist(err) {
+		os.MkdirAll("resource_file", os.ModePerm)
+	}
+
+	// 生成文件名: time_originalName
+	filename := strconv.FormatInt(time.Now().Unix(), 10) + "_" + file.Filename
+	filepath := "resource_file/" + filename
+
+	if err := ctx.SaveUploadedFile(file, filepath); err != nil {
+		util.LogInternalError(ctx, err)
+		return
+	}
+
+	util.Success(ctx, gin.H{
+		"url": "/api/community/resources/files/" + filename,
+	})
+}
+
+// @Summary 下载资源文件
+// @Description 下载资源文件，并增加下载量
+// @Tags 社区
+// @Param id path string true "资源ID"
+// @Success 200 {string} string "文件流"
+// @Router /api/community/resources/{id}/download [get]
+func (c *CommunityController) DownloadResource(ctx *gin.Context) {
+	id := ctx.Param("id")
+	fileURL, err := c.CommunityService.DownloadResource(id)
+	if err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
+	// 这里的 fileURL 是 /api/community/resources/files/xxx
+	// 我们需要提取文件名并从本地读取
+	parts := strings.Split(fileURL, "/")
+	filename := parts[len(parts)-1]
+	filepath := "resource_file/" + filename
+
+	if _, err := os.Stat(filepath); os.IsNotExist(err) {
+		util.BadRequest(ctx, "文件不存在")
+		return
+	}
+
+	ctx.File(filepath)
+}
+
+// @Summary 删除资源
+// @Description 删除分享的资源，仅限老师或管理员
+// @Tags 社区
+// @Security BearerAuth
+// @Param id path string true "资源ID"
+// @Success 200 {object} util.Response
+// @Router /api/community/resources/{id} [delete]
+func (c *CommunityController) DeleteResource(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	id := ctx.Param("id")
+	err := c.CommunityService.DeleteResource(id, user.UserID, user.Role)
+	if err != nil {
+		if err.Error() == "permission denied" {
+			util.Forbidden(ctx)
+		} else {
+			util.LogInternalError(ctx, err)
+		}
+		return
+	}
+
+	util.Success(ctx, gin.H{"message": "Resource deleted successfully"})
 }

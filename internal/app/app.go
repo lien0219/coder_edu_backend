@@ -74,6 +74,7 @@ type repositories struct {
 	reflection         *repository.ReflectionRepository
 	chat               *repository.ChatRepository
 	friendship         *repository.FriendshipRepository
+	communityResource  *repository.CommunityResourceRepository
 }
 
 type services struct {
@@ -170,6 +171,7 @@ func (a *App) initRepositories(db *gorm.DB, rdb *redis.Client) *repositories {
 		reflection:         repository.NewReflectionRepository(db),
 		chat:               repository.NewChatRepository(db, rdb),
 		friendship:         repository.NewFriendshipRepository(db, rdb),
+		communityResource:  repository.NewCommunityResourceRepository(db),
 	}
 }
 
@@ -182,7 +184,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 	s.dashboard = service.NewDashboardService(repos.user, repos.task, repos.resource, repos.goal, s.motivation)
 	s.learning = service.NewLearningService(repos.module, repos.task, repos.resource, repos.progress, repos.learningLog, repos.quiz, cfg, db)
 	s.achievement = service.NewAchievementService(repos.achievement, repos.user, repos.goal)
-	s.community = service.NewCommunityService(repos.post, repos.comment, repos.question, repos.answer, repos.user, rdb)
+	s.community = service.NewCommunityService(repos.post, repos.comment, repos.question, repos.answer, repos.user, repos.communityResource, rdb)
 	s.analytics = service.NewAnalyticsService(repos.progress, repos.session, repos.skill, repos.learningLog, repos.recommendation, repos.levelAttempt, db)
 	s.user = service.NewUserServiceWithDB(repos.user, repos.checkin, db)
 
@@ -315,6 +317,8 @@ func (a *App) registerCommunityRoutes(router *gin.Engine, c *controllers) {
 		community.GET("/posts/:id", middleware.TryAuthMiddleware(), c.community.GetPostDetail)
 		community.GET("/posts/:id/comments", middleware.TryAuthMiddleware(), c.community.GetPostComments)
 		community.GET("/questions", middleware.TryAuthMiddleware(), c.community.GetQuestions)
+		community.GET("/resources", middleware.TryAuthMiddleware(), c.community.GetResources)
+		community.GET("/resources/:id", middleware.TryAuthMiddleware(), c.community.GetResourceDetail)
 
 		// 交互类：强制认证
 		authorized := community.Group("/")
@@ -327,6 +331,10 @@ func (a *App) registerCommunityRoutes(router *gin.Engine, c *controllers) {
 			authorized.DELETE("/comments/:id", c.community.DeleteComment)
 			authorized.POST("/questions", c.community.CreateQuestion)
 			authorized.POST("/questions/:questionId/answers", c.community.AnswerQuestion)
+			authorized.POST("/resources", c.community.CreateResource)
+			authorized.POST("/resources/upload", c.community.UploadResourceFile)
+			authorized.GET("/resources/:id/download", c.community.DownloadResource)
+			authorized.DELETE("/resources/:id", c.community.DeleteResource)
 			authorized.POST("/:type/:id/upvote", c.community.Upvote)
 		}
 	}
@@ -742,6 +750,12 @@ func NewApp(cfg *config.Config) *App {
 		router.Static("/uploads", cfg.Storage.LocalPath)
 		router.Static("/api/uploads", cfg.Storage.LocalPath)
 	}
+
+	// 社区资源文件存放路径
+	if _, err := os.Stat("resource_file"); os.IsNotExist(err) {
+		os.MkdirAll("resource_file", os.ModePerm)
+	}
+	router.Static("/api/community/resources/files", "resource_file")
 
 	app.startBackgroundTasks(services)
 

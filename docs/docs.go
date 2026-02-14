@@ -5098,6 +5098,230 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/community/resources": {
+            "get": {
+                "description": "获取社区分享的资源列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "社区"
+                ],
+                "summary": "获取资源列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "每页数量",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "pdf",
+                            "video",
+                            "word",
+                            "article"
+                        ],
+                        "type": "string",
+                        "description": "资源类型",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序方式(views:按观看量从高到低)",
+                        "name": "sort",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "上传并分享一个资源（文件或文章）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "社区"
+                ],
+                "summary": "分享资源",
+                "parameters": [
+                    {
+                        "description": "资源内容",
+                        "name": "resource",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.ResourceShareRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/community/resources/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "上传PDF、视频、Word文件到服务器",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "社区"
+                ],
+                "summary": "上传资源文件",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "资源文件",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/community/resources/{id}": {
+            "get": {
+                "description": "获取资源的详细内容，并增加观看量",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "社区"
+                ],
+                "summary": "获取资源详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除分享的资源，仅限老师或管理员",
+                "tags": [
+                    "社区"
+                ],
+                "summary": "删除资源",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/community/resources/{id}/download": {
+            "get": {
+                "description": "下载资源文件，并增加下载量",
+                "tags": [
+                    "社区"
+                ],
+                "summary": "下载资源文件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "文件流",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/community/{type}/{id}/upvote": {
             "post": {
                 "security": [
@@ -11268,6 +11492,21 @@ const docTemplate = `{
                 }
             }
         },
+        "model.CommunityResourceType": {
+            "type": "string",
+            "enum": [
+                "pdf",
+                "video",
+                "word",
+                "article"
+            ],
+            "x-enum-varnames": [
+                "ResourcePDF",
+                "ResourceVideo",
+                "ResourceWord",
+                "ResourceArticle"
+            ]
+        },
         "model.Conversation": {
             "type": "object",
             "properties": {
@@ -12750,6 +12989,32 @@ const docTemplate = `{
                 "duration": {
                     "type": "integer",
                     "minimum": 1
+                }
+            }
+        },
+        "service.ResourceShareRequest": {
+            "type": "object",
+            "required": [
+                "title",
+                "type"
+            ],
+            "properties": {
+                "content": {
+                    "description": "用于手写文章",
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "fileUrl": {
+                    "description": "用于文件上传",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/model.CommunityResourceType"
                 }
             }
         },

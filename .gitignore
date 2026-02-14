@@ -26,3 +26,4 @@ Dockerfile.prod
 /thumbnails/
 /videos/
 /uploads/
+/resource_file/

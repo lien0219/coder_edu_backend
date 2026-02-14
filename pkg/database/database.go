@@ -98,6 +98,7 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		&model.Message{},
 		&model.Friendship{},
 		&model.FriendRequest{},
+		&model.CommunityResource{},
 	)
 
 	if err != nil {

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"coder_edu_backend/internal/util"
 	"time"
 
 	"gorm.io/gorm"
@@ -43,7 +44,7 @@ func (r *TaskRepository) FindTodayTasks(userID uint) ([]*model.Task, error) {
 func (r *TaskRepository) FindByUserAndDate(userID uint, date time.Time) ([]*model.Task, error) {
 	var tasks []*model.Task
 	err := r.DB.Where("user_id = ? AND due_date >= ? AND due_date < ?",
-		userID, date.Format("2006-01-02"), date.AddDate(0, 0, 1).Format("2006-01-02")).
+		userID, date.Format(util.DateFormat), date.AddDate(0, 0, 1).Format(util.DateFormat)).
 		Find(&tasks).Error
 	return tasks, err
 }
@@ -82,7 +83,7 @@ func (r *TaskRepository) GetWeeklyTaskByTeacherAndDate(teacherID uint, resourceM
 	weekEnd := weekStart.AddDate(0, 0, 6)
 
 	query := r.DB.Preload("TaskItems").Where("teacher_id = ? AND week_start_date = ? AND week_end_date = ?",
-		teacherID, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02"))
+		teacherID, weekStart.Format(util.DateFormat), weekEnd.Format(util.DateFormat))
 
 	if resourceModuleID > 0 {
 		query = query.Where("resource_module_id = ?", resourceModuleID)
@@ -152,7 +153,7 @@ func (r *TaskRepository) GetTodayTasks(resourceModuleID uint, dayOfWeek model.We
 	query := r.DB.Preload("WeeklyTask").
 		Joins("JOIN teacher_weekly_tasks ON task_items.weekly_task_id = teacher_weekly_tasks.id").
 		Where("task_items.day_of_week = ? AND teacher_weekly_tasks.week_start_date = ? AND teacher_weekly_tasks.week_end_date = ?",
-			dayOfWeek, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02"))
+			dayOfWeek, weekStart.Format(util.DateFormat), weekEnd.Format(util.DateFormat))
 
 	err := query.Find(&taskItems).Error
 	return taskItems, err
@@ -175,7 +176,7 @@ func (r *TaskRepository) GetAllTodayTasks(dayOfWeek model.Weekday) ([]model.Task
 	query := r.DB.Preload("WeeklyTask").
 		Joins("JOIN teacher_weekly_tasks ON task_items.weekly_task_id = teacher_weekly_tasks.id").
 		Where("task_items.day_of_week = ? AND teacher_weekly_tasks.week_start_date = ? AND teacher_weekly_tasks.week_end_date = ?",
-			dayOfWeek, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02"))
+			dayOfWeek, weekStart.Format(util.DateFormat), weekEnd.Format(util.DateFormat))
 
 	err := query.Find(&taskItems).Error
 	return taskItems, err

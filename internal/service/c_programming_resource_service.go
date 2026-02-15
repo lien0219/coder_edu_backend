@@ -284,34 +284,8 @@ func (s *CProgrammingResourceService) GetAllQuestionsByCategoryID(categoryID uin
 
 // GetResourcesWithAllContent 获取所有资源分类及其完整内容（支持分页）
 func (s *CProgrammingResourceService) GetResourcesWithAllContent(enabled *bool, page, limit int, userID uint) ([]map[string]interface{}, int, error) {
-	fmt.Printf("[DEBUG] === GetResourcesWithAllContent 开始 ===\n")
-	fmt.Printf("[DEBUG] 参数: page=%d, limit=%d, userID=%d, enabled=%v\n", page, limit, userID, enabled)
-
 	// 获取分页的资源分类
 	resources, total, err := s.Repo.FindAll(page, limit, "", enabled, "order", "asc")
-	fmt.Printf("[DEBUG] FindAll返回: 资源数量=%d, 错误=%v\n", len(resources), err)
-
-	// 显示所有资源的ID和名称
-	for i, res := range resources {
-		fmt.Printf("[DEBUG] 资源[%d] - ID: %d, 名称: %s\n", i, res.ID, res.Name)
-	}
-
-	// 特别检查资源模块24
-	fmt.Printf("[DEBUG] === 特别检查资源模块24 ===\n")
-	for _, res := range resources {
-		if res.ID == 24 {
-			fmt.Printf("[DEBUG] 找到资源模块24: 名称=%s, 描述=%s\n", res.Name, res.Description)
-
-			// 检查资源模块24的内容
-			videos24, _ := s.GetAllVideosByResourceID(24)
-			articles24, _ := s.GetAllArticlesByResourceID(24)
-			categories24, _ := s.GetCategoriesByResourceID(24)
-
-			fmt.Printf("[DEBUG] 资源模块24内容统计: 视频=%d, 文章=%d, 练习分类=%d\n",
-				len(videos24), len(articles24), len(categories24))
-			break
-		}
-	}
 	if err != nil {
 		return nil, 0, err
 	}
@@ -333,45 +307,30 @@ func (s *CProgrammingResourceService) GetResourcesWithAllContent(enabled *bool, 
 		// 检查当前用户是否有与该资源模块关联的学习目标或当天老师布置的周任务
 		hasLearningGoal := false
 		if userID > 0 {
-			// fmt.Printf("[DEBUG] 检查资源模块ID: %d, 用户ID: %d\n", resource.ID, userID)
-
 			// 检查个人学习目标
 			if s.GoalRepo != nil {
 				goals, err := s.GoalRepo.FindByUserIDAndResourceModuleID(userID, resource.ID)
-				// fmt.Printf("[DEBUG] 个人学习目标检查结果 - 错误: %v, 目标数量: %d\n", err, len(goals))
 				if err == nil && len(goals) > 0 {
 					hasLearningGoal = true
-					// fmt.Printf("[DEBUG] 发现个人学习目标，hasLearningGoal设置为true\n")
 				}
 			}
 
 			// 检查用户当天在该资源模块下的周任务（无论是否有个人学习目标都要检查）
 			if s.TaskService != nil {
-				// fmt.Printf("[DEBUG] 开始检查老师布置的当天任务\n")
 				// 获取用户今天的所有任务
 				todayTasks, err := s.TaskService.GetTodayTasks(userID, resource.ID)
-				// fmt.Printf("[DEBUG] 获取今天任务结果 - 错误: %v, 任务数量: %d\n", err, len(todayTasks))
 				if err == nil && len(todayTasks) > 0 {
 					// 检查是否有任务属于当前资源模块
-					// fmt.Printf("[DEBUG] 开始遍历今天任务，查找资源模块ID: %d (资源名称: %s)\n", resource.ID, resource.Name)
-					for i, task := range todayTasks {
+					for _, task := range todayTasks {
 						if taskResourceModuleID, ok := task["resourceModuleId"].(uint); ok {
-							// fmt.Printf("[DEBUG] 任务[%d] - resourceModuleId: %d, 当前资源模块ID: %d, 匹配: %v\n",
-							// 	i, taskResourceModuleID, resource.ID, taskResourceModuleID == resource.ID)
 							if taskResourceModuleID == resource.ID {
 								hasLearningGoal = true
-								// fmt.Printf("[DEBUG] 发现匹配的当天任务，hasLearningGoal设置为true\n")
 								break
 							}
-						} else {
-							fmt.Printf("[DEBUG] 任务[%d] - resourceModuleId类型断言失败或不存在\n", i)
 						}
 					}
-				} else {
-					fmt.Printf("[DEBUG] 没有获取到今天的任务或发生错误\n")
 				}
 			}
-			// fmt.Printf("[DEBUG] 最终hasLearningGoal结果: %v\n", hasLearningGoal)
 		}
 		resourceMap["hasLearningGoal"] = hasLearningGoal
 

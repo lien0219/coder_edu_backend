@@ -1,17 +1,18 @@
 package controller
 
 import (
+	"coder_edu_backend/internal/model"
+	"coder_edu_backend/internal/service"
+	"coder_edu_backend/internal/util"
+	"coder_edu_backend/pkg/logger"
 	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"coder_edu_backend/internal/model"
-	"coder_edu_backend/internal/service"
-	"coder_edu_backend/internal/util"
-
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type LevelController struct {
@@ -739,21 +740,13 @@ func (c *LevelController) GetAttemptStats(ctx *gin.Context) {
 // @Success 200 {object} util.Response
 // @Router /api/teacher/levels/bulk/publish [post]
 func (c *LevelController) BulkPublish(ctx *gin.Context) {
-	fmt.Printf("DEBUG: BulkPublish endpoint called\n")
-
 	user := util.GetUserFromContext(ctx)
 	if user == nil {
-		fmt.Printf("DEBUG: User is nil - unauthorized\n")
 		util.Unauthorized(ctx)
 		return
 	}
 
-	// Debug: log user info
-	fmt.Printf("DEBUG: User ID: %d, Role: %s, Email: %s\n", user.UserID, user.Role, user.Email)
-
-	// Check if user has permission (teacher or admin)
 	if user.Role != model.Teacher && user.Role != model.Admin {
-		fmt.Printf("DEBUG: User role '%s' not authorized\n", user.Role)
 		util.Error(ctx, 403, "only teachers and admins can bulk publish levels")
 		return
 	}
@@ -763,16 +756,12 @@ func (c *LevelController) BulkPublish(ctx *gin.Context) {
 		Publish bool   `json:"publish"`
 	}
 	if err := ctx.ShouldBindJSON(&body); err != nil {
-		fmt.Printf("DEBUG: JSON binding error: %v\n", err)
 		util.BadRequest(ctx, err.Error())
 		return
 	}
 
-	// Debug: log request body
-	fmt.Printf("DEBUG: Bulk publish request - IDs: %v, Publish: %v\n", body.IDs, body.Publish)
-
 	if err := c.LevelService.BulkPublish(user.UserID, body.IDs, body.Publish); err != nil {
-		fmt.Printf("DEBUG: Bulk publish error: %v\n", err)
+		logger.Log.Error("Bulk publish error", zap.Error(err))
 		util.InternalServerError(ctx)
 		return
 	}

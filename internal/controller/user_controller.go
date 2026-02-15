@@ -5,6 +5,7 @@ import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -186,7 +187,7 @@ func (c *UserController) UpdateUser(ctx *gin.Context) {
 	if req.Password != "" {
 		err := c.UserService.UpdateUserWithPassword(user, req.Password)
 		if err != nil {
-			if err.Error() == "用户不存在" {
+			if errors.Is(err, util.ErrUserNotFound) {
 				util.NotFound(ctx)
 			} else {
 				util.InternalServerError(ctx)

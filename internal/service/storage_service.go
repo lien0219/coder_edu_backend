@@ -2,6 +2,7 @@ package service
 
 import (
 	"coder_edu_backend/internal/config"
+	"coder_edu_backend/internal/util"
 	"context"
 	"fmt"
 	"io"
@@ -198,12 +199,12 @@ type StorageService struct {
 func NewStorageService(cfg *config.Config) *StorageService {
 	var provider StorageProvider
 	switch cfg.Storage.Type {
-	case "minio":
+	case util.StorageMinio:
 		p, err := NewMinioStorageProvider(&cfg.Storage)
 		if err == nil {
 			provider = p
 		}
-	case "oss":
+	case util.StorageOSS:
 		p, err := NewOSSStorageProvider(&cfg.Storage)
 		if err == nil {
 			provider = p

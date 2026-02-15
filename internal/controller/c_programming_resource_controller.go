@@ -17,15 +17,18 @@ import (
 type CProgrammingResourceController struct {
 	Service        *service.CProgrammingResourceService
 	ContentService *service.ContentService
+	Config         *config.Config
 }
 
 func NewCProgrammingResourceController(
 	service *service.CProgrammingResourceService,
 	contentService *service.ContentService,
+	cfg *config.Config,
 ) *CProgrammingResourceController {
 	return &CProgrammingResourceController{
 		Service:        service,
 		ContentService: contentService,
+		Config:         cfg,
 	}
 }
 
@@ -1256,8 +1259,7 @@ func (c *CProgrammingResourceController) SubmitExerciseAnswerPublic(ctx *gin.Con
 		authHeader := ctx.GetHeader("Authorization")
 		if authHeader != "" {
 			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-			cfg := ctx.MustGet("config").(*config.Config)
-			if claims, err := util.ParseJWT(tokenString, cfg.JWT.Secret); err == nil && claims != nil {
+			if claims, err := util.ParseJWT(tokenString, c.Config.JWT.Secret); err == nil && claims != nil {
 				req.UserID = claims.UserID
 			}
 		}

@@ -10672,7 +10672,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前老师本周的任务，可选择指定资源分类ID。如果不指定资源分类ID，返回所有模块的一周任务",
+                "description": "获取本周的任务，可选择指定资源分类ID和日期。如果不指定资源分类ID，返回所有模块的一周任务",
                 "consumes": [
                     "application/json"
                 ],
@@ -10688,6 +10688,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "资源分类ID",
                         "name": "resourceModuleId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "目标日期 (YYYY-MM-DD)，默认为今天",
+                        "name": "date",
                         "in": "query"
                     }
                 ],
@@ -10718,7 +10724,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "当前周任务不存在",
+                        "description": "周任务不存在",
                         "schema": {
                             "$ref": "#/definitions/util.Response"
                         }

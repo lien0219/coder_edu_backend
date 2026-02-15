@@ -308,7 +308,7 @@ func (r *ChatRepository) flushMessages(messages []*model.Message) {
 }
 
 func (r *ChatRepository) cacheMessage(msg *model.Message) {
-	// 确保 Sender 信息已加载
+	// 确保Sender信息已加载
 	if msg.SenderID != nil && msg.Sender.ID == 0 {
 		r.DB.Preload("Sender").First(msg, "id = ?", msg.ID)
 	}
@@ -324,20 +324,26 @@ func (r *ChatRepository) cacheMessage(msg *model.Message) {
 }
 
 func (r *ChatRepository) GetMessages(convID string, query string, limit int, offset int, beforeID string, afterID string, afterSeq uint64) ([]model.Message, error) {
+	var cacheMsgs []model.Message
 	// 尝试从缓存读取 (仅针对第一页无搜索条件的请求)
 	if query == "" && offset == 0 && beforeID == "" && afterID == "" && afterSeq == 0 && r.Redis != nil {
 		key := fmt.Sprintf("chat:cache:%s", convID)
 		cached, err := r.Redis.LRange(r.ctx, key, 0, int64(limit-1)).Result()
 		if err == nil && len(cached) > 0 {
-			var msgs []model.Message
 			for _, item := range cached {
 				var m model.Message
 				if err := json.Unmarshal([]byte(item), &m); err == nil {
-					msgs = append(msgs, m)
+					cacheMsgs = append(cacheMsgs, m)
 				}
 			}
-			if len(msgs) > 0 {
-				return msgs, nil
+			// 如果缓存的消息已经足够满足limit，直接返回
+			if len(cacheMsgs) >= limit {
+				return cacheMsgs, nil
+			}
+			// 如果缓存不足，以最后一条缓存消息为起点，调整参数去数据库补齐
+			if len(cacheMsgs) > 0 {
+				beforeID = cacheMsgs[len(cacheMsgs)-1].ID
+				limit = limit - len(cacheMsgs)
 			}
 		}
 	}
@@ -384,6 +390,11 @@ func (r *ChatRepository) GetMessages(convID string, query string, limit int, off
 		for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
 			msgs[i], msgs[j] = msgs[j], msgs[i]
 		}
+	}
+
+	// 合并缓存和数据库的结果
+	if len(cacheMsgs) > 0 {
+		return append(cacheMsgs, msgs...), err
 	}
 
 	return msgs, err

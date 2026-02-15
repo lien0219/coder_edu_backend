@@ -44,6 +44,10 @@ type StorageConfig struct {
 	MinioAccessID string `mapstructure:"minio_access_key"`
 	MinioSecret   string `mapstructure:"minio_secret_key"`
 	MinioBucket   string `mapstructure:"minio_bucket"`
+	OSSEndpoint   string `mapstructure:"oss_endpoint"`
+	OSSAccessKey  string `mapstructure:"oss_access_key"`
+	OSSSecretKey  string `mapstructure:"oss_secret_key"`
+	OSSBucket     string `mapstructure:"oss_bucket"`
 }
 type TracingConfig struct {
 	Enabled           bool

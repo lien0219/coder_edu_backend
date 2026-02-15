@@ -184,7 +184,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 	s.dashboard = service.NewDashboardService(repos.user, repos.task, repos.resource, repos.goal, s.motivation)
 	s.learning = service.NewLearningService(repos.module, repos.task, repos.resource, repos.progress, repos.learningLog, repos.quiz, cfg, db)
 	s.achievement = service.NewAchievementService(repos.achievement, repos.user, repos.goal)
-	s.community = service.NewCommunityService(repos.post, repos.comment, repos.question, repos.answer, repos.user, repos.communityResource, rdb)
+	s.community = service.NewCommunityService(repos.post, repos.comment, repos.question, repos.answer, repos.user, repos.communityResource, rdb, cfg)
 	s.analytics = service.NewAnalyticsService(repos.progress, repos.session, repos.skill, repos.learningLog, repos.recommendation, repos.levelAttempt, db)
 	s.user = service.NewUserServiceWithDB(repos.user, repos.checkin, db)
 

@@ -6,10 +6,12 @@ import (
 	"coder_edu_backend/internal/repository"
 	"coder_edu_backend/internal/util"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"path/filepath"
 	"time"
 
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gin-gonic/gin"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -40,6 +42,8 @@ func (s *ContentService) UploadResource(c *gin.Context, file *multipart.FileHead
 		return s.uploadLocal(c, file, resource)
 	case "minio":
 		return s.uploadMinio(c, file, resource)
+	case "oss":
+		return s.uploadOSS(c, file, resource)
 	default:
 		return errors.New("unsupported storage type")
 	}
@@ -81,5 +85,34 @@ func (s *ContentService) uploadMinio(c *gin.Context, file *multipart.FileHeader,
 	}
 
 	resource.URL = "/" + s.Cfg.Storage.MinioBucket + "/" + filename
+	return s.ResourceRepo.Create(resource)
+}
+
+func (s *ContentService) uploadOSS(c *gin.Context, file *multipart.FileHeader, resource *model.Resource) error {
+	client, err := oss.New(s.Cfg.Storage.OSSEndpoint, s.Cfg.Storage.OSSAccessKey, s.Cfg.Storage.OSSSecretKey)
+	if err != nil {
+		return err
+	}
+
+	bucket, err := client.Bucket(s.Cfg.Storage.OSSBucket)
+	if err != nil {
+		return err
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	ext := filepath.Ext(file.Filename)
+	filename := time.Now().Format("20060102150405") + "_" + util.GenerateRandomString(6) + ext
+
+	err = bucket.PutObject(filename, src)
+	if err != nil {
+		return err
+	}
+
+	resource.URL = fmt.Sprintf("https://%s.%s/%s", s.Cfg.Storage.OSSBucket, s.Cfg.Storage.OSSEndpoint, filename)
 	return s.ResourceRepo.Create(resource)
 }

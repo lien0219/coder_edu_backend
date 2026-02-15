@@ -1,6 +1,7 @@
 package service
 
 import (
+	"coder_edu_backend/internal/config"
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
 	"context"
@@ -20,6 +21,7 @@ type CommunityService struct {
 	UserRepo     *repository.UserRepository
 	ResourceRepo *repository.CommunityResourceRepository
 	Redis        *redis.Client
+	Cfg          *config.Config
 }
 
 func NewCommunityService(
@@ -30,6 +32,7 @@ func NewCommunityService(
 	userRepo *repository.UserRepository,
 	resourceRepo *repository.CommunityResourceRepository,
 	rdb *redis.Client,
+	cfg *config.Config,
 ) *CommunityService {
 	return &CommunityService{
 		PostRepo:     postRepo,
@@ -39,6 +42,7 @@ func NewCommunityService(
 		UserRepo:     userRepo,
 		ResourceRepo: resourceRepo,
 		Redis:        rdb,
+		Cfg:          cfg,
 	}
 }
 

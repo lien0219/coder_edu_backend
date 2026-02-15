@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gin-gonic/gin"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -174,6 +175,32 @@ func (c *ContentController) UploadIcon(ctx *gin.Context) {
 			return
 		}
 		url = "/" + c.ContentService.Cfg.Storage.MinioBucket + "/" + filename
+	case "oss":
+		client, err := oss.New(c.ContentService.Cfg.Storage.OSSEndpoint, c.ContentService.Cfg.Storage.OSSAccessKey, c.ContentService.Cfg.Storage.OSSSecretKey)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		bucket, err := client.Bucket(c.ContentService.Cfg.Storage.OSSBucket)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		defer src.Close()
+
+		err = bucket.PutObject(filename, src)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		url = fmt.Sprintf("https://%s.%s/%s", c.ContentService.Cfg.Storage.OSSBucket, c.ContentService.Cfg.Storage.OSSEndpoint, filename)
 	default:
 		util.InternalServerError(ctx)
 		return
@@ -325,6 +352,47 @@ func (c *ContentController) UploadVideo(ctx *gin.Context) {
 			return
 		}
 		url = "/" + c.ContentService.Cfg.Storage.MinioBucket + "/" + filename
+	case "oss":
+		// 对于OSS存储，也需要先保存到本地临时文件进行FFmpeg处理
+		tempDir := filepath.Join(c.ContentService.Cfg.Storage.LocalPath, "temp")
+		if err := os.MkdirAll(tempDir, 0755); err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		tempFilename := fmt.Sprintf("temp_video_%d%s", time.Now().UnixNano(), ext)
+		videoPath = filepath.Join(tempDir, tempFilename)
+
+		if err := ctx.SaveUploadedFile(file, videoPath); err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		client, err := oss.New(c.ContentService.Cfg.Storage.OSSEndpoint, c.ContentService.Cfg.Storage.OSSAccessKey, c.ContentService.Cfg.Storage.OSSSecretKey)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		bucket, err := client.Bucket(c.ContentService.Cfg.Storage.OSSBucket)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		src, err := os.Open(videoPath)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		defer src.Close()
+
+		err = bucket.PutObject(filename, src)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		url = fmt.Sprintf("https://%s.%s/%s", c.ContentService.Cfg.Storage.OSSBucket, c.ContentService.Cfg.Storage.OSSEndpoint, filename)
 	default:
 		util.InternalServerError(ctx)
 		return
@@ -358,6 +426,16 @@ func (c *ContentController) UploadVideo(ctx *gin.Context) {
 
 		thumbnailPath = filepath.Join(thumbnailDir, filepath.Base(thumbnailFilename))
 		thumbnailURL = "/" + c.ContentService.Cfg.Storage.MinioBucket + "/" + thumbnailFilename
+	case "oss":
+		// 对于OSS存储，缩略图先保存到本地
+		thumbnailDir := filepath.Join(c.ContentService.Cfg.Storage.LocalPath, "thumbnails")
+		if err := os.MkdirAll(thumbnailDir, 0755); err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		thumbnailPath = filepath.Join(thumbnailDir, filepath.Base(thumbnailFilename))
+		thumbnailURL = fmt.Sprintf("https://%s.%s/%s", c.ContentService.Cfg.Storage.OSSBucket, c.ContentService.Cfg.Storage.OSSEndpoint, thumbnailFilename)
 	}
 
 	// 使用FFmpeg生成缩略图（从视频3秒的位置抓取一帧）
@@ -384,6 +462,19 @@ func (c *ContentController) UploadVideo(ctx *gin.Context) {
 			minioClient.PutObject(ctx, c.ContentService.Cfg.Storage.MinioBucket, thumbnailFilename,
 				thumbnailFile, thumbnailInfo.Size(), minio.PutObjectOptions{ContentType: "image/jpeg"})
 		}
+	} else if c.ContentService.Cfg.Storage.Type == "oss" {
+		// 如果使用OSS，上传生成的缩略图
+		client, _ := oss.New(c.ContentService.Cfg.Storage.OSSEndpoint, c.ContentService.Cfg.Storage.OSSAccessKey, c.ContentService.Cfg.Storage.OSSSecretKey)
+		bucket, _ := client.Bucket(c.ContentService.Cfg.Storage.OSSBucket)
+
+		thumbnailFile, err := os.Open(thumbnailPath)
+		if err != nil {
+			// 上传失败，使用默认缩略图
+			thumbnailURL = fmt.Sprintf("https://%s.%s/thumbnails/default-video-thumbnail.jpg", c.ContentService.Cfg.Storage.OSSBucket, c.ContentService.Cfg.Storage.OSSEndpoint)
+		} else {
+			defer thumbnailFile.Close()
+			bucket.PutObject(thumbnailFilename, thumbnailFile)
+		}
 	}
 
 	// 使用FFmpeg获取视频时长
@@ -394,14 +485,14 @@ func (c *ContentController) UploadVideo(ctx *gin.Context) {
 	}
 
 	// 如果是临时文件，清理
-	if c.ContentService.Cfg.Storage.Type == "minio" {
+	if c.ContentService.Cfg.Storage.Type == "minio" || c.ContentService.Cfg.Storage.Type == "oss" {
 		go func() {
-			time.Sleep(5 * time.Second) // 延迟清理，确保FFmpeg处理完成
+			time.Sleep(5 * time.Second)
 			os.Remove(videoPath)
 		}()
 	}
 
-	// 创建资源记录
+	// 资源记录
 	resource := &model.Resource{
 		Title:       req.Title,
 		Description: req.Description,
@@ -574,11 +665,37 @@ func (c *ContentController) UploadVideoChunk(ctx *gin.Context) {
 			}
 
 			finalURL = "/" + c.ContentService.Cfg.Storage.MinioBucket + "/" + filename
+		} else if c.ContentService.Cfg.Storage.Type == "oss" {
+			client, err := oss.New(c.ContentService.Cfg.Storage.OSSEndpoint, c.ContentService.Cfg.Storage.OSSAccessKey, c.ContentService.Cfg.Storage.OSSSecretKey)
+			if err != nil {
+				util.InternalServerError(ctx)
+				return
+			}
+
+			bucket, err := client.Bucket(c.ContentService.Cfg.Storage.OSSBucket)
+			if err != nil {
+				util.InternalServerError(ctx)
+				return
+			}
+
+			file, err := os.Open(finalPath)
+			if err != nil {
+				util.InternalServerError(ctx)
+				return
+			}
+			defer file.Close()
+
+			err = bucket.PutObject(filename, file)
+			if err != nil {
+				util.InternalServerError(ctx)
+				return
+			}
+
+			finalURL = fmt.Sprintf("https://%s.%s/%s", c.ContentService.Cfg.Storage.OSSBucket, c.ContentService.Cfg.Storage.OSSEndpoint, filename)
 		}
 
 		// 清理临时目录和进度记录
 		go func() {
-			// 延迟清理，确保合并操作完成
 			time.Sleep(5 * time.Second)
 			os.RemoveAll(tempDir)
 			progressMutex.Lock()

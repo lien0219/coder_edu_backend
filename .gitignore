@@ -21,7 +21,7 @@ Dockerfile.prod
 /docker-compose.yml
 /docs/
 /api/swagger/
-/scripts/
+.secrets.json
 /icons/
 /thumbnails/
 /videos/

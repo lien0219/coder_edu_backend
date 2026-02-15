@@ -3,12 +3,18 @@ package controller
 import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
+	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gin-gonic/gin"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type CommunityController struct {
@@ -627,22 +633,83 @@ func (c *CommunityController) UploadResourceFile(ctx *gin.Context) {
 		return
 	}
 
-	// 检查目录是否存在
-	if _, err := os.Stat("resource_file"); os.IsNotExist(err) {
-		os.MkdirAll("resource_file", os.ModePerm)
-	}
+	filename := "community/" + strconv.FormatInt(time.Now().Unix(), 10) + "_" + strings.ReplaceAll(file.Filename, " ", "-")
+	var fileURL string
 
-	// 生成文件名: time_originalName
-	filename := strconv.FormatInt(time.Now().Unix(), 10) + "_" + file.Filename
-	filepath := "resource_file/" + filename
+	switch c.CommunityService.Cfg.Storage.Type {
+	case "local":
+		uploadDir := filepath.Join(c.CommunityService.Cfg.Storage.LocalPath, "community")
+		if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+			os.MkdirAll(uploadDir, os.ModePerm)
+		}
 
-	if err := ctx.SaveUploadedFile(file, filepath); err != nil {
-		util.LogInternalError(ctx, err)
+		filepath := filepath.Join(c.CommunityService.Cfg.Storage.LocalPath, filename)
+		if err := ctx.SaveUploadedFile(file, filepath); err != nil {
+			util.LogInternalError(ctx, err)
+			return
+		}
+		fileURL = "/uploads/" + filename
+
+	case "minio":
+		minioClient, err := minio.New(c.CommunityService.Cfg.Storage.MinioEndpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(c.CommunityService.Cfg.Storage.MinioAccessID, c.CommunityService.Cfg.Storage.MinioSecret, ""),
+			Secure: false,
+		})
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		defer src.Close()
+
+		_, err = minioClient.PutObject(ctx, c.CommunityService.Cfg.Storage.MinioBucket, filename, src, file.Size, minio.PutObjectOptions{
+			ContentType: file.Header.Get("Content-Type"),
+		})
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		fileURL = "/" + c.CommunityService.Cfg.Storage.MinioBucket + "/" + filename
+
+	case "oss":
+		client, err := oss.New(c.CommunityService.Cfg.Storage.OSSEndpoint, c.CommunityService.Cfg.Storage.OSSAccessKey, c.CommunityService.Cfg.Storage.OSSSecretKey)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		bucket, err := client.Bucket(c.CommunityService.Cfg.Storage.OSSBucket)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		defer src.Close()
+
+		err = bucket.PutObject(filename, src)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		fileURL = fmt.Sprintf("https://%s.%s/%s", c.CommunityService.Cfg.Storage.OSSBucket, c.CommunityService.Cfg.Storage.OSSEndpoint, filename)
+
+	default:
+		util.InternalServerError(ctx)
 		return
 	}
 
 	util.Success(ctx, gin.H{
-		"url": "/api/community/resources/files/" + filename,
+		"url": fileURL,
 	})
 }
 
@@ -660,18 +727,35 @@ func (c *CommunityController) DownloadResource(ctx *gin.Context) {
 		return
 	}
 
-	// 这里的 fileURL 是 /api/community/resources/files/xxx
-	// 我们需要提取文件名并从本地读取
-	parts := strings.Split(fileURL, "/")
-	filename := parts[len(parts)-1]
-	filepath := "resource_file/" + filename
-
-	if _, err := os.Stat(filepath); os.IsNotExist(err) {
-		util.BadRequest(ctx, "文件不存在")
+	if strings.HasPrefix(fileURL, "http") {
+		ctx.Redirect(http.StatusFound, fileURL)
 		return
 	}
 
-	ctx.File(filepath)
+	// 如果是本地路径或MinIO路径
+	// 旧的本地路径逻辑兼容: /api/community/resources/files/xxx -> resource_file/xxx
+	if strings.HasPrefix(fileURL, "/api/community/resources/files/") {
+		filename := strings.TrimPrefix(fileURL, "/api/community/resources/files/")
+		filepath := "resource_file/" + filename
+		if _, err := os.Stat(filepath); err == nil {
+			ctx.File(filepath)
+			return
+		}
+	}
+
+	// 新的本地路径逻辑: /uploads/xxx -> ./uploads/xxx
+	if strings.HasPrefix(fileURL, "/uploads/") {
+		filename := strings.TrimPrefix(fileURL, "/uploads/")
+		filepath := filepath.Join(c.CommunityService.Cfg.Storage.LocalPath, filename)
+		if _, err := os.Stat(filepath); err == nil {
+			ctx.File(filepath)
+			return
+		}
+	}
+
+	// 其他情况（如 MinIO），如果配置了静态服务则可以访问，或者这里可以实现 MinIO 下载逻辑
+	// 暂时重定向
+	ctx.Redirect(http.StatusFound, fileURL)
 }
 
 // @Summary 删除资源

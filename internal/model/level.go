@@ -36,8 +36,18 @@ type Level struct {
 	AvailableTo        *time.Time      `json:"availableTo,omitempty"`
 
 	CurrentVersion uint `gorm:"default:0" json:"currentVersion"`
+
+	Questions []LevelQuestion `gorm:"foreignKey:LevelID" json:"questions,omitempty"`
 }
 
 func (Level) TableName() string {
 	return "levels"
+}
+
+// LevelRankingEntry 排行榜条目结构
+type LevelRankingEntry struct {
+	Ranking        int    `json:"ranking"`
+	Username       string `json:"username"`
+	BestLevelTitle string `json:"bestLevelTitle"`
+	TotalScore     int    `json:"totalScore"`
 }

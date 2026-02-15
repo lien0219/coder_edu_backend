@@ -2,6 +2,7 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -222,11 +223,10 @@ func (r *LevelRepository) ListLevelsForStudent(userID uint, search string, diffi
 	query := r.DB.Model(&model.Level{}).Where("is_published = ?", true)
 
 	// 可见性筛选
-	query = query.Where("visible_scope = ? OR (visible_scope = ? AND JSON_CONTAINS(visible_to, JSON_QUOTE(?)))",
+	query = query.Where("visible_scope = ? OR (visible_scope = ? AND JSON_CONTAINS(visible_to, CAST(? AS CHAR)))",
 		"all", "specific", userID)
 
-	// 时间范围筛选 - 如果老师或管理员没有指定特定学生（visible_scope为"all"），则显示所有已发布关卡
-	// 如果指定了特定学生（visible_scope为"specific"），则需要满足时间范围要求
+	// 时间范围筛选
 	now := time.Now()
 	query = query.Where("visible_scope = ? OR ((available_from IS NULL OR available_from <= ?) AND (available_to IS NULL OR available_to >= ?))",
 		"all", now, now)
@@ -246,8 +246,231 @@ func (r *LevelRepository) ListLevelsForStudent(userID uint, search string, diffi
 		return nil, 0, err
 	}
 
-	// 分页查询
+	// 分页查询并预加载题目
 	offset := (page - 1) * limit
-	err := query.Order("created_at desc").Offset(offset).Limit(limit).Find(&levels).Error
+	err := query.Preload("Questions").Order("created_at desc").Offset(offset).Limit(limit).Find(&levels).Error
 	return levels, int(total), err
+}
+
+func (r *LevelRepository) GetAttemptsByUserAndLevels(userID uint, levelIDs []uint) ([]model.LevelAttempt, error) {
+	var attempts []model.LevelAttempt
+	err := r.DB.Where("user_id = ? AND level_id IN ?", userID, levelIDs).Find(&attempts).Error
+	return attempts, err
+}
+
+func (r *LevelRepository) GetLevelAbilities(levelID uint) ([]model.LevelAbility, error) {
+	var abilities []model.LevelAbility
+	err := r.DB.Where("level_id = ?", levelID).Find(&abilities).Error
+	return abilities, err
+}
+
+func (r *LevelRepository) GetLevelKnowledge(levelID uint) ([]model.LevelKnowledge, error) {
+	var knowledge []model.LevelKnowledge
+	err := r.DB.Where("level_id = ?", levelID).Find(&knowledge).Error
+	return knowledge, err
+}
+
+func (r *LevelRepository) CreateAttempt(attempt *model.LevelAttempt) error {
+	return r.DB.Create(attempt).Error
+}
+
+func (r *LevelRepository) FindAttemptByID(id uint) (*model.LevelAttempt, error) {
+	var attempt model.LevelAttempt
+	err := r.DB.First(&attempt, id).Error
+	return &attempt, err
+}
+
+func (r *LevelRepository) UpdateAttempt(attempt *model.LevelAttempt) error {
+	return r.DB.Save(attempt).Error
+}
+
+func (r *LevelRepository) CreateAttemptAnswers(answers []model.LevelAttemptAnswer) error {
+	if len(answers) == 0 {
+		return nil
+	}
+	return r.DB.Create(&answers).Error
+}
+
+func (r *LevelRepository) CreateAttemptQuestionTimes(times []model.LevelAttemptQuestionTime) error {
+	if len(times) == 0 {
+		return nil
+	}
+	return r.DB.Create(&times).Error
+}
+
+func (r *LevelRepository) GetAttemptStats(levelID uint, start *time.Time, end *time.Time, studentID uint) (int64, float64, float64, int64, error) {
+	query := r.DB.Model(&model.LevelAttempt{}).
+		Joins("JOIN users ON users.id = level_attempts.user_id").
+		Where("level_attempts.level_id = ? AND level_attempts.deleted_at IS NULL", levelID)
+
+	if studentID == 0 {
+		query = query.Where("users.disabled = ?", false)
+	} else {
+		query = query.Where("level_attempts.user_id = ?", studentID)
+	}
+
+	if start != nil {
+		query = query.Where("level_attempts.started_at >= ?", *start)
+	}
+	if end != nil {
+		query = query.Where("level_attempts.started_at <= ?", *end)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, 0, 0, 0, err
+	}
+
+	var avgScore float64
+	var avgTime float64
+	var successCount int64
+	if total > 0 {
+		if err := query.Select("AVG(score)").Scan(&avgScore).Error; err != nil {
+			return 0, 0, 0, 0, err
+		}
+		if err := query.Select("AVG(total_time_seconds)").Scan(&avgTime).Error; err != nil {
+			return 0, 0, 0, 0, err
+		}
+		if err := query.Select("SUM(success)").Scan(&successCount).Error; err != nil {
+			return 0, 0, 0, 0, err
+		}
+	}
+	return total, avgScore, avgTime, successCount, nil
+}
+
+func (r *LevelRepository) GetLevelRanking(limit int) ([]model.LevelRankingEntry, error) {
+	query := `
+		WITH user_level_best_scores AS (
+			SELECT
+				la.user_id,
+				la.level_id,
+				MAX(la.score) as best_score
+			FROM level_attempts la
+			WHERE la.success = true AND la.deleted_at IS NULL
+			GROUP BY la.user_id, la.level_id
+		),
+		user_stats AS (
+			SELECT
+				u.id as user_id,
+				u.name as username,
+				SUM(ulbs.best_score) as total_score,
+				MAX(ulbs.best_score) as max_score
+			FROM users u
+			INNER JOIN user_level_best_scores ulbs ON u.id = ulbs.user_id
+			WHERE u.role = 'student' AND u.deleted_at IS NULL AND u.disabled = false
+			GROUP BY u.id, u.name
+			HAVING SUM(ulbs.best_score) > 0
+		),
+		user_best_levels AS (
+			SELECT
+				us.user_id,
+				us.username,
+				us.total_score,
+				l.title as best_level_title,
+				ROW_NUMBER() OVER (PARTITION BY us.user_id ORDER BY ulbs.best_score DESC) as rn
+			FROM user_stats us
+			INNER JOIN user_level_best_scores ulbs ON us.user_id = ulbs.user_id AND ulbs.best_score = us.max_score
+			INNER JOIN levels l ON ulbs.level_id = l.id
+		)
+		SELECT
+			ROW_NUMBER() OVER (ORDER BY total_score DESC, user_id ASC) as ranking,
+			username,
+			best_level_title,
+			total_score
+		FROM user_best_levels
+		WHERE rn = 1
+		ORDER BY total_score DESC, user_id ASC
+	`
+
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	var rankings []model.LevelRankingEntry
+	err := r.DB.Raw(query).Scan(&rankings).Error
+	return rankings, err
+}
+
+func (r *LevelRepository) GetUserLevelTotalScore(userID uint) (int, error) {
+	query := `
+		WITH user_level_best_scores AS (
+			SELECT
+				la.user_id,
+				la.level_id,
+				MAX(la.score) as best_score
+			FROM level_attempts la
+			WHERE la.success = true AND la.user_id = ? AND la.deleted_at IS NULL
+			GROUP BY la.user_id, la.level_id
+		)
+		SELECT COALESCE(SUM(best_score), 0) as total_score
+		FROM user_level_best_scores
+	`
+
+	var totalScore int
+	err := r.DB.Raw(query, userID).Scan(&totalScore).Error
+	return totalScore, err
+}
+
+func (r *LevelRepository) GetUserWeeklyTimeHours(userID uint) (float64, error) {
+	query := `
+		SELECT COALESCE(SUM(total_time_seconds) / 3600.0, 0) as weekly_time_hours
+		FROM level_attempts
+		WHERE user_id = ?
+			AND YEARWEEK(started_at, 1) = YEARWEEK(NOW(), 1)
+			AND ended_at IS NOT NULL
+			AND deleted_at IS NULL
+	`
+	var hours float64
+	err := r.DB.Raw(query, userID).Scan(&hours).Error
+	return hours, err
+}
+
+func (r *LevelRepository) GetUserAverageSuccessRate(userID uint) (float64, error) {
+	query := `
+		SELECT
+			CASE
+				WHEN COUNT(*) = 0 THEN 0
+				ELSE ROUND((SUM(CASE WHEN success = true THEN 1 ELSE 0 END) * 100.0) / COUNT(*), 2)
+			END as success_rate
+		FROM level_attempts
+		WHERE user_id = ? AND ended_at IS NOT NULL AND deleted_at IS NULL
+	`
+	var rate float64
+	err := r.DB.Raw(query, userID).Scan(&rate).Error
+	return rate, err
+}
+
+func (r *LevelRepository) GetUserSolvedChallengesCount(userID uint) (int, error) {
+	query := `
+		SELECT COUNT(DISTINCT level_id) as solved_count
+		FROM level_attempts
+		WHERE user_id = ? AND success = true AND deleted_at IS NULL
+	`
+	var count int
+	err := r.DB.Raw(query, userID).Scan(&count).Error
+	return count, err
+}
+
+func (r *LevelRepository) GetLevelAbilitiesWithDetails(levelID uint) ([]model.Ability, error) {
+	var abilities []model.Ability
+	err := r.DB.Table("abilities").
+		Joins("JOIN level_abilities ON level_abilities.ability_id = abilities.id").
+		Where("level_abilities.level_id = ?", levelID).
+		Find(&abilities).Error
+	return abilities, err
+}
+
+func (r *LevelRepository) GetLevelKnowledgeWithDetails(levelID uint) ([]model.KnowledgeTag, error) {
+	var tags []model.KnowledgeTag
+	err := r.DB.Table("knowledge_tags").
+		Joins("JOIN level_knowledge ON level_knowledge.knowledge_tag_id = knowledge_tags.id").
+		Where("level_knowledge.level_id = ?", levelID).
+		Find(&tags).Error
+	return tags, err
+}
+
+func (r *LevelRepository) GetCreator(creatorID uint) (*model.User, error) {
+	var user model.User
+	err := r.DB.First(&user, creatorID).Error
+	return &user, err
 }

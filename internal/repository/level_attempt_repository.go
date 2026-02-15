@@ -157,3 +157,39 @@ func (r *LevelAttemptRepository) GetLevelAttemptsHistory(userID, levelID uint, l
 		Find(&attempts).Error
 	return attempts, err
 }
+
+func (r *LevelAttemptRepository) GetLevelStats(levelID uint) (total int64, successful int64, totalSuccessfulScore int, err error) {
+	err = r.DB.Model(&model.LevelAttempt{}).Where("level_id = ? AND deleted_at IS NULL", levelID).Count(&total).Error
+	if err != nil {
+		return
+	}
+	if total == 0 {
+		return
+	}
+	err = r.DB.Model(&model.LevelAttempt{}).Where("level_id = ? AND success = ? AND deleted_at IS NULL", levelID, true).Count(&successful).Error
+	if err != nil {
+		return
+	}
+	if successful > 0 {
+		err = r.DB.Model(&model.LevelAttempt{}).Where("level_id = ? AND success = ? AND deleted_at IS NULL", levelID, true).Select("SUM(score)").Scan(&totalSuccessfulScore).Error
+	}
+	return
+}
+
+func (r *LevelAttemptRepository) GetTotalManualScore(attemptID uint) (int64, error) {
+	var total int64
+	err := r.DB.Model(&model.LevelAttemptQuestionScore{}).Where("attempt_id = ?", attemptID).Select("SUM(score)").Scan(&total).Error
+	return total, err
+}
+
+func (r *LevelAttemptRepository) GetAnswerByQuestion(attemptID, questionID uint) (*model.LevelAttemptAnswer, error) {
+	var ans model.LevelAttemptAnswer
+	err := r.DB.Where("attempt_id = ? AND question_id = ?", attemptID, questionID).First(&ans).Error
+	return &ans, err
+}
+
+func (r *LevelAttemptRepository) ListNeedingManual(levelID uint) ([]model.LevelAttempt, error) {
+	var attempts []model.LevelAttempt
+	err := r.DB.Where("level_id = ? AND needs_manual = ?", levelID, true).Find(&attempts).Error
+	return attempts, err
+}

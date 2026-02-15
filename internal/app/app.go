@@ -205,7 +205,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 		db,
 	)
 
-	s.level = service.NewLevelService(repos.level, db)
+	s.level = service.NewLevelService(repos.level, repos.levelAttempt, db)
 	s.knowledgeTag = service.NewKnowledgeTagService(repos.knowledgeTag)
 	s.suggestion = service.NewSuggestionService(repos.suggestion, repos.level, repos.levelAttempt)
 	s.assessment = service.NewAssessmentService(repos.assessment)

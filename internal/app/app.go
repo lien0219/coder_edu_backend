@@ -82,6 +82,7 @@ type services struct {
 	community            *service.CommunityService
 	analytics            *service.AnalyticsService
 	user                 *service.UserService
+	captcha              *service.CaptchaService
 	task                 *service.TaskService
 	cProgrammingResource *service.CProgrammingResourceService
 	level                *service.LevelService
@@ -183,6 +184,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 	s.community = service.NewCommunityService(repos.post, repos.comment, repos.question, repos.answer, repos.user, repos.communityResource, rdb, cfg, s.storage)
 	s.analytics = service.NewAnalyticsService(repos.progress, repos.session, repos.skill, repos.learningLog, repos.recommendation, repos.levelAttempt, db)
 	s.user = service.NewUserServiceWithDB(repos.user, repos.checkin, db)
+	s.captcha = service.NewCaptchaService(rdb, cfg)
 
 	s.task = service.NewTaskService(
 		repos.task,
@@ -232,7 +234,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 
 func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
 	return &controllers{
-		auth:           controller.NewAuthController(s.auth, s.user),
+		auth:           controller.NewAuthController(s.auth, s.user, s.captcha),
 		content:        controller.NewContentController(s.content),
 		motivation:     controller.NewMotivationController(s.motivation),
 		dashboard:      controller.NewDashboardController(s.dashboard),

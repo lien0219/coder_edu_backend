@@ -2486,6 +2486,93 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/captcha/check-skip": {
+            "get": {
+                "description": "检查请求中的 trust_device_token Cookie 是否有效",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证"
+                ],
+                "summary": "检查是否可以跳过验证码",
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/captcha/verify": {
+            "post": {
+                "description": "后端根据滑动轨迹判断是否为真人",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证"
+                ],
+                "summary": "验证码校验",
+                "parameters": [
+                    {
+                        "description": "轨迹数据",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.CaptchaVerifyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "验证通过",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "验证失败",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/c-programming/categories/{categoryId}/questions": {
             "get": {
                 "security": [
@@ -6720,6 +6807,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "未授权",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "验证码错误",
                         "schema": {
                             "$ref": "#/definitions/util.Response"
                         }
@@ -11266,6 +11359,20 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "controller.CaptchaVerifyRequest": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "integer"
+                },
+                "trajectory": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.TrajectoryPoint"
+                    }
+                }
+            }
+        },
         "controller.CreateGroupRequest": {
             "type": "object",
             "required": [
@@ -11336,11 +11443,17 @@ const docTemplate = `{
                 "password"
             ],
             "properties": {
+                "captcha_token": {
+                    "type": "string"
+                },
                 "email": {
                     "type": "string"
                 },
                 "password": {
                     "type": "string"
+                },
+                "rememberMe": {
+                    "type": "boolean"
                 }
             }
         },
@@ -12270,6 +12383,35 @@ const docTemplate = `{
         "model.User": {
             "type": "object",
             "properties": {
+                "Disabled": {
+                    "type": "boolean"
+                },
+                "Email": {
+                    "type": "string"
+                },
+                "Language": {
+                    "type": "string"
+                },
+                "LastLogin": {
+                    "type": "string"
+                },
+                "LastSeen": {
+                    "type": "string"
+                },
+                "Name": {
+                    "type": "string"
+                },
+                "Points": {
+                    "description": "独立积分系统（课中知识点测试积分）",
+                    "type": "integer"
+                },
+                "Role": {
+                    "$ref": "#/definitions/model.UserRole"
+                },
+                "XP": {
+                    "description": "总经验/等级积分",
+                    "type": "integer"
+                },
                 "avatar": {
                     "type": "string"
                 },
@@ -12279,43 +12421,11 @@ const docTemplate = `{
                 "createdAt": {
                     "type": "string"
                 },
-                "disabled": {
-                    "type": "boolean"
-                },
-                "email": {
-                    "type": "string"
-                },
                 "id": {
                     "type": "integer"
                 },
-                "language": {
-                    "type": "string"
-                },
-                "lastLogin": {
-                    "type": "string"
-                },
-                "lastSeen": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "password": {
-                    "type": "string"
-                },
-                "points": {
-                    "description": "独立积分系统（课中知识点测试积分）",
-                    "type": "integer"
-                },
-                "role": {
-                    "$ref": "#/definitions/model.UserRole"
-                },
                 "updatedAt": {
                     "type": "string"
-                },
-                "xp": {
-                    "description": "总经验/等级积分",
-                    "type": "integer"
                 }
             }
         },
@@ -13189,6 +13299,20 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/service.ExerciseSubmissionItem"
                     }
+                }
+            }
+        },
+        "service.TrajectoryPoint": {
+            "type": "object",
+            "properties": {
+                "t": {
+                    "type": "integer"
+                },
+                "x": {
+                    "type": "integer"
+                },
+                "y": {
+                    "type": "integer"
                 }
             }
         },

@@ -1,5 +1,14 @@
 basePath: /api
 definitions:
+  controller.CaptchaVerifyRequest:
+    properties:
+      duration:
+        type: integer
+      trajectory:
+        items:
+          $ref: '#/definitions/service.TrajectoryPoint'
+        type: array
+    type: object
   controller.CreateGroupRequest:
     properties:
       memberIds:
@@ -45,10 +54,14 @@ definitions:
     type: object
   controller.LoginRequest:
     properties:
+      captcha_token:
+        type: string
       email:
         type: string
       password:
         type: string
+      rememberMe:
+        type: boolean
     required:
     - email
     - password
@@ -685,38 +698,36 @@ definitions:
     - TaskItemExercise
   model.User:
     properties:
+      Disabled:
+        type: boolean
+      Email:
+        type: string
+      Language:
+        type: string
+      LastLogin:
+        type: string
+      LastSeen:
+        type: string
+      Name:
+        type: string
+      Points:
+        description: 独立积分系统（课中知识点测试积分）
+        type: integer
+      Role:
+        $ref: '#/definitions/model.UserRole'
+      XP:
+        description: 总经验/等级积分
+        type: integer
       avatar:
         type: string
       canTakeAssessment:
         type: boolean
       createdAt:
         type: string
-      disabled:
-        type: boolean
-      email:
-        type: string
       id:
         type: integer
-      language:
-        type: string
-      lastLogin:
-        type: string
-      lastSeen:
-        type: string
-      name:
-        type: string
-      password:
-        type: string
-      points:
-        description: 独立积分系统（课中知识点测试积分）
-        type: integer
-      role:
-        $ref: '#/definitions/model.UserRole'
       updatedAt:
         type: string
-      xp:
-        description: 总经验/等级积分
-        type: integer
     type: object
   model.UserRole:
     enum:
@@ -1308,6 +1319,15 @@ definitions:
         type: array
     required:
     - knowledgePointId
+    type: object
+  service.TrajectoryPoint:
+    properties:
+      t:
+        type: integer
+      x:
+        type: integer
+      "y":
+        type: integer
     type: object
   service.UpdateGoalRequest:
     properties:
@@ -2904,6 +2924,57 @@ paths:
       summary: 学生端：提交学前测试答案
       tags:
       - 学前测试评估
+  /api/auth/captcha/check-skip:
+    get:
+      consumes:
+      - application/json
+      description: 检查请求中的 trust_device_token Cookie 是否有效
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  type: object
+              type: object
+      summary: 检查是否可以跳过验证码
+      tags:
+      - 认证
+  /api/auth/captcha/verify:
+    post:
+      consumes:
+      - application/json
+      description: 后端根据滑动轨迹判断是否为真人
+      parameters:
+      - description: 轨迹数据
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CaptchaVerifyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 验证通过
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "400":
+          description: 验证失败
+          schema:
+            $ref: '#/definitions/util.Response'
+      summary: 验证码校验
+      tags:
+      - 认证
   /api/c-programming/categories/{categoryId}/questions:
     get:
       consumes:
@@ -5536,6 +5607,10 @@ paths:
             $ref: '#/definitions/util.Response'
         "401":
           description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "403":
+          description: 验证码错误
           schema:
             $ref: '#/definitions/util.Response'
       summary: 用户登录

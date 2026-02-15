@@ -181,7 +181,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 
 	s.storage = service.NewStorageService(cfg)
 	s.auth = service.NewAuthService(repos.user, cfg)
-	s.content = service.NewContentService(repos.resource, s.storage, cfg)
+	s.content = service.NewContentService(repos.resource, s.storage, cfg, rdb)
 	s.motivation = service.NewMotivationService(repos.motivation)
 	s.dashboard = service.NewDashboardService(repos.user, repos.task, repos.resource, repos.goal, s.motivation)
 	s.learning = service.NewLearningService(repos.module, repos.task, repos.resource, repos.progress, repos.learningLog, repos.quiz, cfg, db)

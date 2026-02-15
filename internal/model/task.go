@@ -73,14 +73,15 @@ func (TeacherWeeklyTask) TableName() string {
 // TaskItem 任务项
 type TaskItem struct {
 	BaseModel
-	WeeklyTaskID uint         `gorm:"index" json:"weeklyTaskId"`
-	DayOfWeek    Weekday      `gorm:"index" json:"dayOfWeek"`
-	ItemType     TaskItemType `json:"itemType"`
-	ResourceID   uint         `json:"resourceId"`           // 视频或文章ID
-	ExerciseID   uint         `json:"exerciseId,omitempty"` // 练习题ID
-	Title        string       `json:"title"`
-	Description  string       `json:"description,omitempty"`
-	ContentType  string       `json:"contentType"` // "video", "article", "exercise"
+	WeeklyTaskID uint               `gorm:"index" json:"weeklyTaskId"`
+	WeeklyTask   *TeacherWeeklyTask `gorm:"foreignKey:WeeklyTaskID" json:"-"`
+	DayOfWeek    Weekday            `gorm:"index" json:"dayOfWeek"`
+	ItemType     TaskItemType       `json:"itemType"`
+	ResourceID   uint               `json:"resourceId"`           // 视频或文章ID
+	ExerciseID   uint               `json:"exerciseId,omitempty"` // 练习题ID
+	Title        string             `json:"title"`
+	Description  string             `json:"description,omitempty"`
+	ContentType  string             `json:"contentType"` // "video", "article", "exercise"
 }
 
 func (TaskItem) TableName() string {

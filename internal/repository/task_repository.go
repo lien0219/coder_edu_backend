@@ -120,6 +120,14 @@ func (r *TaskRepository) GetDailyTaskCompletion(userID, taskItemID uint, date ti
 	return &completion, err
 }
 
+// GetDailyTaskCompletionsByTaskItemIDs 批量获取每日任务完成记录
+func (r *TaskRepository) GetDailyTaskCompletionsByTaskItemIDs(userID uint, taskItemIDs []uint, date time.Time) ([]model.DailyTaskCompletion, error) {
+	var completions []model.DailyTaskCompletion
+	err := r.DB.Where("user_id = ? AND task_item_id IN ? AND DATE(completion_date) = DATE(?)",
+		userID, taskItemIDs, date).Find(&completions).Error
+	return completions, err
+}
+
 // UpdateDailyTaskCompletion 更新每日任务完成记录
 func (r *TaskRepository) UpdateDailyTaskCompletion(completion *model.DailyTaskCompletion) error {
 	return r.DB.Save(completion).Error
@@ -141,7 +149,8 @@ func (r *TaskRepository) GetTodayTasks(resourceModuleID uint, dayOfWeek model.We
 	var taskItems []model.TaskItem
 
 	// 查询当前周里所有模块中当天的任务（不再按 resourceModuleID 精确匹配）
-	query := r.DB.Joins("JOIN teacher_weekly_tasks ON task_items.weekly_task_id = teacher_weekly_tasks.id").
+	query := r.DB.Preload("WeeklyTask").
+		Joins("JOIN teacher_weekly_tasks ON task_items.weekly_task_id = teacher_weekly_tasks.id").
 		Where("task_items.day_of_week = ? AND teacher_weekly_tasks.week_start_date = ? AND teacher_weekly_tasks.week_end_date = ?",
 			dayOfWeek, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02"))
 
@@ -163,7 +172,8 @@ func (r *TaskRepository) GetAllTodayTasks(dayOfWeek model.Weekday) ([]model.Task
 	weekEnd := weekStart.AddDate(0, 0, 6) // 周日
 
 	var taskItems []model.TaskItem
-	query := r.DB.Joins("JOIN teacher_weekly_tasks ON task_items.weekly_task_id = teacher_weekly_tasks.id").
+	query := r.DB.Preload("WeeklyTask").
+		Joins("JOIN teacher_weekly_tasks ON task_items.weekly_task_id = teacher_weekly_tasks.id").
 		Where("task_items.day_of_week = ? AND teacher_weekly_tasks.week_start_date = ? AND teacher_weekly_tasks.week_end_date = ?",
 			dayOfWeek, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02"))
 

@@ -244,7 +244,7 @@ func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
 		achievement:    controller.NewAchievementController(s.achievement),
 		community:      controller.NewCommunityController(s.community),
 		analytics:      controller.NewAnalyticsController(s.analytics),
-		user:           controller.NewUserController(s.user),
+		user:           controller.NewUserController(s.user, a.Config),
 		cProgramming:   controller.NewCProgrammingResourceController(s.cProgrammingResource, s.content),
 		learningGoal:   controller.NewLearningGoalController(s.learningGoal),
 		task:           controller.NewTaskController(s.task),
@@ -358,6 +358,8 @@ func (a *App) registerPublicRoutes(router *gin.Engine, c *controllers) {
 
 func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	rg.GET("/profile", c.auth.GetProfile)
+	rg.PUT("/user/profile", c.user.UpdateProfile)
+	rg.POST("/user/avatar/upload", c.user.UploadAvatar)
 	rg.GET("/resources", c.content.GetResources)
 	rg.GET("/knowledge-tags", c.knowledgeTag.ListTags)
 	rg.GET("/dashboard", c.dashboard.GetDashboard)

@@ -1,25 +1,34 @@
 package controller
 
 import (
+	"coder_edu_backend/internal/config"
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gin-gonic/gin"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 // UserController 处理用户相关的HTTP请求
 type UserController struct {
 	UserService *service.UserService
+	Config      *config.Config
 }
 
 // NewUserController 创建一个新的用户控制器实例
-func NewUserController(userService *service.UserService) *UserController {
+func NewUserController(userService *service.UserService, cfg *config.Config) *UserController {
 	return &UserController{
 		UserService: userService,
+		Config:      cfg,
 	}
 }
 
@@ -32,6 +41,12 @@ type UpdateUserRequest struct {
 	Language string `json:"language"`
 	Password string `json:"password"`
 	Disabled bool   `json:"disabled"`
+}
+
+// UpdateProfileRequest 定义个人资料更新请求结构
+type UpdateProfileRequest struct {
+	Name   string `json:"name"`
+	Avatar string `json:"avatar"`
 }
 
 // GetUsers godoc
@@ -193,6 +208,144 @@ func (c *UserController) UpdateUser(ctx *gin.Context) {
 	}
 
 	updatedUser, _ := c.UserService.GetUserByID(uint(id))
+	util.Success(ctx, updatedUser)
+}
+
+// UploadAvatar godoc
+// @Summary 上传用户头像
+// @Description 上传图片文件并保存为头像
+// @Tags 用户
+// @Accept  multipart/form-data
+// @Produce  json
+// @Security ApiKeyAuth
+// @Param   avatar formData file true "头像文件"
+// @Success 200 {object} util.Response{data=map[string]string} "成功"
+// @Router /api/user/avatar/upload [post]
+func (c *UserController) UploadAvatar(ctx *gin.Context) {
+	file, err := ctx.FormFile("avatar")
+	if err != nil {
+		util.BadRequest(ctx, "头像文件是必需的")
+		return
+	}
+
+	// 验证文件类型
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	if ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".gif" && ext != ".webp" {
+		util.BadRequest(ctx, "文件格式不支持，请上传图片格式")
+		return
+	}
+
+	// 文件名
+	filename := "avatars/" + time.Now().Format("20060102150405") + "-" + util.GenerateRandomString(6) + ext
+
+	var url string
+	switch c.Config.Storage.Type {
+	case "local":
+		avatarDir := filepath.Join(c.Config.Storage.LocalPath, "avatars")
+		if _, err := os.Stat(avatarDir); os.IsNotExist(err) {
+			os.MkdirAll(avatarDir, 0755)
+		}
+
+		dst := filepath.Join(c.Config.Storage.LocalPath, filename)
+		if err := ctx.SaveUploadedFile(file, dst); err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		url = "/uploads/" + filename
+
+	case "minio":
+		minioClient, err := minio.New(c.Config.Storage.MinioEndpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(c.Config.Storage.MinioAccessID, c.Config.Storage.MinioSecret, ""),
+			Secure: false,
+		})
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		defer src.Close()
+
+		_, err = minioClient.PutObject(ctx, c.Config.Storage.MinioBucket, filename, src, file.Size, minio.PutObjectOptions{
+			ContentType: file.Header.Get("Content-Type"),
+		})
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		url = "/" + c.Config.Storage.MinioBucket + "/" + filename
+
+	case "oss":
+		client, err := oss.New(c.Config.Storage.OSSEndpoint, c.Config.Storage.OSSAccessKey, c.Config.Storage.OSSSecretKey)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		bucket, err := client.Bucket(c.Config.Storage.OSSBucket)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		defer src.Close()
+
+		err = bucket.PutObject(filename, src)
+		if err != nil {
+			util.InternalServerError(ctx)
+			return
+		}
+		url = fmt.Sprintf("https://%s.%s/%s", c.Config.Storage.OSSBucket, c.Config.Storage.OSSEndpoint, filename)
+
+	default:
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, gin.H{
+		"url": url,
+	})
+}
+
+// UpdateProfile godoc
+// @Summary 更新个人资料
+// @Description 用户更新自己的昵称或头像
+// @Tags 用户
+// @Accept  json
+// @Produce  json
+// @Security ApiKeyAuth
+// @Param   body body UpdateProfileRequest true "资料更新信息"
+// @Success 200 {object} util.Response{data=model.User} "成功"
+// @Router /api/user/profile [put]
+func (c *UserController) UpdateProfile(ctx *gin.Context) {
+	userClaims := util.GetUserFromContext(ctx)
+	if userClaims == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	var req UpdateProfileRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
+	err := c.UserService.UpdateProfile(userClaims.UserID, req.Name, req.Avatar)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	updatedUser, _ := c.UserService.GetUserByID(userClaims.UserID)
 	util.Success(ctx, updatedUser)
 }
 

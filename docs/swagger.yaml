@@ -168,6 +168,13 @@ definitions:
         example: 新的群名称
         type: string
     type: object
+  controller.UpdateProfileRequest:
+    properties:
+      avatar:
+        type: string
+      name:
+        type: string
+    type: object
   controller.UpdateTaskCompletionRequest:
     properties:
       isCompleted:
@@ -8041,6 +8048,65 @@ paths:
       summary: 获取当前周任务
       tags:
       - 任务管理
+  /api/user/avatar/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 上传图片文件并保存为头像
+      parameters:
+      - description: 头像文件
+        in: formData
+        name: avatar
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 上传用户头像
+      tags:
+      - 用户
+  /api/user/profile:
+    put:
+      consumes:
+      - application/json
+      description: 用户更新自己的昵称或头像
+      parameters:
+      - description: 资料更新信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.User'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 更新个人资料
+      tags:
+      - 用户
   /api/users/{id}/points:
     post:
       consumes:

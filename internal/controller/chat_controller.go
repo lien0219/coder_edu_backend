@@ -6,6 +6,7 @@ import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1248,6 +1249,17 @@ func (ctrl *ChatController) UploadFile(c *gin.Context) {
 		return
 	}
 	defer src.Close()
+
+	// 深度验证 MIME 类型
+	allowedTypes := []string{"image/", "video/", "audio/", "application/pdf", "text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/zip"}
+	if _, err := util.ValidateMimeType(src, allowedTypes); err != nil {
+		util.BadRequest(c, "非法的文件内容: "+err.Error())
+		return
+	}
+	// 重置读取指针
+	if seeker, ok := src.(io.Seeker); ok {
+		seeker.Seek(0, io.SeekStart)
+	}
 
 	fileURL, err := ctrl.StorageService.Upload(c, newFilename, src, file.Size, file.Header.Get("Content-Type"))
 	if err != nil {

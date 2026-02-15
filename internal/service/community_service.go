@@ -7,6 +7,7 @@ import (
 	"coder_edu_backend/internal/util"
 	"context"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"strings"
 	"time"
@@ -59,6 +60,16 @@ func (s *CommunityService) UploadResourceFile(ctx context.Context, file *multipa
 		return "", err
 	}
 	defer src.Close()
+
+	// 深度验证 MIME 类型 (允许图片、视频、PDF、文档等)
+	allowedTypes := []string{"image/", "video/", "application/pdf", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+	if _, err := util.ValidateMimeType(src, allowedTypes); err != nil {
+		return "", fmt.Errorf("非法的文件内容: %v", err)
+	}
+	// 重置读取指针
+	if seeker, ok := src.(io.Seeker); ok {
+		seeker.Seek(0, io.SeekStart)
+	}
 
 	return s.StorageService.Upload(ctx, filename, src, file.Size, file.Header.Get("Content-Type"))
 }

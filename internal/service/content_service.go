@@ -54,6 +54,16 @@ func (s *ContentService) UploadResource(c *gin.Context, file *multipart.FileHead
 	}
 	defer src.Close()
 
+	// 深度验证 MIME 类型
+	allowedTypes := []string{"application/pdf", "video/", "image/", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+	if _, err := util.ValidateMimeType(src, allowedTypes); err != nil {
+		return fmt.Errorf("非法的文件内容: %v", err)
+	}
+	// 重置读取指针
+	if seeker, ok := src.(io.Seeker); ok {
+		seeker.Seek(0, io.SeekStart)
+	}
+
 	ext := filepath.Ext(file.Filename)
 	filename := "resources/" + time.Now().Format("20060102150405") + "_" + util.GenerateRandomString(6) + ext
 
@@ -82,6 +92,15 @@ func (s *ContentService) UploadIcon(ctx context.Context, file *multipart.FileHea
 		return "", err
 	}
 	defer src.Close()
+
+	// 深度验证 MIME 类型
+	if _, err := util.ValidateMimeType(src, []string{"image/png", "image/svg+xml"}); err != nil {
+		return "", fmt.Errorf("非法的文件内容，仅允许PNG或SVG格式: %v", err)
+	}
+	// 重置读取指针
+	if seeker, ok := src.(io.Seeker); ok {
+		seeker.Seek(0, io.SeekStart)
+	}
 
 	return s.StorageService.Upload(ctx, filename, src, file.Size, file.Header.Get("Content-Type"))
 }
@@ -119,6 +138,15 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 		return nil, err
 	}
 	defer src.Close()
+
+	// 深度验证 MIME 类型
+	if _, err := util.ValidateMimeType(src, []string{"video/"}); err != nil {
+		return nil, fmt.Errorf("非法的文件内容，仅允许视频格式: %v", err)
+	}
+	// 重置读取指针
+	if seeker, ok := src.(io.Seeker); ok {
+		seeker.Seek(0, io.SeekStart)
+	}
 
 	dst, err := os.Create(videoPath)
 	if err != nil {

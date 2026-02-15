@@ -7,6 +7,7 @@ import (
 	"coder_edu_backend/internal/util"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -243,6 +244,16 @@ func (c *UserController) UploadAvatar(ctx *gin.Context) {
 		return
 	}
 	defer src.Close()
+
+	// 深度验证 MIME 类型
+	if _, err := util.ValidateMimeType(src, []string{"image/"}); err != nil {
+		util.BadRequest(ctx, "非法的文件内容，仅允许图片格式")
+		return
+	}
+	// 重置读取指针
+	if seeker, ok := src.(io.Seeker); ok {
+		seeker.Seek(0, io.SeekStart)
+	}
 
 	url, err := c.StorageService.Upload(ctx, filename, src, file.Size, file.Header.Get("Content-Type"))
 	if err != nil {

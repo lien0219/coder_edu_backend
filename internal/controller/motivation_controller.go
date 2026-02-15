@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
-	"fmt"
+	"coder_edu_backend/pkg/logger"
 	"io/ioutil"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type MotivationController struct {
@@ -102,7 +103,7 @@ func (c *MotivationController) UpdateMotivation(ctx *gin.Context) {
 	}
 
 	body, _ := ioutil.ReadAll(ctx.Request.Body)
-	fmt.Printf("原始请求体: %s\n", string(body))
+	logger.Log.Debug("原始请求体", zap.String("body", string(body)))
 
 	ctx.Request.Body = ioutil.NopCloser(bytes.NewBuffer(body))
 

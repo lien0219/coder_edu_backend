@@ -8,7 +8,6 @@ import (
 	"coder_edu_backend/pkg/logger"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -43,7 +42,7 @@ const uploadProgressKeyPrefix = "upload_progress:"
 func (s *ContentService) UploadResource(c *gin.Context, file *multipart.FileHeader, resource *model.Resource) error {
 	claims := util.GetUserFromContext(c)
 	if claims == nil {
-		return errors.New("unauthorized")
+		return util.ErrUnauthorized
 	}
 
 	resource.UploaderID = claims.UserID
@@ -55,7 +54,7 @@ func (s *ContentService) UploadResource(c *gin.Context, file *multipart.FileHead
 	defer src.Close()
 
 	// 深度验证 MIME 类型
-	allowedTypes := []string{"application/pdf", "video/", "image/", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+	allowedTypes := []string{util.MimePDF, util.MimeVideo, util.MimeImage, "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
 	if _, err := util.ValidateMimeType(src, allowedTypes); err != nil {
 		return fmt.Errorf("非法的文件内容: %v", err)
 	}
@@ -80,7 +79,7 @@ func (s *ContentService) UploadIcon(ctx context.Context, file *multipart.FileHea
 	// 验证文件类型
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	if ext != ".png" && ext != ".svg" {
-		return "", errors.New("文件格式不支持，请上传PNG或SVG格式")
+		return "", util.ErrInvalidIconExt
 	}
 
 	// 使用当前时间生成唯一文件名
@@ -108,7 +107,7 @@ func (s *ContentService) UploadIcon(ctx context.Context, file *multipart.FileHea
 func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHeader, title, description string) (*model.Resource, error) {
 	// 验证文件类型
 	ext := strings.ToLower(filepath.Ext(file.Filename))
-	validVideoExts := []string{".mp4", ".avi", ".mov", ".wmv", ".flv", ".mkv", ".webm"}
+	validVideoExts := util.AllowedVideoExtensions
 	isValidType := false
 	for _, e := range validVideoExts {
 		if ext == e {
@@ -117,7 +116,7 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 		}
 	}
 	if !isValidType {
-		return nil, errors.New("文件格式不支持，请上传有效的视频文件")
+		return nil, util.ErrInvalidVideoExt
 	}
 
 	// 使用当前时间生成唯一文件名
@@ -132,6 +131,7 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 
 	tempFilename := fmt.Sprintf("temp_video_%d%s", time.Now().UnixNano(), ext)
 	videoPath := filepath.Join(tempDir, tempFilename)
+	defer os.Remove(videoPath) // 上传完成后立即清理
 
 	src, err := file.Open()
 	if err != nil {
@@ -140,7 +140,7 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 	defer src.Close()
 
 	// 深度验证 MIME 类型
-	if _, err := util.ValidateMimeType(src, []string{"video/"}); err != nil {
+	if _, err := util.ValidateMimeType(src, []string{util.MimeVideo}); err != nil {
 		return nil, fmt.Errorf("非法的文件内容，仅允许视频格式: %v", err)
 	}
 	// 重置读取指针
@@ -174,6 +174,7 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 		return nil, err
 	}
 	thumbnailPath := filepath.Join(thumbnailDir, filepath.Base(thumbnailFilename))
+	defer os.Remove(thumbnailPath) // 处理完成后清理
 
 	var thumbnailURL string
 	err = util.GenerateThumbnail(videoPath, thumbnailPath, "3")
@@ -193,15 +194,6 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 	if err == nil {
 		duration = videoInfo.Duration
 	}
-
-	// 清理临时文件
-	go func() {
-		time.Sleep(5 * time.Second)
-		os.Remove(videoPath)
-		if thumbnailPath != "" {
-			os.Remove(thumbnailPath)
-		}
-	}()
 
 	resource := &model.Resource{
 		Title:       title,
@@ -314,17 +306,15 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 		// 上传合并后的文件
 		finalURL, err = s.StorageService.UploadFile(ctx, videoFilename, finalPath, "video/"+strings.TrimPrefix(ext, "."))
 		if err != nil {
+			os.Remove(finalPath) // 失败也要清理
 			return nil, "", err
 		}
 
 		// 清理
-		go func() {
-			time.Sleep(5 * time.Second)
-			os.RemoveAll(tempDir)
-			os.Remove(finalPath)
-			// 从 Redis 中删除进度
-			s.Redis.Del(context.Background(), redisKey)
-		}()
+		os.RemoveAll(tempDir)
+		os.Remove(finalPath)
+		// 从Redis中删除进度
+		s.Redis.Del(context.Background(), redisKey)
 	}
 
 	return progress, finalURL, nil
@@ -334,7 +324,7 @@ func (s *ContentService) GetUploadProgress(identifier string) (*model.UploadProg
 	redisKey := uploadProgressKeyPrefix + identifier
 	val, err := s.Redis.Get(context.Background(), redisKey).Result()
 	if err == redis.Nil {
-		return nil, errors.New("upload progress not found")
+		return nil, util.ErrUploadProgressNotFound
 	} else if err != nil {
 		return nil, err
 	}

@@ -2,7 +2,6 @@ package service
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,7 +9,10 @@ import (
 
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"coder_edu_backend/internal/util"
+	"coder_edu_backend/pkg/logger"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -79,14 +81,16 @@ func (ft *FlexibleTime) TimePtr() *time.Time {
 }
 
 type LevelService struct {
-	LevelRepo *repository.LevelRepository
-	DB        *gorm.DB
+	LevelRepo        *repository.LevelRepository
+	LevelAttemptRepo *repository.LevelAttemptRepository
+	DB               *gorm.DB
 }
 
-func NewLevelService(levelRepo *repository.LevelRepository, db *gorm.DB) *LevelService {
+func NewLevelService(levelRepo *repository.LevelRepository, levelAttemptRepo *repository.LevelAttemptRepository, db *gorm.DB) *LevelService {
 	return &LevelService{
-		LevelRepo: levelRepo,
-		DB:        db,
+		LevelRepo:        levelRepo,
+		LevelAttemptRepo: levelAttemptRepo,
+		DB:               db,
 	}
 }
 
@@ -271,15 +275,15 @@ type LevelCreateRequest struct {
 
 func (s *LevelService) CreateLevel(creatorID uint, req LevelCreateRequest) (*model.Level, error) {
 	if req.Title == "" {
-		return nil, errors.New("title required")
+		return nil, util.ErrTitleRequired
 	}
 	// validate abilities: must choose at least 1
 	if len(req.AbilityIDs) == 0 {
-		return nil, errors.New("at least one ability must be selected")
+		return nil, util.ErrAbilityRequired
 	}
 	// validate visible scope
 	if req.VisibleScope == "specific" && len(req.VisibleTo) == 0 {
-		return nil, errors.New("visibleTo must be provided when visibleScope is 'specific'")
+		return nil, util.ErrVisibleToRequired
 	}
 	var createdLevel *model.Level
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
@@ -300,7 +304,6 @@ func (s *LevelService) CreateLevel(creatorID uint, req LevelCreateRequest) (*mod
 			AvailableFrom:    req.AvailableFrom.TimePtr(),
 			AvailableTo:      req.AvailableTo.TimePtr(),
 		}
-		// Ensure VisibleTo is valid JSON (store empty array if nil)
 		{
 			var vtBytes []byte
 			if len(req.VisibleTo) > 0 {
@@ -368,8 +371,6 @@ func (s *LevelService) CreateLevel(creatorID uint, req LevelCreateRequest) (*mod
 			}
 		}
 
-		// create initial version snapshot
-		// snapshot content include level + questions
 		var questions []model.LevelQuestion
 		if err := tx.Where("level_id = ?", level.ID).Find(&questions).Error; err != nil {
 			return err
@@ -391,7 +392,6 @@ func (s *LevelService) CreateLevel(creatorID uint, req LevelCreateRequest) (*mod
 			return err
 		}
 
-		// set current version
 		level.CurrentVersion = version.ID
 		if err := tx.Save(level).Error; err != nil {
 			return err
@@ -407,7 +407,6 @@ func (s *LevelService) CreateLevel(creatorID uint, req LevelCreateRequest) (*mod
 	return createdLevel, nil
 }
 
-// UpdateLevel edits an existing level and creates a new version snapshot
 func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateRequest) (*model.Level, error) {
 	var updatedLevel *model.Level
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
@@ -415,7 +414,6 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 		if err != nil {
 			return err
 		}
-		// update scalar fields
 		level.Title = req.Title
 		level.Description = req.Description
 		level.CoverURL = req.CoverURL
@@ -435,16 +433,13 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 			return err
 		}
 
-		// validate abilities: must choose at least 1
 		if len(req.AbilityIDs) == 0 {
-			return errors.New("at least one ability must be selected")
+			return util.ErrAbilityRequired
 		}
-		// validate visible scope
 		if req.VisibleScope == "specific" && len(req.VisibleTo) == 0 {
-			return errors.New("visibleTo must be provided when visibleScope is 'specific'")
+			return util.ErrVisibleToRequired
 		}
 
-		// replace abilities
 		if err := tx.Where("level_id = ?", level.ID).Delete(&model.LevelAbility{}).Error; err != nil {
 			return err
 		}
@@ -458,7 +453,6 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 			}
 		}
 
-		// replace knowledge tags
 		if err := tx.Where("level_id = ?", level.ID).Delete(&model.LevelKnowledge{}).Error; err != nil {
 			return err
 		}
@@ -472,7 +466,6 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 			}
 		}
 
-		// replace questions
 		if err := s.LevelRepo.DeleteQuestionsByLevel(level.ID); err != nil {
 			return err
 		}
@@ -501,7 +494,6 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 			}
 		}
 
-		// create new version snapshot
 		var questions []model.LevelQuestion
 		if err := tx.Where("level_id = ?", level.ID).Find(&questions).Error; err != nil {
 			return err
@@ -512,7 +504,6 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 		}
 		snapshotBytes, _ := json.Marshal(snapshot)
 
-		// compute next version number
 		versions, err := s.LevelRepo.GetVersions(level.ID)
 		if err != nil {
 			return err
@@ -548,7 +539,6 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 	return updatedLevel, nil
 }
 
-// Publish toggles publication and sets PublishedAt
 func (s *LevelService) PublishLevel(editorID, levelID uint, publish bool) error {
 	return s.DB.Transaction(func(tx *gorm.DB) error {
 		level, err := s.LevelRepo.FindByID(levelID)
@@ -565,7 +555,6 @@ func (s *LevelService) PublishLevel(editorID, levelID uint, publish bool) error 
 		if err := tx.Save(level).Error; err != nil {
 			return err
 		}
-		// create a version record to mark publish state
 		var questions []model.LevelQuestion
 		if err := tx.Where("level_id = ?", level.ID).Find(&questions).Error; err != nil {
 			return err
@@ -600,7 +589,6 @@ func (s *LevelService) PublishLevel(editorID, levelID uint, publish bool) error 
 	})
 }
 
-// BulkUpdateLevels performs field updates for multiple levels
 func (s *LevelService) BulkUpdateLevels(editorID uint, ids []uint, updates map[string]interface{}) error {
 	if len(ids) == 0 {
 		return nil
@@ -608,12 +596,10 @@ func (s *LevelService) BulkUpdateLevels(editorID uint, ids []uint, updates map[s
 	return s.LevelRepo.BulkUpdate(ids, updates)
 }
 
-// GetVersions returns versions for a level
 func (s *LevelService) GetVersions(levelID uint) ([]model.LevelVersion, error) {
 	return s.LevelRepo.GetVersions(levelID)
 }
 
-// RollbackToVersion applies a version snapshot as a new version and updates current level
 func (s *LevelService) RollbackToVersion(editorID uint, levelID uint, versionID uint) error {
 	return s.DB.Transaction(func(tx *gorm.DB) error {
 		v, err := s.LevelRepo.GetVersionByID(versionID)
@@ -621,7 +607,6 @@ func (s *LevelService) RollbackToVersion(editorID uint, levelID uint, versionID 
 			return err
 		}
 
-		// parse content
 		var snap struct {
 			Level     model.Level           `json:"level"`
 			Questions []model.LevelQuestion `json:"questions"`
@@ -629,12 +614,10 @@ func (s *LevelService) RollbackToVersion(editorID uint, levelID uint, versionID 
 		if err := json.Unmarshal([]byte(v.Content), &snap); err != nil {
 			return err
 		}
-		// find target level
 		level, err := s.LevelRepo.FindByID(levelID)
 		if err != nil {
 			return err
 		}
-		// update scalar fields from snapshot.Level (only selected fields)
 		level.Title = snap.Level.Title
 		level.Description = snap.Level.Description
 		level.CoverURL = snap.Level.CoverURL
@@ -654,7 +637,6 @@ func (s *LevelService) RollbackToVersion(editorID uint, levelID uint, versionID 
 			return err
 		}
 
-		// replace questions
 		if err := s.LevelRepo.DeleteQuestionsByLevel(level.ID); err != nil {
 			return err
 		}
@@ -668,7 +650,6 @@ func (s *LevelService) RollbackToVersion(editorID uint, levelID uint, versionID 
 			}
 		}
 
-		// create a new version marking the rollback
 		contents := v.Content
 		versions, err := s.LevelRepo.GetVersions(level.ID)
 		if err != nil {
@@ -716,20 +697,17 @@ func (s *LevelService) GetAllLevelsBasicInfo() ([]LevelBasicInfo, error) {
 
 // StartAttempt 创建并开始一次关卡挑战
 func (s *LevelService) StartAttempt(userID, levelID uint) (*model.LevelAttempt, error) {
-	var level *model.Level
-	lev, err := s.LevelRepo.FindByID(levelID)
+	level, err := s.LevelRepo.FindByID(levelID)
 	if err != nil {
 		return nil, err
 	}
-	level = lev
 
-	// count attempts used
-	var count int64
-	if err := s.DB.Model(&model.LevelAttempt{}).Where("user_id = ? AND level_id = ?", userID, levelID).Count(&count).Error; err != nil {
+	count, err := s.LevelRepo.CountAttemptsByUserLevel(userID, levelID)
+	if err != nil {
 		return nil, err
 	}
 	if level.AttemptLimit > 0 && int(count) >= level.AttemptLimit {
-		return nil, errors.New("attempt limit reached")
+		return nil, util.ErrAttemptLimitReached
 	}
 
 	attempt := &model.LevelAttempt{
@@ -740,7 +718,7 @@ func (s *LevelService) StartAttempt(userID, levelID uint) (*model.LevelAttempt, 
 		VersionID:        level.CurrentVersion,
 		PerQuestionTimes: "{}",
 	}
-	if err := s.DB.Create(attempt).Error; err != nil {
+	if err := s.LevelRepo.CreateAttempt(attempt); err != nil {
 		return nil, err
 	}
 	return attempt, nil
@@ -758,19 +736,17 @@ type PerQuestionTime struct {
 }
 
 func (s *LevelService) SubmitAttempt(userID, levelID, attemptID uint, answers []SubmitAnswer, times []PerQuestionTime) (*model.LevelAttempt, error) {
-	// load attempt
-	var attempt model.LevelAttempt
-	if err := s.DB.First(&attempt, attemptID).Error; err != nil {
+	attempt, err := s.LevelRepo.FindAttemptByID(attemptID)
+	if err != nil {
 		return nil, err
 	}
 	if attempt.UserID != userID || attempt.LevelID != levelID {
-		return nil, errors.New("unauthorized attempt")
+		return nil, util.ErrUnauthorized
 	}
 	if attempt.EndedAt != nil {
-		return nil, errors.New("attempt already submitted")
+		return nil, util.ErrTestAlreadySubmitted
 	}
 
-	// load questions: prefer snapshot from version if available
 	qMap := make(map[uint]model.LevelQuestion)
 	if attempt.VersionID > 0 {
 		v, err := s.LevelRepo.GetVersionByID(attempt.VersionID)
@@ -786,10 +762,9 @@ func (s *LevelService) SubmitAttempt(userID, levelID, attemptID uint, answers []
 			}
 		}
 	}
-	// fallback to current questions if none loaded
 	if len(qMap) == 0 {
-		var questions []model.LevelQuestion
-		if err := s.DB.Where("level_id = ?", levelID).Find(&questions).Error; err != nil {
+		questions, err := s.LevelRepo.GetQuestionsByLevel(levelID)
+		if err != nil {
 			return nil, err
 		}
 		for _, q := range questions {
@@ -797,7 +772,6 @@ func (s *LevelService) SubmitAttempt(userID, levelID, attemptID uint, answers []
 		}
 	}
 
-	// grade with support for manual grading and weight
 	totalScore := 0
 	needsManual := false
 	for _, a := range answers {
@@ -806,7 +780,6 @@ func (s *LevelService) SubmitAttempt(userID, levelID, attemptID uint, answers []
 				needsManual = true
 				continue
 			}
-			// compare JSON string of provided answer with stored correctAnswer
 			provided, _ := json.Marshal(a.Answer)
 			correct := q.CorrectAnswer
 			if string(provided) == correct {
@@ -819,7 +792,6 @@ func (s *LevelService) SubmitAttempt(userID, levelID, attemptID uint, answers []
 		}
 	}
 
-	// update attempt
 	now := time.Now()
 	duration := int(now.Sub(attempt.StartedAt).Seconds())
 	attempt.Score = totalScore
@@ -827,24 +799,20 @@ func (s *LevelService) SubmitAttempt(userID, levelID, attemptID uint, answers []
 	attempt.EndedAt = &now
 	attempt.NeedsManual = needsManual
 
-	// success check: load level
 	level, err := s.LevelRepo.FindByID(levelID)
 	if err != nil {
 		return nil, err
 	}
-	// if manual grading required, mark success = false and wait for manual review
 	if needsManual {
 		attempt.Success = false
 	} else {
 		attempt.Success = totalScore >= level.PassingScore && attempt.AttemptsUsed <= level.AttemptLimit
 	}
 
-	// save attempt, answers and times in transaction
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&attempt).Error; err != nil {
+		if err := tx.Save(attempt).Error; err != nil {
 			return err
 		}
-		// save answers
 		if len(answers) > 0 {
 			var ansEntities []model.LevelAttemptAnswer
 			for _, a := range answers {
@@ -859,7 +827,6 @@ func (s *LevelService) SubmitAttempt(userID, levelID, attemptID uint, answers []
 				return err
 			}
 		}
-		// per-question times
 		if len(times) > 0 {
 			var timesEntities []model.LevelAttemptQuestionTime
 			for _, t := range times {
@@ -878,17 +845,16 @@ func (s *LevelService) SubmitAttempt(userID, levelID, attemptID uint, answers []
 	if err != nil {
 		return nil, err
 	}
-	return &attempt, nil
+	return attempt, nil
 }
 
 // AddQuestion 向关卡添加单个题目
 func (s *LevelService) AddQuestion(editorID, levelID uint, req LevelQuestionRequest) (*model.LevelQuestion, error) {
-	// basic validation
 	if req.QuestionType == "" {
-		return nil, errors.New("questionType required")
+		return nil, util.ErrQuestionTypeRequired
 	}
 	if req.Content == nil {
-		return nil, errors.New("content required")
+		return nil, util.ErrContentRequired
 	}
 	cb, _ := json.Marshal(req.Content)
 	ob, _ := json.Marshal(req.Options)
@@ -918,7 +884,7 @@ func (s *LevelService) UpdateQuestion(editorID, levelID, questionID uint, req Le
 		return nil, err
 	}
 	if q.LevelID != levelID {
-		return nil, errors.New("question not belong to level")
+		return nil, util.ErrQuestionNotBelong
 	}
 	if req.Content != nil {
 		cb, _ := json.Marshal(req.Content)
@@ -951,48 +917,18 @@ func (s *LevelService) DeleteQuestion(levelID, questionID uint) error {
 		return err
 	}
 	if q.LevelID != levelID {
-		return errors.New("question not belong to level")
+		return util.ErrQuestionNotBelong
 	}
 	return s.LevelRepo.DeleteQuestionByID(questionID)
 }
 
 // GetAttemptStats 返回关卡尝试统计（count, avgScore, avgTime, successRate）
 func (s *LevelService) GetAttemptStats(levelID uint, start *time.Time, end *time.Time, studentID uint) (map[string]interface{}, error) {
-	query := s.DB.Model(&model.LevelAttempt{}).
-		Joins("JOIN users ON users.id = level_attempts.user_id").
-		Where("level_attempts.level_id = ? AND level_attempts.deleted_at IS NULL", levelID)
-
-	// 如果没有指定具体学生，则默认只统计未禁用的学生
-	if studentID == 0 {
-		query = query.Where("users.disabled = ?", false)
-	} else {
-		query = query.Where("level_attempts.user_id = ?", studentID)
-	}
-
-	if start != nil {
-		query = query.Where("level_attempts.started_at >= ?", *start)
-	}
-	if end != nil {
-		query = query.Where("level_attempts.started_at <= ?", *end)
-	}
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	total, avgScore, avgTime, successCount, err := s.LevelRepo.GetAttemptStats(levelID, start, end, studentID)
+	if err != nil {
 		return nil, err
 	}
-	var avgScore float64
-	var avgTime float64
-	var successCount int64
-	if total > 0 {
-		if err := query.Select("AVG(score)").Scan(&avgScore).Error; err != nil {
-			return nil, err
-		}
-		if err := query.Select("AVG(total_time_seconds)").Scan(&avgTime).Error; err != nil {
-			return nil, err
-		}
-		if err := query.Select("SUM(success)").Scan(&successCount).Error; err != nil {
-			return nil, err
-		}
-	}
+
 	stats := map[string]interface{}{
 		"totalAttempts": total,
 		"avgScore":      avgScore,
@@ -1007,7 +943,6 @@ func (s *LevelService) GetAttemptStats(levelID uint, start *time.Time, end *time
 	return stats, nil
 }
 
-// QuestionScore represents a manual score input
 type QuestionScore struct {
 	QuestionID uint
 	Score      int
@@ -1016,17 +951,12 @@ type QuestionScore struct {
 	GradedAt   *time.Time
 }
 
-// ListAttemptsNeedingManual returns attempts for a level that need manual grading
 func (s *LevelService) ListAttemptsNeedingManual(levelID uint) ([]model.LevelAttempt, error) {
-	var attempts []model.LevelAttempt
-	err := s.DB.Where("level_id = ? AND needs_manual = ?", levelID, true).Find(&attempts).Error
-	return attempts, err
+	return s.LevelAttemptRepo.ListNeedingManual(levelID)
 }
 
 // ManualGradeAttempt 保存人工评分并完成尝试（若全部题目评分完成）
 func (s *LevelService) ManualGradeAttempt(graderID uint, attemptID uint, scores []QuestionScore) error {
-	lar := repository.NewLevelAttemptRepository(s.DB)
-
 	// save scores
 	var scoreEntities []model.LevelAttemptQuestionScore
 	now := time.Now()
@@ -1041,18 +971,16 @@ func (s *LevelService) ManualGradeAttempt(graderID uint, attemptID uint, scores 
 		})
 	}
 
-	err := lar.CreateOrUpdateQuestionScores(scoreEntities)
+	err := s.LevelAttemptRepo.CreateOrUpdateQuestionScores(scoreEntities)
 	if err != nil {
 		return err
 	}
 
-	// recalc total score: auto-graded + manual scores
-	attempt, err := lar.FindByID(attemptID)
+	attempt, err := s.LevelRepo.FindAttemptByID(attemptID)
 	if err != nil {
 		return err
 	}
 
-	// get auto-scored questions (those not manual) -- prefer snapshot
 	var questions []model.LevelQuestion
 	if attempt.VersionID > 0 {
 		if v, err := s.LevelRepo.GetVersionByID(attempt.VersionID); err == nil {
@@ -1076,10 +1004,7 @@ func (s *LevelService) ManualGradeAttempt(graderID uint, attemptID uint, scores 
 		if q.ManualGrading {
 			continue
 		}
-		// find stored answer for this question
-		var ans model.LevelAttemptAnswer
-		if err := s.DB.Where("attempt_id = ? AND question_id = ?", attemptID, q.ID).First(&ans).Error; err == nil {
-			// compare
+		if ans, err := s.LevelAttemptRepo.GetAnswerByQuestion(attemptID, q.ID); err == nil {
 			var provided interface{}
 			if json.Unmarshal([]byte(ans.Answer), &provided) == nil {
 				providedBytes, _ := json.Marshal(provided)
@@ -1094,18 +1019,15 @@ func (s *LevelService) ManualGradeAttempt(graderID uint, attemptID uint, scores 
 		}
 	}
 
-	// sum manual scores
-	var manualTotal int64
-	if err := s.DB.Model(&model.LevelAttemptQuestionScore{}).Where("attempt_id = ?", attemptID).Select("SUM(score)").Scan(&manualTotal).Error; err != nil {
+	manualTotal, err := s.LevelAttemptRepo.GetTotalManualScore(attemptID)
+	if err != nil {
 		return err
 	}
 
 	newTotal := autoScore + int(manualTotal)
-	// update attempt
 	now2 := time.Now()
 	attempt.Score = newTotal
 	attempt.NeedsManual = false
-	// determine success based on level.passing score
 	level, err := s.LevelRepo.FindByID(attempt.LevelID)
 	if err != nil {
 		return err
@@ -1113,7 +1035,7 @@ func (s *LevelService) ManualGradeAttempt(graderID uint, attemptID uint, scores 
 	attempt.Success = newTotal >= level.PassingScore
 	attempt.EndedAt = &now2
 
-	if err := lar.Update(attempt); err != nil {
+	if err := s.LevelRepo.UpdateAttempt(attempt); err != nil {
 		return err
 	}
 	return nil
@@ -1155,7 +1077,7 @@ func (s *LevelService) UpdateVisibility(editorID, levelID uint, visibleScope str
 		return err
 	}
 	if visibleScope == "specific" && len(visibleTo) == 0 {
-		return errors.New("visibleTo required when visibleScope is 'specific'")
+		return util.ErrVisibleToRequired
 	}
 	// marshal visibleTo
 	vtBytes, _ := json.Marshal(visibleTo)
@@ -1168,13 +1090,13 @@ func (s *LevelService) UpdateVisibility(editorID, levelID uint, visibleScope str
 func (s *LevelService) ProcessScheduledPublishes() error {
 	var levels []model.Level
 	now := time.Now()
-	if err := s.DB.Where("scheduled_publish_at IS NOT NULL AND scheduled_publish_at <= ? AND is_published = ?", now, false).Find(&levels).Error; err != nil {
+	if err := s.LevelRepo.DB.Where("scheduled_publish_at IS NOT NULL AND scheduled_publish_at <= ? AND is_published = ?", now, false).Find(&levels).Error; err != nil {
 		return err
 	}
 	for _, lvl := range levels {
 		// publish using existing logic
 		if err := s.PublishLevel(0, lvl.ID, true); err != nil {
-			// log and continue
+			logger.Log.Error("自动发布关卡失败", zap.Uint("levelID", lvl.ID), zap.Error(err))
 			continue
 		}
 		// clear scheduled time
@@ -1196,8 +1118,8 @@ func (s *LevelService) ListLevelsFull(creatorID uint, page, limit int) ([]LevelF
 	for _, level := range levels {
 		// 获取能力关联
 		var abilityIDs []uint
-		var levelAbilities []model.LevelAbility
-		if err := s.DB.Where("level_id = ?", level.ID).Find(&levelAbilities).Error; err == nil {
+		levelAbilities, err := s.LevelRepo.GetLevelAbilities(level.ID)
+		if err == nil {
 			for _, la := range levelAbilities {
 				abilityIDs = append(abilityIDs, la.AbilityID)
 			}
@@ -1205,8 +1127,8 @@ func (s *LevelService) ListLevelsFull(creatorID uint, page, limit int) ([]LevelF
 
 		// 获取知识标签关联
 		var knowledgeTagIDs []uint
-		var levelKnowledge []model.LevelKnowledge
-		if err := s.DB.Where("level_id = ?", level.ID).Find(&levelKnowledge).Error; err == nil {
+		levelKnowledge, err := s.LevelRepo.GetLevelKnowledge(level.ID)
+		if err == nil {
 			for _, lk := range levelKnowledge {
 				knowledgeTagIDs = append(knowledgeTagIDs, lk.KnowledgeTagID)
 			}
@@ -1214,8 +1136,8 @@ func (s *LevelService) ListLevelsFull(creatorID uint, page, limit int) ([]LevelF
 
 		// 获取题目信息
 		var questions []LevelQuestionResponse
-		var levelQuestions []model.LevelQuestion
-		if err := s.DB.Where("level_id = ?", level.ID).Order("`order` asc").Find(&levelQuestions).Error; err == nil {
+		levelQuestions, err := s.LevelRepo.GetQuestionsByLevel(level.ID)
+		if err == nil {
 			for _, q := range levelQuestions {
 				questions = append(questions, LevelQuestionResponse{
 					ID:            q.ID,
@@ -1278,7 +1200,7 @@ func (s *LevelService) DeleteLevel(deleterID, levelID uint) error {
 		return err
 	}
 	if level.CreatorID != deleterID {
-		return errors.New("only creator can delete level")
+		return util.ErrPermissionDenied
 	}
 
 	// 删除关卡及其所有关联数据
@@ -1287,29 +1209,35 @@ func (s *LevelService) DeleteLevel(deleterID, levelID uint) error {
 
 // ListLevelsForStudent 获取学生端关卡列表
 func (s *LevelService) ListLevelsForStudent(userID uint, search, difficulty, status string, page, limit int) ([]StudentLevelResponse, int, error) {
-	// 获取关卡列表
+	// 获取关卡列表，预加载题目
 	levels, total, err := s.LevelRepo.ListLevelsForStudent(userID, search, difficulty, page, limit)
 	if err != nil {
 		return nil, 0, err
 	}
 
+	// 提取所有关卡ID，用于批量查询尝试记录
+	levelIDs := make([]uint, len(levels))
+	for i, level := range levels {
+		levelIDs[i] = level.ID
+	}
+
+	// 批量获取尝试记录
+	allAttempts, err := s.LevelRepo.GetAttemptsByUserAndLevels(userID, levelIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// 按关卡ID组织尝试记录
+	attemptMap := make(map[uint][]model.LevelAttempt)
+	for _, attempt := range allAttempts {
+		attemptMap[attempt.LevelID] = append(attemptMap[attempt.LevelID], attempt)
+	}
+
 	var responses []StudentLevelResponse
 	for _, level := range levels {
-		// 获取关卡的题目信息
-		var levelQuestions []model.LevelQuestion
 		basePoints := 0
-		questionsCount := 0
-		if err := s.DB.Where("level_id = ?", level.ID).Find(&levelQuestions).Error; err == nil {
-			for _, question := range levelQuestions {
-				basePoints += question.Points
-			}
-			questionsCount = len(levelQuestions)
-		}
-
-		// 获取学生对该关卡的尝试记录
-		attempts, err := s.getAttemptsByUserLevel(userID, level.ID)
-		if err != nil {
-			continue // 跳过有错误的数据
+		for _, q := range level.Questions {
+			basePoints += q.Points
 		}
 
 		response := StudentLevelResponse{
@@ -1322,18 +1250,16 @@ func (s *LevelService) ListLevelsForStudent(userID uint, search, difficulty, sta
 			AttemptLimit:     level.AttemptLimit,
 			PassingScore:     level.PassingScore,
 			BasePoints:       basePoints,
-			QuestionsCount:   questionsCount,
+			QuestionsCount:   len(level.Questions),
 			CreatedAt:        level.CreatedAt,
 		}
 
-		// 确定关卡状态
+		attempts := attemptMap[level.ID]
 		if len(attempts) == 0 {
 			response.Status = "not_started"
 		} else {
-			// 检查是否有成功的尝试
 			hasCompleted := false
 			bestScore := 0
-
 			for _, attempt := range attempts {
 				if attempt.Score > bestScore {
 					bestScore = attempt.Score
@@ -1349,14 +1275,10 @@ func (s *LevelService) ListLevelsForStudent(userID uint, search, difficulty, sta
 			} else {
 				response.Status = "in_progress"
 			}
-
-			// 获取用户对该关卡的总尝试次数
-			var totalAttempts int64
-			s.DB.Model(&model.LevelAttempt{}).Where("user_id = ? AND level_id = ?", userID, level.ID).Count(&totalAttempts)
-			response.AttemptsUsed = int(totalAttempts)
+			response.AttemptsUsed = len(attempts)
 		}
 
-		// 如果指定了状态筛选，只返回符合条件的关卡
+		// 状态筛选
 		if status != "" && status != "all" && response.Status != status {
 			continue
 		}
@@ -1364,40 +1286,8 @@ func (s *LevelService) ListLevelsForStudent(userID uint, search, difficulty, sta
 		responses = append(responses, response)
 	}
 
-	// 如果有状态筛选，需要重新计算总数
-	if status != "" && status != "all" {
-		// 获取所有符合条件的关卡总数
-		allLevels, _, err := s.LevelRepo.ListLevelsForStudent(userID, search, difficulty, 1, 10000) // 获取所有数据
-		if err == nil {
-			filteredCount := 0
-			for _, level := range allLevels {
-				attempts, err := s.getAttemptsByUserLevel(userID, level.ID)
-				if err != nil {
-					continue
-				}
-
-				levelStatus := "not_started"
-				if len(attempts) > 0 {
-					hasCompleted := false
-					for _, attempt := range attempts {
-						if attempt.Success {
-							hasCompleted = true
-							break
-						}
-					}
-					if hasCompleted {
-						levelStatus = "completed"
-					} else {
-						levelStatus = "in_progress"
-					}
-				}
-
-				if levelStatus == status {
-					filteredCount++
-				}
-			}
-			total = filteredCount
-		}
+	if status != "" && status != "all" && len(responses) < total {
+		total = len(responses)
 	}
 
 	return responses, total, nil
@@ -1405,9 +1295,7 @@ func (s *LevelService) ListLevelsForStudent(userID uint, search, difficulty, sta
 
 // getAttemptsByUserLevel 获取用户对特定关卡的所有尝试记录
 func (s *LevelService) getAttemptsByUserLevel(userID, levelID uint) ([]model.LevelAttempt, error) {
-	var attempts []model.LevelAttempt
-	err := s.DB.Where("user_id = ? AND level_id = ?", userID, levelID).Find(&attempts).Error
-	return attempts, err
+	return s.LevelAttemptRepo.GetLevelAttemptsHistory(userID, levelID, 1000)
 }
 
 // GetStudentLevelDetail 获取学生端关卡详情
@@ -1420,13 +1308,13 @@ func (s *LevelService) GetStudentLevelDetail(userID, levelID uint) (*StudentLeve
 
 	// 验证可见性
 	if level.IsPublished != true {
-		return nil, errors.New("level not found")
+		return nil, util.ErrLevelNotFound
 	}
 
 	// 可见性检查
 	if level.VisibleScope != "all" {
 		if level.VisibleScope != "specific" {
-			return nil, errors.New("level not accessible")
+			return nil, util.ErrLevelNotAccessible
 		}
 		// 检查用户是否在可见列表中
 		canAccess := false
@@ -1442,7 +1330,7 @@ func (s *LevelService) GetStudentLevelDetail(userID, levelID uint) (*StudentLeve
 			}
 		}
 		if !canAccess {
-			return nil, errors.New("level not accessible")
+			return nil, util.ErrLevelNotAccessible
 		}
 	}
 
@@ -1450,16 +1338,16 @@ func (s *LevelService) GetStudentLevelDetail(userID, levelID uint) (*StudentLeve
 	if level.VisibleScope == "specific" {
 		now := time.Now()
 		if level.AvailableFrom != nil && level.AvailableFrom.After(now) {
-			return nil, errors.New("level not yet available")
+			return nil, util.ErrLevelNotYetAvailable
 		}
 		if level.AvailableTo != nil && level.AvailableTo.Before(now) {
-			return nil, errors.New("level no longer available")
+			return nil, util.ErrLevelNoLongerAvailable
 		}
 	}
 
 	// 获取关卡的题目信息
-	var levelQuestions []model.LevelQuestion
-	if err := s.DB.Where("level_id = ?", levelID).Order("`order` asc").Find(&levelQuestions).Error; err != nil {
+	levelQuestions, err := s.LevelRepo.GetQuestionsByLevel(levelID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -1488,55 +1376,42 @@ func (s *LevelService) GetStudentLevelDetail(userID, levelID uint) (*StudentLeve
 	}
 
 	// 获取学生对该关卡的尝试记录
-	attempts, err := s.getAttemptsByUserLevel(userID, levelID)
+	attempts, err := s.LevelRepo.GetAttemptsByUserAndLevels(userID, []uint{levelID})
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取关卡元数据
-	var updatedAt *time.Time
-	updatedAt = &level.UpdatedAt
-
 	// 获取创建者信息
 	var author *UserInfo
-	var creator model.User
-	if err := s.DB.Where("id = ?", level.CreatorID).First(&creator).Error; err == nil {
+	if creator, err := s.LevelRepo.GetCreator(level.CreatorID); err == nil {
 		author = &UserInfo{
 			ID:       creator.ID,
-			Username: creator.Name, // User模型使用Name字段
+			Username: creator.Name,
 			Email:    creator.Email,
 		}
 	}
 
 	// 获取能力信息
 	var abilities []AbilityInfo
-	var levelAbilities []model.LevelAbility
-	if err := s.DB.Where("level_id = ?", levelID).Find(&levelAbilities).Error; err == nil {
-		for _, la := range levelAbilities {
-			var ability model.Ability
-			if err := s.DB.Where("id = ?", la.AbilityID).First(&ability).Error; err == nil {
-				abilities = append(abilities, AbilityInfo{
-					ID:          ability.ID,
-					Code:        ability.Code,
-					Name:        ability.Name,
-					Description: ability.Description,
-				})
-			}
+	if abs, err := s.LevelRepo.GetLevelAbilitiesWithDetails(levelID); err == nil {
+		for _, a := range abs {
+			abilities = append(abilities, AbilityInfo{
+				ID:          a.ID,
+				Code:        a.Code,
+				Name:        a.Name,
+				Description: a.Description,
+			})
 		}
 	}
 
 	// 获取标签信息
 	var tags []TagInfo
-	var levelKnowledge []model.LevelKnowledge
-	if err := s.DB.Where("level_id = ?", levelID).Find(&levelKnowledge).Error; err == nil {
-		for _, lk := range levelKnowledge {
-			var tag model.KnowledgeTag
-			if err := s.DB.Where("id = ?", lk.KnowledgeTagID).First(&tag).Error; err == nil {
-				tags = append(tags, TagInfo{
-					ID:   tag.ID,
-					Name: tag.Name,
-				})
-			}
+	if kts, err := s.LevelRepo.GetLevelKnowledgeWithDetails(levelID); err == nil {
+		for _, kt := range kts {
+			tags = append(tags, TagInfo{
+				ID:   kt.ID,
+				Name: kt.Name,
+			})
 		}
 	}
 
@@ -1549,30 +1424,17 @@ func (s *LevelService) GetStudentLevelDetail(userID, levelID uint) (*StudentLeve
 	}
 
 	// 获取统计数据
-	var totalAttempts int64
-	var averageScore float64
-	var completionRate float64
+	totalAttempts, successfulAttempts, totalSuccessfulScore, err := s.LevelAttemptRepo.GetLevelStats(levelID)
+	if err != nil {
+		return nil, err
+	}
 
-	// 计算总尝试次数
-	s.DB.Model(&model.LevelAttempt{}).Where("level_id = ?", levelID).Count(&totalAttempts)
-
-	// 计算平均分数和完成率
-	var successfulAttempts int64
-	var totalSuccessfulScore int
+	averageScore := 0.0
+	completionRate := 0.0
 	if totalAttempts > 0 {
-		// 获取所有成功的尝试
-		var successfulAttemptsList []model.LevelAttempt
-		s.DB.Where("level_id = ? AND success = ?", levelID, true).Find(&successfulAttemptsList)
-		successfulAttempts = int64(len(successfulAttemptsList))
-
-		// 计算成功尝试的平均分
 		if successfulAttempts > 0 {
-			for _, attempt := range successfulAttemptsList {
-				totalSuccessfulScore += attempt.Score
-			}
 			averageScore = float64(totalSuccessfulScore) / float64(successfulAttempts)
 		}
-
 		completionRate = float64(successfulAttempts) / float64(totalAttempts) * 100
 	}
 
@@ -1590,7 +1452,7 @@ func (s *LevelService) GetStudentLevelDetail(userID, levelID uint) (*StudentLeve
 		QuestionsCount:   questionsCount,
 
 		// 关卡元数据
-		UpdatedAt:          updatedAt,
+		UpdatedAt:          &level.UpdatedAt,
 		Author:             author,
 		Abilities:          abilities, // 能力分类详细信息
 		Tags:               tags,
@@ -1621,6 +1483,9 @@ func (s *LevelService) GetStudentLevelDetail(userID, levelID uint) (*StudentLeve
 
 		// 按开始时间排序，找到最早的成功完成时间
 		for _, attempt := range attempts {
+			if attempt.Score > bestScore {
+				bestScore = attempt.Score
+			}
 
 			// 计算该次尝试的用时（提交时间 - 开始时间）
 			if attempt.EndedAt != nil {
@@ -1660,10 +1525,7 @@ func (s *LevelService) GetStudentLevelDetail(userID, levelID uint) (*StudentLeve
 			response.Status = "in_progress"
 		}
 
-		// 获取用户对该关卡的总尝试次数
-		var totalAttempts int64
-		s.DB.Model(&model.LevelAttempt{}).Where("user_id = ? AND level_id = ?", userID, levelID).Count(&totalAttempts)
-		response.AttemptsUsed = int(totalAttempts)
+		response.AttemptsUsed = len(attempts)
 		response.LastAttemptAt = lastAttemptAt
 		response.TimeSpent = timeSpent
 	}
@@ -1681,13 +1543,13 @@ func (s *LevelService) GetStudentLevelQuestions(userID, levelID uint) ([]Student
 
 	// 验证可见性
 	if level.IsPublished != true {
-		return nil, errors.New("level not found")
+		return nil, util.ErrLevelNotFound
 	}
 
 	// 可见性检查
 	if level.VisibleScope != "all" {
 		if level.VisibleScope != "specific" {
-			return nil, errors.New("level not accessible")
+			return nil, util.ErrLevelNotAccessible
 		}
 		// 检查用户是否在可见列表中
 		canAccess := false
@@ -1703,7 +1565,7 @@ func (s *LevelService) GetStudentLevelQuestions(userID, levelID uint) ([]Student
 			}
 		}
 		if !canAccess {
-			return nil, errors.New("level not accessible")
+			return nil, util.ErrLevelNotAccessible
 		}
 	}
 
@@ -1711,16 +1573,16 @@ func (s *LevelService) GetStudentLevelQuestions(userID, levelID uint) ([]Student
 	if level.VisibleScope == "specific" {
 		now := time.Now()
 		if level.AvailableFrom != nil && level.AvailableFrom.After(now) {
-			return nil, errors.New("level not yet available")
+			return nil, util.ErrLevelNotYetAvailable
 		}
 		if level.AvailableTo != nil && level.AvailableTo.Before(now) {
-			return nil, errors.New("level no longer available")
+			return nil, util.ErrLevelNoLongerAvailable
 		}
 	}
 
 	// 获取关卡的所有题目信息
-	var levelQuestions []model.LevelQuestion
-	if err := s.DB.Where("level_id = ?", levelID).Order("`order` asc").Find(&levelQuestions).Error; err != nil {
+	levelQuestions, err := s.LevelRepo.GetQuestionsByLevel(levelID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -1766,7 +1628,6 @@ func extractQuestionTitle(content string) string {
 // stripHTMLTags 移除HTML标签，提取纯文本
 func stripHTMLTags(html string) string {
 	// 简单移除HTML标签的逻辑
-	// 这里可以根据需要使用更复杂的HTML解析库
 	result := strings.ReplaceAll(html, "<p>", "")
 	result = strings.ReplaceAll(result, "</p>", "")
 	result = strings.ReplaceAll(result, "<br>", "")
@@ -1787,17 +1648,17 @@ func (s *LevelService) BatchSubmitAnswers(userID, levelID, attemptID uint, req i
 	// 验证关卡可见性
 	level, err := s.LevelRepo.FindByID(levelID)
 	if err != nil {
-		return nil, errors.New("level not found")
+		return nil, util.ErrLevelNotFound
 	}
 
 	// 验证可见性
 	if level.IsPublished != true {
-		return nil, errors.New("level not found")
+		return nil, util.ErrLevelNotFound
 	}
 
 	if level.VisibleScope != "all" {
 		if level.VisibleScope != "specific" {
-			return nil, errors.New("level not accessible")
+			return nil, util.ErrLevelNotAccessible
 		}
 		// 检查用户是否在可见列表中
 		canAccess := false
@@ -1813,36 +1674,36 @@ func (s *LevelService) BatchSubmitAnswers(userID, levelID, attemptID uint, req i
 			}
 		}
 		if !canAccess {
-			return nil, errors.New("level not accessible")
+			return nil, util.ErrLevelNotAccessible
 		}
 	}
 
 	// 验证尝试记录
-	var attempt model.LevelAttempt
-	if err := s.DB.Where("id = ? AND user_id = ? AND level_id = ?", attemptID, userID, levelID).First(&attempt).Error; err != nil {
-		return nil, errors.New("attempt not found")
+	attempt, err := s.LevelRepo.FindAttemptByID(attemptID)
+	if err != nil || attempt.UserID != userID || attempt.LevelID != levelID {
+		return nil, util.ErrAttemptNotFound
 	}
 
 	// 获取关卡的所有问题
-	var questions []model.LevelQuestion
-	if err := s.DB.Where("level_id = ?", levelID).Order("`order` asc").Find(&questions).Error; err != nil {
+	questions, err := s.LevelRepo.GetQuestionsByLevel(levelID)
+	if err != nil {
 		return nil, err
 	}
 
 	// 解析请求数据
 	reqMap, ok := req.(map[string]interface{})
 	if !ok {
-		return nil, errors.New("invalid request format")
+		return nil, util.ErrInvalidRequestFormat
 	}
 
 	answersInterface, ok := reqMap["answers"]
 	if !ok {
-		return nil, errors.New("answers field missing")
+		return nil, util.ErrAnswersFieldMissing
 	}
 
 	answersSlice, ok := answersInterface.([]interface{})
 	if !ok {
-		return nil, errors.New("answers field must be array")
+		return nil, util.ErrAnswersFieldMustBeArray
 	}
 
 	// 创建答案映射，便于查找
@@ -1909,33 +1770,36 @@ func (s *LevelService) BatchSubmitAnswers(userID, levelID, attemptID uint, req i
 		attempt.TotalTimeSeconds = int(now.Sub(attempt.StartedAt).Seconds())
 	}
 
-	if err := s.DB.Save(&attempt).Error; err != nil {
+	if err := s.LevelRepo.UpdateAttempt(attempt); err != nil {
 		return nil, err
 	}
 
 	// 保存答案记录（可选，用于历史记录和分析）
-	for _, answerItem := range answersSlice {
-		answerMapItem, ok := answerItem.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		questionIDFloat, ok1 := answerMapItem["questionId"].(float64)
-		answer, ok2 := answerMapItem["answer"]
-
-		if ok1 && ok2 {
-			answerRecord := &model.LevelAttemptAnswer{
-				AttemptID:  attemptID,
-				QuestionID: uint(questionIDFloat),
+	if len(answersSlice) > 0 {
+		var ansEntities []model.LevelAttemptAnswer
+		for _, answerItem := range answersSlice {
+			answerMapItem, ok := answerItem.(map[string]interface{})
+			if !ok {
+				continue
 			}
 
-			// 将答案转换为JSON字符串存储
-			if answerBytes, err := json.Marshal(answer); err == nil {
-				answerRecord.Answer = string(answerBytes)
-			}
+			questionIDFloat, ok1 := answerMapItem["questionId"].(float64)
+			answer, ok2 := answerMapItem["answer"]
 
-			s.DB.Create(answerRecord) // 忽略错误，继续处理
+			if ok1 && ok2 {
+				answerRecord := model.LevelAttemptAnswer{
+					AttemptID:  attemptID,
+					QuestionID: uint(questionIDFloat),
+				}
+
+				// 将答案转换为JSON字符串存储
+				if answerBytes, err := json.Marshal(answer); err == nil {
+					answerRecord.Answer = string(answerBytes)
+				}
+				ansEntities = append(ansEntities, answerRecord)
+			}
 		}
+		s.LevelRepo.CreateAttemptAnswers(ansEntities)
 	}
 
 	response := &BatchSubmitAnswersResponse{
@@ -2034,14 +1898,6 @@ func (s *LevelService) checkAnswer(question model.LevelQuestion, userAnswer inte
 	}
 }
 
-// LevelRankingEntry 排行榜条目结构
-type LevelRankingEntry struct {
-	Ranking        int    `json:"ranking"`
-	Username       string `json:"username"`
-	BestLevelTitle string `json:"bestLevelTitle"`
-	TotalScore     int    `json:"totalScore"`
-}
-
 // UserLevelStatsResponse 用户关卡挑战统计响应结构
 type UserLevelStatsResponse struct {
 	UserID             uint    `json:"userId"`
@@ -2052,137 +1908,33 @@ type UserLevelStatsResponse struct {
 }
 
 // GetLevelRanking 获取关卡挑战排行榜
-func (s *LevelService) GetLevelRanking(limit int) ([]LevelRankingEntry, error) {
-	query := `
-		WITH user_level_best_scores AS (
-			SELECT
-				la.user_id,
-				la.level_id,
-				MAX(la.score) as best_score
-			FROM level_attempts la
-			WHERE la.success = true AND la.deleted_at IS NULL
-			GROUP BY la.user_id, la.level_id
-		),
-		user_stats AS (
-			SELECT
-				u.id as user_id,
-				u.name as username,
-				SUM(ulbs.best_score) as total_score,
-				MAX(ulbs.best_score) as max_score
-			FROM users u
-			INNER JOIN user_level_best_scores ulbs ON u.id = ulbs.user_id
-			WHERE u.role = 'student' AND u.deleted_at IS NULL AND u.disabled = false
-			GROUP BY u.id, u.name
-			HAVING SUM(ulbs.best_score) > 0
-		),
-		user_best_levels AS (
-			SELECT
-				us.user_id,
-				us.username,
-				us.total_score,
-				l.title as best_level_title,
-				ROW_NUMBER() OVER (PARTITION BY us.user_id ORDER BY ulbs.best_score DESC) as rn
-			FROM user_stats us
-			INNER JOIN user_level_best_scores ulbs ON us.user_id = ulbs.user_id AND ulbs.best_score = us.max_score
-			INNER JOIN levels l ON ulbs.level_id = l.id
-		)
-		SELECT
-			ROW_NUMBER() OVER (ORDER BY total_score DESC, user_id ASC) as ranking,
-			username,
-			best_level_title,
-			total_score
-		FROM user_best_levels
-		WHERE rn = 1
-		ORDER BY total_score DESC, user_id ASC
-	`
-
-	if limit > 0 {
-		query += fmt.Sprintf(" LIMIT %d", limit)
-	}
-
-	var rankings []LevelRankingEntry
-	err := s.DB.Raw(query).Scan(&rankings).Error
-	if err != nil {
-		return nil, err
-	}
-
-	return rankings, nil
+func (s *LevelService) GetLevelRanking(limit int) ([]model.LevelRankingEntry, error) {
+	return s.LevelRepo.GetLevelRanking(limit)
 }
 
 // GetUserLevelTotalScore 获取单个用户的关卡挑战总积分
 func (s *LevelService) GetUserLevelTotalScore(userID uint) (int, error) {
-	query := `
-		WITH user_level_best_scores AS (
-			SELECT
-				la.user_id,
-				la.level_id,
-				MAX(la.score) as best_score
-			FROM level_attempts la
-			WHERE la.success = true AND la.user_id = ? AND la.deleted_at IS NULL
-			GROUP BY la.user_id, la.level_id
-		)
-		SELECT COALESCE(SUM(best_score), 0) as total_score
-		FROM user_level_best_scores
-	`
-
-	var totalScore int
-	err := s.DB.Raw(query, userID).Scan(&totalScore).Error
-	if err != nil {
-		return 0, err
-	}
-
-	return totalScore, nil
+	return s.LevelRepo.GetUserLevelTotalScore(userID)
 }
 
 // GetUserLevelStats 获取用户的关卡挑战统计数据
 func (s *LevelService) GetUserLevelStats(userID uint) (*UserLevelStatsResponse, error) {
-	// 计算本周的总时长（小时）
-	weeklyTimeQuery := `
-		SELECT COALESCE(SUM(total_time_seconds) / 3600.0, 0) as weekly_time_hours
-		FROM level_attempts
-		WHERE user_id = ?
-			AND YEARWEEK(started_at, 1) = YEARWEEK(NOW(), 1)
-			AND ended_at IS NOT NULL
-			AND deleted_at IS NULL
-	`
-
-	// 计算平均成功率
-	successRateQuery := `
-		SELECT
-			CASE
-				WHEN COUNT(*) = 0 THEN 0
-				ELSE ROUND((SUM(CASE WHEN success = true THEN 1 ELSE 0 END) * 100.0) / COUNT(*), 2)
-			END as success_rate
-		FROM level_attempts
-		WHERE user_id = ? AND ended_at IS NOT NULL AND deleted_at IS NULL
-	`
-
-	// 计算已解决的挑战总数（成功完成的关卡数量）
-	solvedChallengesQuery := `
-		SELECT COUNT(DISTINCT level_id) as solved_count
-		FROM level_attempts
-		WHERE user_id = ? AND success = true AND deleted_at IS NULL
-	`
-
-	var weeklyTimeHours float64
-	var averageSuccessRate float64
-	var solvedChallenges int
-
-	// 执行查询
-	if err := s.DB.Raw(weeklyTimeQuery, userID).Scan(&weeklyTimeHours).Error; err != nil {
+	weeklyTimeHours, err := s.LevelRepo.GetUserWeeklyTimeHours(userID)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := s.DB.Raw(successRateQuery, userID).Scan(&averageSuccessRate).Error; err != nil {
+	averageSuccessRate, err := s.LevelRepo.GetUserAverageSuccessRate(userID)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := s.DB.Raw(solvedChallengesQuery, userID).Scan(&solvedChallenges).Error; err != nil {
+	solvedChallenges, err := s.LevelRepo.GetUserSolvedChallengesCount(userID)
+	if err != nil {
 		return nil, err
 	}
 
-	// 获取总积分
-	totalScore, err := s.GetUserLevelTotalScore(userID)
+	totalScore, err := s.LevelRepo.GetUserLevelTotalScore(userID)
 	if err != nil {
 		return nil, err
 	}

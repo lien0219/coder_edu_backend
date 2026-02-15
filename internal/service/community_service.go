@@ -4,6 +4,7 @@ import (
 	"coder_edu_backend/internal/config"
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"coder_edu_backend/internal/util"
 	"context"
 	"fmt"
 	"mime/multipart"
@@ -340,7 +341,7 @@ func (s *CommunityService) UpdatePost(userID uint, postID string, req PostReques
 
 	// 作者本人或管理员可以修改
 	if post.AuthorID != userID && userRole != model.Admin {
-		return nil, fmt.Errorf("permission denied")
+		return nil, util.ErrPermissionDenied
 	}
 
 	post.Title = req.Title
@@ -374,7 +375,7 @@ func (s *CommunityService) DeletePost(userID uint, postID string, userRole model
 
 	// 作者本人或管理员可以删除
 	if post.AuthorID != userID && userRole != model.Admin {
-		return fmt.Errorf("permission denied")
+		return util.ErrPermissionDenied
 	}
 
 	return s.PostRepo.Delete(postID)
@@ -428,7 +429,7 @@ func (s *CommunityService) DeleteComment(userID uint, commentID string, userRole
 
 	// 权限检查：只有作者本人或管理员可以删除
 	if comment.AuthorID != userID && userRole != model.Admin {
-		return fmt.Errorf("permission denied")
+		return util.ErrPermissionDenied
 	}
 
 	return s.CommentRepo.Delete(commentID)
@@ -509,7 +510,7 @@ func (s *CommunityService) CreateResource(userID uint, role model.UserRole, req 
 			return nil, err
 		}
 		if count >= 3 {
-			return nil, fmt.Errorf("daily share limit reached (max 3)")
+			return nil, util.ErrDailyShareLimit
 		}
 	}
 
@@ -603,7 +604,7 @@ func (s *CommunityService) DeleteResource(id string, userID uint, role model.Use
 
 	// 只允许老师或者管理员可以删除
 	if role != model.Teacher && role != model.Admin {
-		return fmt.Errorf("permission denied")
+		return util.ErrPermissionDenied
 	}
 
 	// 如果有物理文件，可以选择是否删除物理文件。这里暂时只删除数据库记录

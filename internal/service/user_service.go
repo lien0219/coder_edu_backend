@@ -3,6 +3,7 @@ package service
 import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"coder_edu_backend/internal/util"
 	"errors"
 	"fmt"
 	"math"
@@ -113,7 +114,7 @@ func (s *UserService) GetUserByID(id uint) (*model.User, error) {
 func (s *UserService) UpdateUser(user *model.User) error {
 	existingUser, err := s.UserRepo.FindByID(user.ID)
 	if err != nil {
-		return errors.New("用户不存在")
+		return util.ErrUserNotFound
 	}
 
 	existingUser.Name = user.Name
@@ -130,7 +131,7 @@ func (s *UserService) UpdateUser(user *model.User) error {
 func (s *UserService) ResetPassword(userID uint) (string, error) {
 	user, err := s.UserRepo.FindByID(userID)
 	if err != nil {
-		return "", errors.New("用户不存在")
+		return "", util.ErrUserNotFound
 	}
 
 	// 生成临时密码
@@ -156,7 +157,7 @@ func (s *UserService) ResetPassword(userID uint) (string, error) {
 func (s *UserService) DeleteUser(id uint) error {
 	user, err := s.UserRepo.FindByID(id)
 	if err != nil {
-		return errors.New("用户不存在")
+		return util.ErrUserNotFound
 	}
 
 	return s.UserRepo.DB.Delete(user).Error
@@ -166,7 +167,7 @@ func (s *UserService) DeleteUser(id uint) error {
 func (s *UserService) DisableUser(id uint, disable bool) error {
 	user, err := s.UserRepo.FindByID(id)
 	if err != nil {
-		return errors.New("用户不存在")
+		return util.ErrUserNotFound
 	}
 
 	user.Disabled = disable
@@ -185,7 +186,7 @@ func generateTempPassword() string {
 func (s *UserService) UpdateUserWithPassword(user *model.User, newPassword string) error {
 	existingUser, err := s.UserRepo.FindByID(user.ID)
 	if err != nil {
-		return errors.New("用户不存在")
+		return util.ErrUserNotFound
 	}
 
 	// 更新基本信息
@@ -412,7 +413,7 @@ func (s *UserService) GetUserStats(userID uint) (*UserStatsResponse, error) {
 func (s *UserService) GetUserLevelStatus(userID uint) (*LevelStatus, error) {
 	user, err := s.UserRepo.FindByID(userID)
 	if err != nil {
-		return nil, errors.New("用户不存在")
+		return nil, util.ErrUserNotFound
 	}
 
 	status := CalculateLevelInfo(user.XP)

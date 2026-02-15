@@ -5,6 +5,7 @@ import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
 	"coder_edu_backend/internal/util"
+	"coder_edu_backend/pkg/logger"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"go.uber.org/zap"
 )
 
 type ContentService struct {
@@ -148,7 +150,7 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 	var thumbnailURL string
 	err = util.GenerateThumbnail(videoPath, thumbnailPath, "3")
 	if err != nil {
-		fmt.Printf("生成缩略图失败: %v\n", err)
+		logger.Log.Error("生成缩略图失败", zap.Error(err))
 		thumbnailURL = s.StorageService.GetURL("thumbnails/default-video-thumbnail.jpg")
 	} else {
 		thumbnailURL, err = s.StorageService.UploadFile(ctx, thumbnailFilename, thumbnailPath, "image/jpeg")

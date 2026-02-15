@@ -4,6 +4,7 @@ import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
+	"errors"
 
 	"github.com/gin-gonic/gin"
 )
@@ -56,7 +57,7 @@ func (c *AuthController) Register(ctx *gin.Context) {
 	}
 
 	if err := c.AuthService.Register(user); err != nil {
-		if err.Error() == "该邮箱已被注册" {
+		if errors.Is(err, util.ErrEmailRegistered) {
 			util.Error(ctx, 409, "该邮箱已被注册")
 		} else {
 			util.LogInternalError(ctx, err)

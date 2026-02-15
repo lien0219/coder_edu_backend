@@ -4,10 +4,11 @@ import (
 	"coder_edu_backend/internal/config"
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/util"
-	"fmt"
+	"coder_edu_backend/pkg/logger"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func AuthMiddleware() gin.HandlerFunc {
@@ -31,7 +32,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		cfg := c.MustGet("config").(*config.Config)
 		claims, err := util.ParseJWT(tokenString, cfg.JWT.Secret)
 		if err != nil {
-			fmt.Printf("JWT解析错误: %v\n", err)
+			logger.Log.Error("JWT解析错误", zap.Error(err))
 			util.Unauthorized(c)
 			c.Abort()
 			return

@@ -3,6 +3,7 @@ package controller
 import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -247,7 +248,7 @@ func (c *CommunityController) UpdatePost(ctx *gin.Context) {
 
 	post, err := c.CommunityService.UpdatePost(user.UserID, postID, req, user.Role)
 	if err != nil {
-		if err.Error() == "permission denied" {
+		if errors.Is(err, util.ErrPermissionDenied) {
 			util.Forbidden(ctx)
 		} else {
 			util.LogInternalError(ctx, err)
@@ -279,7 +280,7 @@ func (c *CommunityController) DeletePost(ctx *gin.Context) {
 	postID := ctx.Param("id")
 	err := c.CommunityService.DeletePost(user.UserID, postID, user.Role)
 	if err != nil {
-		if err.Error() == "permission denied" {
+		if errors.Is(err, util.ErrPermissionDenied) {
 			util.Forbidden(ctx)
 		} else {
 			util.LogInternalError(ctx, err)
@@ -351,7 +352,7 @@ func (c *CommunityController) DeleteComment(ctx *gin.Context) {
 	commentID := ctx.Param("id")
 	err := c.CommunityService.DeleteComment(user.UserID, commentID, user.Role)
 	if err != nil {
-		if err.Error() == "permission denied" {
+		if errors.Is(err, util.ErrPermissionDenied) {
 			util.Forbidden(ctx)
 		} else {
 			util.LogInternalError(ctx, err)
@@ -595,7 +596,7 @@ func (c *CommunityController) CreateResource(ctx *gin.Context) {
 
 	res, err := c.CommunityService.CreateResource(user.UserID, user.Role, req)
 	if err != nil {
-		if err.Error() == "daily share limit reached (max 3)" {
+		if errors.Is(err, util.ErrDailyShareLimit) {
 			util.BadRequest(ctx, "每天最多只能分享3次资源")
 		} else {
 			util.LogInternalError(ctx, err)
@@ -701,7 +702,7 @@ func (c *CommunityController) DeleteResource(ctx *gin.Context) {
 	id := ctx.Param("id")
 	err := c.CommunityService.DeleteResource(id, user.UserID, user.Role)
 	if err != nil {
-		if err.Error() == "permission denied" {
+		if errors.Is(err, util.ErrPermissionDenied) {
 			util.Forbidden(ctx)
 		} else {
 			util.LogInternalError(ctx, err)

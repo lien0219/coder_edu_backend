@@ -27,7 +27,7 @@ func NewAuthService(userRepo *repository.UserRepository, cfg *config.Config) *Au
 func (s *AuthService) Register(user *model.User) error {
 	_, err := s.UserRepo.FindByEmail(user.Email)
 	if err == nil {
-		return errors.New("该邮箱已被注册")
+		return util.ErrEmailRegistered
 	} else if err != gorm.ErrRecordNotFound {
 		return err
 	}

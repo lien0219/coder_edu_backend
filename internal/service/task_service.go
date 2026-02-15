@@ -3,6 +3,7 @@ package service
 import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"coder_edu_backend/internal/util"
 	"errors"
 	"fmt"
 	"time"
@@ -271,8 +272,8 @@ func (s *TaskService) GetCurrentWeekTask(userID uint, role model.UserRole, resou
 	weekStart := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day()-(weekday-1), 0, 0, 0, 0, targetDate.Location())
 	weekEnd := weekStart.AddDate(0, 0, 6)
 
-	weekStartStr := weekStart.Format("2006-01-02")
-	weekEndStr := weekEnd.Format("2006-01-02")
+	weekStartStr := weekStart.Format(util.DateFormat)
+	weekEndStr := weekEnd.Format(util.DateFormat)
 
 	// 如果指定了资源模块ID，获取该模块的任务
 	if resourceModuleID > 0 {

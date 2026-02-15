@@ -186,6 +186,51 @@ func (r *TaskRepository) CheckTaskItemExists(weeklyTaskID uint, dayOfWeek model.
 	return count > 0, err
 }
 
+// FindWeeklyTaskByID 根据ID获取周任务
+func (r *TaskRepository) FindWeeklyTaskByID(id uint) (*model.TeacherWeeklyTask, error) {
+	var task model.TeacherWeeklyTask
+	err := r.DB.First(&task, id).Error
+	return &task, err
+}
+
+// FindTaskItemByID 根据ID获取任务项
+func (r *TaskRepository) FindTaskItemByID(id uint) (*model.TaskItem, error) {
+	var item model.TaskItem
+	err := r.DB.First(&item, id).Error
+	return &item, err
+}
+
+// FindWeeklyTasksByWeek 获取指定周的所有任务
+func (r *TaskRepository) FindWeeklyTasksByWeek(weekStart, weekEnd string, teacherID uint) ([]model.TeacherWeeklyTask, error) {
+	var tasks []model.TeacherWeeklyTask
+	query := r.DB.Preload("TaskItems").Where("week_start_date = ? AND week_end_date = ?", weekStart, weekEnd)
+	if teacherID > 0 {
+		query = query.Where("teacher_id = ?", teacherID)
+	}
+	err := query.Find(&tasks).Error
+	return tasks, err
+}
+
+// FindWeeklyTaskByModuleAndWeek 根据模块和周获取任务
+func (r *TaskRepository) FindWeeklyTaskByModuleAndWeek(moduleID uint, weekStart, weekEnd string, teacherID uint) (*model.TeacherWeeklyTask, error) {
+	var task model.TeacherWeeklyTask
+	query := r.DB.Preload("TaskItems").Where("resource_module_id = ? AND week_start_date = ? AND week_end_date = ?", moduleID, weekStart, weekEnd)
+	if teacherID > 0 {
+		query = query.Where("teacher_id = ?", teacherID)
+	}
+	err := query.First(&task).Error
+	return &task, err
+}
+
+// FindTaskItemByExerciseAndWeek 根据练习ID、星期和周获取任务项
+func (r *TaskRepository) FindTaskItemByExerciseAndWeek(exerciseID uint, dayOfWeek model.Weekday, weekStart, weekEnd string) (*model.TaskItem, error) {
+	var item model.TaskItem
+	err := r.DB.Joins("JOIN teacher_weekly_tasks ON task_items.weekly_task_id = teacher_weekly_tasks.id").
+		Where("task_items.exercise_id = ? AND task_items.day_of_week = ? AND teacher_weekly_tasks.week_start_date = ? AND teacher_weekly_tasks.week_end_date = ?",
+			exerciseID, dayOfWeek, weekStart, weekEnd).First(&item).Error
+	return &item, err
+}
+
 // GetWeeklyTasksWithPagination 获取老师的周任务列表，支持分页和搜索
 func (r *TaskRepository) GetWeeklyTasksWithPagination(teacherID uint, page, limit int, search string) ([]model.TeacherWeeklyTask, int, error) {
 	var tasks []model.TeacherWeeklyTask

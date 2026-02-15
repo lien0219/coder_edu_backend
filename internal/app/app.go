@@ -79,6 +79,7 @@ type repositories struct {
 
 type services struct {
 	auth                 *service.AuthService
+	storage              *service.StorageService
 	content              *service.ContentService
 	motivation           *service.MotivationService
 	dashboard            *service.DashboardService
@@ -178,13 +179,14 @@ func (a *App) initRepositories(db *gorm.DB, rdb *redis.Client) *repositories {
 func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB, rdb *redis.Client) *services {
 	s := &services{}
 
+	s.storage = service.NewStorageService(cfg)
 	s.auth = service.NewAuthService(repos.user, cfg)
-	s.content = service.NewContentService(repos.resource, cfg)
+	s.content = service.NewContentService(repos.resource, s.storage, cfg)
 	s.motivation = service.NewMotivationService(repos.motivation)
 	s.dashboard = service.NewDashboardService(repos.user, repos.task, repos.resource, repos.goal, s.motivation)
 	s.learning = service.NewLearningService(repos.module, repos.task, repos.resource, repos.progress, repos.learningLog, repos.quiz, cfg, db)
 	s.achievement = service.NewAchievementService(repos.achievement, repos.user, repos.goal)
-	s.community = service.NewCommunityService(repos.post, repos.comment, repos.question, repos.answer, repos.user, repos.communityResource, rdb, cfg)
+	s.community = service.NewCommunityService(repos.post, repos.comment, repos.question, repos.answer, repos.user, repos.communityResource, rdb, cfg, s.storage)
 	s.analytics = service.NewAnalyticsService(repos.progress, repos.session, repos.skill, repos.learningLog, repos.recommendation, repos.levelAttempt, db)
 	s.user = service.NewUserServiceWithDB(repos.user, repos.checkin, db)
 
@@ -244,7 +246,7 @@ func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
 		achievement:    controller.NewAchievementController(s.achievement),
 		community:      controller.NewCommunityController(s.community),
 		analytics:      controller.NewAnalyticsController(s.analytics),
-		user:           controller.NewUserController(s.user, a.Config),
+		user:           controller.NewUserController(s.user, s.storage, a.Config),
 		cProgramming:   controller.NewCProgrammingResourceController(s.cProgrammingResource, s.content),
 		learningGoal:   controller.NewLearningGoalController(s.learningGoal),
 		task:           controller.NewTaskController(s.task),
@@ -258,7 +260,7 @@ func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
 		postClassTest:  controller.NewPostClassTestController(s.postClassTest),
 		migrationTask:  controller.NewMigrationTaskController(s.migrationTask),
 		reflection:     controller.NewReflectionController(s.reflection),
-		chat:           controller.NewChatController(s.chat, s.friendship, s.chatHub, a.Config),
+		chat:           controller.NewChatController(s.chat, s.friendship, s.chatHub, s.storage, a.Config),
 		health:         controller.NewHealthController(db),
 	}
 }

@@ -6,16 +6,12 @@ import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gin-gonic/gin"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 // ChatController 处理IM系统相关的HTTP请求
@@ -23,6 +19,7 @@ type ChatController struct {
 	ChatService       *service.ChatService
 	FriendshipService *service.FriendshipService
 	Hub               *service.ChatHub
+	StorageService    *service.StorageService
 	Config            *config.Config
 }
 
@@ -50,11 +47,12 @@ type SendFriendRequestRequest struct {
 	Message    string `json:"message" example:"我是王小明"`
 }
 
-func NewChatController(chatService *service.ChatService, friendshipService *service.FriendshipService, hub *service.ChatHub, cfg *config.Config) *ChatController {
+func NewChatController(chatService *service.ChatService, friendshipService *service.FriendshipService, hub *service.ChatHub, storageService *service.StorageService, cfg *config.Config) *ChatController {
 	return &ChatController{
 		ChatService:       chatService,
 		FriendshipService: friendshipService,
 		Hub:               hub,
+		StorageService:    storageService,
 		Config:            cfg,
 	}
 }
@@ -1244,76 +1242,16 @@ func (ctrl *ChatController) UploadFile(c *gin.Context) {
 
 	newFilename := "chat/" + fmt.Sprintf("%s-%s", time.Now().Format("20060102150405"), strings.ReplaceAll(file.Filename, " ", "-"))
 
-	var fileURL string
-	switch ctrl.Config.Storage.Type {
-	case "local":
-		chatDir := filepath.Join(ctrl.Config.Storage.LocalPath, "chat")
-		if _, err := os.Stat(chatDir); os.IsNotExist(err) {
-			os.MkdirAll(chatDir, 0755)
-		}
+	src, err := file.Open()
+	if err != nil {
+		util.Error(c, 500, "打开文件失败: "+err.Error())
+		return
+	}
+	defer src.Close()
 
-		dst := filepath.Join(ctrl.Config.Storage.LocalPath, newFilename)
-		if err := c.SaveUploadedFile(file, dst); err != nil {
-			util.Error(c, 500, "保存文件失败: "+err.Error())
-			return
-		}
-		fileURL = "/uploads/" + newFilename
-
-	case "minio":
-		minioClient, err := minio.New(ctrl.Config.Storage.MinioEndpoint, &minio.Options{
-			Creds:  credentials.NewStaticV4(ctrl.Config.Storage.MinioAccessID, ctrl.Config.Storage.MinioSecret, ""),
-			Secure: false,
-		})
-		if err != nil {
-			util.Error(c, 500, "连接存储失败: "+err.Error())
-			return
-		}
-
-		src, err := file.Open()
-		if err != nil {
-			util.Error(c, 500, "打开文件失败: "+err.Error())
-			return
-		}
-		defer src.Close()
-
-		_, err = minioClient.PutObject(c, ctrl.Config.Storage.MinioBucket, newFilename, src, file.Size, minio.PutObjectOptions{
-			ContentType: file.Header.Get("Content-Type"),
-		})
-		if err != nil {
-			util.Error(c, 500, "上传文件失败: "+err.Error())
-			return
-		}
-		fileURL = "/" + ctrl.Config.Storage.MinioBucket + "/" + newFilename
-
-	case "oss":
-		client, err := oss.New(ctrl.Config.Storage.OSSEndpoint, ctrl.Config.Storage.OSSAccessKey, ctrl.Config.Storage.OSSSecretKey)
-		if err != nil {
-			util.Error(c, 500, "连接 OSS 失败: "+err.Error())
-			return
-		}
-
-		bucket, err := client.Bucket(ctrl.Config.Storage.OSSBucket)
-		if err != nil {
-			util.Error(c, 500, "获取 Bucket 失败: "+err.Error())
-			return
-		}
-
-		src, err := file.Open()
-		if err != nil {
-			util.Error(c, 500, "打开文件失败: "+err.Error())
-			return
-		}
-		defer src.Close()
-
-		err = bucket.PutObject(newFilename, src)
-		if err != nil {
-			util.Error(c, 500, "上传到 OSS 失败: "+err.Error())
-			return
-		}
-		fileURL = fmt.Sprintf("https://%s.%s/%s", ctrl.Config.Storage.OSSBucket, ctrl.Config.Storage.OSSEndpoint, newFilename)
-
-	default:
-		util.Error(c, 500, "未知的存储类型")
+	fileURL, err := ctrl.StorageService.Upload(c, newFilename, src, file.Size, file.Header.Get("Content-Type"))
+	if err != nil {
+		util.Error(c, 500, "上传文件失败: "+err.Error())
 		return
 	}
 

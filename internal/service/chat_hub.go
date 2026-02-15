@@ -87,6 +87,11 @@ func (c *Client) readPump() {
 
 		monitoring.IMMessageCounter.WithLabelValues(wsMsg.Type, "in").Inc() // 记录上行消息
 
+		// 收到任何有效消息都更新最后活动时间
+		if c.Hub.UserRepo != nil {
+			go c.Hub.UserRepo.UpdateLastSeen(c.UserID)
+		}
+
 		if wsMsg.Type == "TYPING" {
 			data, ok := wsMsg.Data.(map[string]interface{})
 			if !ok {
@@ -200,12 +205,13 @@ type ChatHub struct {
 	unregister     chan *Client
 	Redis          *redis.Client
 	ChatRepo       *repository.ChatRepository
+	UserRepo       *repository.UserRepository
 	FriendshipRepo *repository.FriendshipRepository
 	ctx            context.Context
 	instanceID     string
 }
 
-func NewChatHub(rdb *redis.Client, chatRepo *repository.ChatRepository, friendRepo *repository.FriendshipRepository) *ChatHub {
+func NewChatHub(rdb *redis.Client, chatRepo *repository.ChatRepository, userRepo *repository.UserRepository, friendRepo *repository.FriendshipRepository) *ChatHub {
 	// 暂时生成简单的实例ID(生产环境需要从配置或环境变量中读取)
 	id := fmt.Sprintf("node_%d", time.Now().UnixNano())
 
@@ -215,6 +221,7 @@ func NewChatHub(rdb *redis.Client, chatRepo *repository.ChatRepository, friendRe
 		unregister:     make(chan *Client),
 		Redis:          rdb,
 		ChatRepo:       chatRepo,
+		UserRepo:       userRepo,
 		FriendshipRepo: friendRepo,
 		ctx:            context.Background(),
 		instanceID:     id,
@@ -289,6 +296,11 @@ func (h *ChatHub) Run() {
 			pendingUpdates = append(pendingUpdates, statusUpdate{client.UserID, "online"})
 			monitoring.IMOnlineUsers.Inc()
 
+			// 更新数据库最后活动时间
+			if h.UserRepo != nil {
+				go h.UserRepo.UpdateLastSeen(client.UserID)
+			}
+
 		case client := <-h.unregister:
 			s := h.getShard(client.UserID)
 			s.mu.Lock()
@@ -343,6 +355,11 @@ func (h *ChatHub) refreshOnlineStatus() {
 			// 使用Set放弃Expire，确保即使key意外丢失也能恢复，并锁定在当前实例
 			pipe.Set(h.ctx, fmt.Sprintf("user:online:%d", userID), h.instanceID, onlineTTL)
 			count++
+
+			// 同时也更新数据库中的最后活动时间，确保管理员后台显示在线
+			if h.UserRepo != nil {
+				go h.UserRepo.UpdateLastSeen(userID)
+			}
 		}
 		s.mu.RUnlock()
 	}

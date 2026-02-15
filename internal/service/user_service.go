@@ -70,37 +70,42 @@ func (s *UserService) GetUsers(page, pageSize int, filter UserFilter) ([]model.U
 	var users []model.User
 	var total int64
 
-	query := s.UserRepo.DB.Model(&model.User{})
+	db := s.UserRepo.DB.Model(&model.User{})
 
 	if filter.Role != "" {
-		query = query.Where("role = ?", filter.Role)
+		db = db.Where("role = ?", filter.Role)
 	}
 
 	if filter.Status == "online" {
-		query = query.Where("last_seen > ?", time.Now().Add(-5*time.Minute))
+		db = db.Where("last_seen > ?", time.Now().Add(-5*time.Minute))
 	} else if filter.Status == "offline" {
-		query = query.Where("last_seen <= ?", time.Now().Add(-5*time.Minute))
+		db = db.Where("last_seen <= ?", time.Now().Add(-5*time.Minute))
 	} else if filter.Status == "disabled" {
-		query = query.Where("disabled = ?", true)
+		db = db.Where("disabled = ?", true)
 	}
 
 	if filter.Search != "" {
 		searchTerm := "%" + filter.Search + "%"
-		query = query.Where("name LIKE ? OR email LIKE ?", searchTerm, searchTerm)
+		db = db.Where("name LIKE ? OR email LIKE ?", searchTerm, searchTerm)
 	}
 
 	if !filter.StartDate.IsZero() {
-		query = query.Where("created_at >= ?", filter.StartDate)
+		db = db.Where("created_at >= ?", filter.StartDate)
 	}
 
 	if !filter.EndDate.IsZero() {
-		query = query.Where("created_at <= ?", filter.EndDate)
+		db = db.Where("created_at <= ?", filter.EndDate)
 	}
 
-	query.Count(&total)
+	// 先克隆一个用于计数的查询
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	offset := (page - 1) * pageSize
-	query.Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&users)
+	if err := db.Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
 
 	return users, int(total), nil
 }

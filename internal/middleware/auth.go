@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func AuthMiddleware() gin.HandlerFunc {
+func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString := ""
 		authHeader := c.GetHeader("Authorization")
@@ -29,7 +29,6 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		cfg := c.MustGet("config").(*config.Config)
 		claims, err := util.ParseJWT(tokenString, cfg.JWT.Secret)
 		if err != nil {
 			logger.Log.Error("JWT解析错误", zap.Error(err))
@@ -43,7 +42,7 @@ func AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
-func TryAuthMiddleware() gin.HandlerFunc {
+func TryAuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString := ""
 		authHeader := c.GetHeader("Authorization")
@@ -60,7 +59,6 @@ func TryAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		cfg := c.MustGet("config").(*config.Config)
 		claims, err := util.ParseJWT(tokenString, cfg.JWT.Secret)
 		if err != nil {
 			c.Next()

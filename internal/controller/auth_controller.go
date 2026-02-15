@@ -127,6 +127,7 @@ func (c *AuthController) GetProfile(ctx *gin.Context) {
 		"id":               user.ID,
 		"name":             user.Name,
 		"email":            user.Email,
+		"avatar":           user.Avatar,
 		"role":             user.Role,
 		"xp":               user.XP,
 		"language":         user.Language,

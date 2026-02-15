@@ -208,6 +208,24 @@ func (s *UserService) UpdateUserWithPassword(user *model.User, newPassword strin
 	return s.UserRepo.Update(existingUser)
 }
 
+// UpdateProfile 更新个人资料
+func (s *UserService) UpdateProfile(userID uint, name, avatar string) error {
+	user, err := s.UserRepo.FindByID(userID)
+	if err != nil {
+		return err
+	}
+
+	if name != "" {
+		user.Name = name
+	}
+	if avatar != "" {
+		user.Avatar = avatar
+	}
+	user.UpdatedAt = time.Now()
+
+	return s.UserRepo.Update(user)
+}
+
 // UpdateUserPoints 更新用户的积分
 func (s *UserService) UpdateUserPoints(userID uint, points int) error {
 	_, err := s.UserRepo.FindByID(userID)

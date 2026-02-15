@@ -58,9 +58,12 @@ func (r *UserRepository) UpdateLastLogin(userID uint) error {
 }
 
 func (r *UserRepository) UpdateLastSeen(userID uint) error {
+	if userID == 0 {
+		return nil
+	}
 	return r.DB.Model(&model.User{}).
 		Where("id = ?", userID).
-		Update("last_seen", time.Now()).
+		UpdateColumn("last_seen", time.Now()).
 		Error
 }
 func (r *UserRepository) FindTopByXP(limit int) ([]model.User, error) {

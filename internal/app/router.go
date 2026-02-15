@@ -23,7 +23,7 @@ func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *reposito
 	a.registerPublicRoutes(router, c)
 
 	// 2. 社区模块
-	a.registerCommunityRoutes(router, c)
+	a.registerCommunityRoutes(router, c, repos)
 
 	// 3. 需要授权的路由
 	authGroup := router.Group("/api")
@@ -37,11 +37,12 @@ func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *reposito
 	}
 
 	// 4. 管理员相关接口
-	a.registerAdminRoutes(router, c)
+	a.registerAdminRoutes(router, c, repos, cfg)
 }
 
-func (a *App) registerCommunityRoutes(router *gin.Engine, c *controllers) {
+func (a *App) registerCommunityRoutes(router *gin.Engine, c *controllers, repos *repositories) {
 	community := router.Group("/api/community")
+	community.Use(middleware.ActivityMiddleware(repos.user))
 	{
 		// 列表类：可选认证，允许游客访问，登录用户可看我的
 		community.GET("/posts", middleware.TryAuthMiddleware(a.Config), c.community.GetPosts)
@@ -365,9 +366,9 @@ func (a *App) registerTeacherRoutes(rg *gin.RouterGroup, c *controllers) {
 	}
 }
 
-func (a *App) registerAdminRoutes(router *gin.Engine, c *controllers) {
+func (a *App) registerAdminRoutes(router *gin.Engine, c *controllers, repos *repositories, cfg *config.Config) {
 	admin := router.Group("/api/admin")
-	admin.Use(middleware.AuthMiddleware(a.Config))
+	admin.Use(middleware.AuthMiddleware(a.Config), middleware.ActivityMiddleware(repos.user))
 	{
 		// 1. 用户列表和详情：允许管理员和老师访问
 		admin.GET("/users", middleware.RoleMiddleware(model.Admin, model.Teacher), c.user.GetUsers)

@@ -16,19 +16,23 @@ jwt:
   expire_hours: 12
 
 storage:
-  type: "local" # or "minio"
+  type: "oss" # "local" or "minio" or "oss"
   local_path: "./uploads"
   minio_endpoint: "localhost:9000"
   minio_access_key: "minioadmin"
   minio_secret_key: "minioadmin"
   minio_bucket: "coder_edu_backend"
+  oss_endpoint: "oss-ap-southeast-1.aliyuncs.com"
+  oss_access_key: "******"
+  oss_secret_key: "******"
+  oss_bucket: "coder-edu-backend"
 
 Tracing:
   Enabled: false
   CollectorEndpoint: http://localhost:8080/api/traces
 
 judge0:
-  api_key: "REDACTED_JUDGE0_KEY"
+  api_key: "******"
   url: "https://judge0-ce.p.rapidapi.com/submissions?wait=true&base64_encoded=true"
   host: "judge0-ce.p.rapidapi.com"
 

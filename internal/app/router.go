@@ -80,6 +80,13 @@ func (a *App) registerPublicRoutes(router *gin.Engine, c *controllers) {
 		public.POST("/register", c.auth.Register)
 		public.POST("/login", c.auth.Login)
 		public.GET("/motivation", c.motivation.GetCurrentMotivation)
+
+		// 验证码相关
+		captcha := public.Group("/auth/captcha")
+		{
+			captcha.POST("/verify", c.auth.VerifyCaptcha)
+			captcha.GET("/check-skip", c.auth.CheckCaptchaSkip)
+		}
 	}
 
 	// 无需权限的答案提交接口

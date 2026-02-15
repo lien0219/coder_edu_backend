@@ -6,6 +6,7 @@ import (
 	"coder_edu_backend/internal/repository"
 	"coder_edu_backend/internal/util"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,28 +14,29 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 )
 
 type ContentService struct {
 	ResourceRepo   *repository.ResourceRepository
 	StorageService *StorageService
 	Cfg            *config.Config
-	uploadProgress map[string]*model.UploadProgress
-	progressMutex  sync.Mutex
+	Redis          *redis.Client
 }
 
-func NewContentService(resourceRepo *repository.ResourceRepository, storageService *StorageService, cfg *config.Config) *ContentService {
+func NewContentService(resourceRepo *repository.ResourceRepository, storageService *StorageService, cfg *config.Config, rdb *redis.Client) *ContentService {
 	return &ContentService{
 		ResourceRepo:   resourceRepo,
 		StorageService: storageService,
 		Cfg:            cfg,
-		uploadProgress: make(map[string]*model.UploadProgress),
+		Redis:          rdb,
 	}
 }
+
+const uploadProgressKeyPrefix = "upload_progress:"
 
 func (s *ContentService) UploadResource(c *gin.Context, file *multipart.FileHeader, resource *model.Resource) error {
 	claims := util.GetUserFromContext(c)
@@ -214,29 +216,44 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 		return nil, "", err
 	}
 
-	// 更新进度
-	s.progressMutex.Lock()
-	progress, exists := s.uploadProgress[identifier]
-	if !exists {
+	// 更新进度 (使用Redis----方便共享)
+	redisKey := uploadProgressKeyPrefix + identifier
+	var progress *model.UploadProgress
+
+	// 获取现有进度
+	val, err := s.Redis.Get(ctx, redisKey).Result()
+	if err == redis.Nil {
 		progress = &model.UploadProgress{
 			TotalChunks:    totalChunks,
-			UploadedChunks: 1,
-			FileSize:       chunkFile.Size,
+			UploadedChunks: 0,
+			FileSize:       0,
 			Identifier:     identifier,
 			Filename:       filename,
 			CreatedAt:      time.Now(),
 			Chunks:         make(map[int]bool),
 		}
-		s.uploadProgress[identifier] = progress
+	} else if err != nil {
+		return nil, "", err
 	} else {
-		progress.FileSize += chunkFile.Size
-		if !progress.Chunks[chunkNumber] {
-			progress.UploadedChunks++
+		if err := json.Unmarshal([]byte(val), &progress); err != nil {
+			return nil, "", err
 		}
 	}
-	progress.Chunks[chunkNumber] = true
+
+	// 更新进度
+	if !progress.Chunks[chunkNumber] {
+		progress.UploadedChunks++
+		progress.FileSize += chunkFile.Size
+		progress.Chunks[chunkNumber] = true
+	}
+
 	isComplete := progress.UploadedChunks == progress.TotalChunks
-	s.progressMutex.Unlock()
+
+	// 保存回Redis(设置24小时过期)
+	updatedVal, _ := json.Marshal(progress)
+	if err := s.Redis.Set(ctx, redisKey, updatedVal, 24*time.Hour).Err(); err != nil {
+		return nil, "", err
+	}
 
 	var finalURL string
 	if isComplete {
@@ -275,9 +292,8 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 			time.Sleep(5 * time.Second)
 			os.RemoveAll(tempDir)
 			os.Remove(finalPath)
-			s.progressMutex.Lock()
-			delete(s.uploadProgress, identifier)
-			s.progressMutex.Unlock()
+			// 从 Redis 中删除进度
+			s.Redis.Del(context.Background(), redisKey)
 		}()
 	}
 
@@ -285,13 +301,19 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 }
 
 func (s *ContentService) GetUploadProgress(identifier string) (*model.UploadProgress, error) {
-	s.progressMutex.Lock()
-	defer s.progressMutex.Unlock()
-	progress, exists := s.uploadProgress[identifier]
-	if !exists {
+	redisKey := uploadProgressKeyPrefix + identifier
+	val, err := s.Redis.Get(context.Background(), redisKey).Result()
+	if err == redis.Nil {
 		return nil, errors.New("upload progress not found")
+	} else if err != nil {
+		return nil, err
 	}
-	return progress, nil
+
+	var progress model.UploadProgress
+	if err := json.Unmarshal([]byte(val), &progress); err != nil {
+		return nil, err
+	}
+	return &progress, nil
 }
 
 func (s *ContentService) UpdateResource(id uint, resourceType model.ResourceType, updates map[string]interface{}) error {

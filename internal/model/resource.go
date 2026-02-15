@@ -42,5 +42,5 @@ type UploadProgress struct {
 	Identifier     string       `json:"identifier"`
 	Filename       string       `json:"filename"`
 	CreatedAt      time.Time    `json:"createdAt"`
-	Chunks         map[int]bool `json:"-"`
+	Chunks         map[int]bool `json:"chunks"`
 }

@@ -160,11 +160,29 @@ func (s *TaskService) GetTodayTasks(userID, resourceModuleID uint) ([]map[string
 
 // buildTaskResult 构建任务结果列表
 func (s *TaskService) buildTaskResult(taskItems []model.TaskItem, userID uint) []map[string]interface{} {
+	if len(taskItems) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	// 批量获取任务完成状态
+	taskItemIDs := make([]uint, len(taskItems))
+	for i, item := range taskItems {
+		taskItemIDs[i] = item.ID
+	}
+
+	completions, _ := s.TaskRepo.GetDailyTaskCompletionsByTaskItemIDs(userID, taskItemIDs, time.Now())
+	completionMap := make(map[uint]model.DailyTaskCompletion)
+	for _, c := range completions {
+		completionMap[c.TaskItemID] = c
+	}
+
 	result := make([]map[string]interface{}, 0, len(taskItems))
 	for _, item := range taskItems {
 		// 获取对应的周任务信息以获取资源模块ID
 		resourceModuleID := uint(0)
-		if weeklyTask, err := s.TaskRepo.FindWeeklyTaskByID(item.WeeklyTaskID); err == nil {
+		if item.WeeklyTask != nil {
+			resourceModuleID = item.WeeklyTask.ResourceModuleID
+		} else if weeklyTask, err := s.TaskRepo.FindWeeklyTaskByID(item.WeeklyTaskID); err == nil {
 			resourceModuleID = weeklyTask.ResourceModuleID
 		}
 
@@ -185,8 +203,7 @@ func (s *TaskService) buildTaskResult(taskItems []model.TaskItem, userID uint) [
 		}
 
 		// 获取任务完成状态
-		completion, err := s.TaskRepo.GetDailyTaskCompletion(userID, item.ID, time.Now())
-		if err == nil {
+		if completion, ok := completionMap[item.ID]; ok {
 			taskInfo["isCompleted"] = completion.IsCompleted
 			taskInfo["progress"] = completion.Progress
 			taskInfo["resourceCompleted"] = completion.ResourceCompleted

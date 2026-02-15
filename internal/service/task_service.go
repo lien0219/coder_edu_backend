@@ -59,10 +59,6 @@ func (s *TaskService) SetWeeklyTask(teacherID, resourceModuleID uint, taskItems 
 	if err == nil {
 		// 更新现有任务
 		weeklyTask = existingTask
-		// 删除旧的任务项（在验证新任务项之前删除，避免重复检查）
-		if err := s.TaskRepo.DB.Where("weekly_task_id = ?", weeklyTask.ID).Delete(&model.TaskItem{}).Error; err != nil {
-			return nil, fmt.Errorf("删除旧任务项失败: %v", err)
-		}
 		weeklyTask.TaskItems = taskItems
 	} else {
 		// 创建新任务
@@ -77,8 +73,17 @@ func (s *TaskService) SetWeeklyTask(teacherID, resourceModuleID uint, taskItems 
 	}
 
 	// 验证并完善任务项信息
+	seen := make(map[string]bool)
 	for i := range taskItems {
 		item := &taskItems[i]
+
+		// 检查同一天是否添加了相同的资源
+		key := fmt.Sprintf("%s-%s-%d-%d", item.DayOfWeek, item.ItemType, item.ResourceID, item.ExerciseID)
+		if seen[key] {
+			return nil, fmt.Errorf("同一天不能添加重复的任务项")
+		}
+		seen[key] = true
+
 		item.WeeklyTaskID = weeklyTask.ID
 		item.ID = 0
 
@@ -238,11 +243,32 @@ func (s *TaskService) GetWeeklyTasks(teacherID uint, page, limit int, search str
 }
 
 // GetCurrentWeekTask 获取当前周任务
-func (s *TaskService) GetCurrentWeekTask(teacherID uint, resourceModuleID uint) (*model.TeacherWeeklyTask, error) {
-	// 如果指定了资源模块ID，只获取该模块的任务
+func (s *TaskService) GetCurrentWeekTask(userID uint, role model.UserRole, resourceModuleID uint, targetDate time.Time) (interface{}, error) {
+	if targetDate.IsZero() {
+		targetDate = time.Now()
+	}
+
+	// 计算目标日期所在的周一和周日
+	weekday := int(targetDate.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	weekStart := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day()-(weekday-1), 0, 0, 0, 0, targetDate.Location())
+	weekEnd := weekStart.AddDate(0, 0, 6)
+
+	// 如果指定了资源模块ID，获取该模块的任务
 	if resourceModuleID > 0 {
-		task, err := s.TaskRepo.GetWeeklyTaskByTeacherAndDate(teacherID, resourceModuleID, time.Now())
-		if err != nil {
+		var task model.TeacherWeeklyTask
+		query := s.TaskRepo.DB.Preload("TaskItems").
+			Where("resource_module_id = ? AND week_start_date = ? AND week_end_date = ?",
+				resourceModuleID, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02"))
+
+		// 如果不是学生，则限制为该老师的任务
+		if role != model.Student {
+			query = query.Where("teacher_id = ?", userID)
+		}
+
+		if err := query.First(&task).Error; err != nil {
 			return nil, err
 		}
 
@@ -255,50 +281,18 @@ func (s *TaskService) GetCurrentWeekTask(teacherID uint, resourceModuleID uint) 
 		return task, nil
 	}
 
-	// 如果没有指定资源模块ID，获取老师本周的所有任务
-	// 获取本周的日期范围（周一到周日）
-	now := time.Now()
-	weekday := int(now.Weekday())
-	// 计算周一的日期：如果今天是周日(0)，则减去6天；否则减去(weekday-1)天
-	var weekStart time.Time
-	if weekday == 0 {
-		weekStart = time.Date(now.Year(), now.Month(), now.Day()-6, 0, 0, 0, 0, now.Location())
-	} else {
-		weekStart = time.Date(now.Year(), now.Month(), now.Day()-(weekday-1), 0, 0, 0, 0, now.Location())
-	}
-	weekEnd := weekStart.AddDate(0, 0, 6) // 周日
-
-	// 获取本周的所有周任务 - 修改查询逻辑，获取老师所有的周任务
+	// 如果没有指定资源模块ID，获取本周的所有任务
 	var allTasks []model.TeacherWeeklyTask
+	query := s.TaskRepo.DB.Preload("TaskItems").
+		Where("week_start_date = ? AND week_end_date = ?",
+			weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02"))
 
-	// 首先尝试严格匹配本周
-	err := s.TaskRepo.DB.Where("teacher_id = ? AND week_start_date = ? AND week_end_date = ?",
-		teacherID, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02")).
-		Preload("TaskItems").Find(&allTasks).Error
-
-	if err != nil {
-		return nil, err
+	// 如果不是学生，则限制为该老师的任务
+	if role != model.Student {
+		query = query.Where("teacher_id = ?", userID)
 	}
 
-	// 如果本周任务不完整（任务项总数较少），获取老师所有的周任务
-	totalTaskItems := 0
-	for _, task := range allTasks {
-		totalTaskItems += len(task.TaskItems)
-	}
-
-	if totalTaskItems < 10 { // 如果任务项总数少于10个，获取所有相关任务
-		var allTeacherTasks []model.TeacherWeeklyTask
-		err = s.TaskRepo.DB.Where("teacher_id = ?", teacherID).
-			Order("week_start_date DESC").
-			Limit(10). // 限制获取最近10个周任务
-			Preload("TaskItems").Find(&allTeacherTasks).Error
-
-		if err == nil {
-			allTasks = allTeacherTasks // 使用所有任务替代本周任务
-		}
-	}
-
-	if err != nil {
+	if err := query.Find(&allTasks).Error; err != nil {
 		return nil, err
 	}
 
@@ -306,21 +300,32 @@ func (s *TaskService) GetCurrentWeekTask(teacherID uint, resourceModuleID uint) 
 		return nil, gorm.ErrRecordNotFound
 	}
 
-	// 合并所有任务项（保持原始顺序）
-	allMergedItems := make([]model.TaskItem, 0)
+	// 构建分组返回结果
+	groups := make([]map[string]interface{}, 0)
+	totalTaskItems := 0
+
 	for _, task := range allTasks {
-		allMergedItems = append(allMergedItems, task.TaskItems...)
+		// 按星期几分组
+		dayGroups := make(map[string][]model.TaskItem)
+		for _, item := range task.TaskItems {
+			dayGroups[string(item.DayOfWeek)] = append(dayGroups[string(item.DayOfWeek)], item)
+		}
+
+		groups = append(groups, map[string]interface{}{
+			"resourceModuleId":   task.ResourceModuleID,
+			"resourceModuleName": task.ResourceModuleName,
+			"taskItems":          task.TaskItems,
+			"dayGroups":          dayGroups,
+		})
+		totalTaskItems += len(task.TaskItems)
 	}
 
-	// 返回一个虚拟的周任务，包含所有合并后的任务项
-	result := &model.TeacherWeeklyTask{
-		TeacherID:     teacherID,
-		WeekStartDate: weekStart,
-		WeekEndDate:   weekEnd,
-		TaskItems:     allMergedItems,
-	}
-
-	return result, nil
+	return map[string]interface{}{
+		"weekStartDate":  weekStart,
+		"weekEndDate":    weekEnd,
+		"groups":         groups,
+		"totalTaskItems": totalTaskItems,
+	}, nil
 }
 
 // DeleteWeeklyTask 删除周任务

@@ -68,65 +68,12 @@ func (r *TaskRepository) FindTransferTasks(userID uint) ([]*model.Task, error) {
 
 // CreateWeeklyTask 创建周任务
 func (r *TaskRepository) CreateWeeklyTask(task *model.TeacherWeeklyTask) error {
-	if err := r.DB.Create(task).Error; err != nil {
-		return err
-	}
-
-	// 在事务外批量插入任务项，减少锁竞争
-	db, err := r.DB.DB()
-	if err != nil {
-		return err
-	}
-
-	// 准备一个批量插入的预处理语句
-	stmt, err := db.Prepare("INSERT INTO task_items (weekly_task_id, day_of_week, item_type, resource_id, exercise_id, title, description, content_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-	if err != nil {
-		return err
-	}
-	defer stmt.Close() // 使用defer确保无论如何都会关闭
-
-	// 开始事务进行批量插入
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-
-	// 使用新事务的stmt
-	txStmt, err := tx.Prepare("INSERT INTO task_items (weekly_task_id, day_of_week, item_type, resource_id, exercise_id, title, description, content_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	defer txStmt.Close()
-
-	// 批量执行插入
-	for i := range task.TaskItems {
-		item := &task.TaskItems[i]
-		var (
-			taskID    = task.ID
-			itemDay   = string(item.DayOfWeek)
-			itemType  = string(item.ItemType)
-			resID     = item.ResourceID
-			exerID    = item.ExerciseID
-			itemTitle = item.Title
-			itemDesc  = item.Description
-			itemCType = item.ContentType
-		)
-
-		_, err = txStmt.Exec(taskID, itemDay, itemType, resID, exerID, itemTitle, itemDesc, itemCType)
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-	}
-
-	return tx.Commit()
+	return r.DB.Create(task).Error
 }
 
 // GetWeeklyTaskByTeacherAndDate 根据老师ID、资源分类ID和日期获取周任务
 func (r *TaskRepository) GetWeeklyTaskByTeacherAndDate(teacherID uint, resourceModuleID uint, date time.Time) (*model.TeacherWeeklyTask, error) {
 	var task model.TeacherWeeklyTask
-	// 计算本周的开始和结束日期
 	weekday := int(date.Weekday())
 	if weekday == 0 {
 		weekday = 7
@@ -137,7 +84,6 @@ func (r *TaskRepository) GetWeeklyTaskByTeacherAndDate(teacherID uint, resourceM
 	query := r.DB.Preload("TaskItems").Where("teacher_id = ? AND week_start_date = ? AND week_end_date = ?",
 		teacherID, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02"))
 
-	// 如果提供了资源分类ID，则添加到查询条件中
 	if resourceModuleID > 0 {
 		query = query.Where("resource_module_id = ?", resourceModuleID)
 	}
@@ -148,62 +94,17 @@ func (r *TaskRepository) GetWeeklyTaskByTeacherAndDate(teacherID uint, resourceM
 
 // UpdateWeeklyTask 更新周任务
 func (r *TaskRepository) UpdateWeeklyTask(task *model.TeacherWeeklyTask) error {
-	// 首先保存周任务本身
-	if err := r.DB.Save(task).Error; err != nil {
-		return err
-	}
-
-	db, err := r.DB.DB()
-	if err != nil {
-		return err
-	}
-
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-
-	if _, err := tx.Exec("DELETE FROM task_items WHERE weekly_task_id = ?", task.ID); err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	txStmt, err := tx.Prepare("INSERT INTO task_items (weekly_task_id, day_of_week, item_type, resource_id, exercise_id, title, description, content_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	defer txStmt.Close()
-
-	for i := range task.TaskItems {
-		item := &task.TaskItems[i]
-		var (
-			taskID    = task.ID
-			itemDay   = string(item.DayOfWeek)
-			itemType  = string(item.ItemType)
-			resID     = item.ResourceID
-			exerID    = item.ExerciseID
-			itemTitle = item.Title
-			itemDesc  = item.Description
-			itemCType = item.ContentType
-		)
-
-		_, err = txStmt.Exec(taskID, itemDay, itemType, resID, exerID, itemTitle, itemDesc, itemCType)
-		if err != nil {
-			tx.Rollback()
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("weekly_task_id = ?", task.ID).Delete(&model.TaskItem{}).Error; err != nil {
 			return err
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
+		if err := tx.Save(task).Error; err != nil {
+			return err
+		}
 
-	if err := r.DB.Where("weekly_task_id = ?", task.ID).Find(&task.TaskItems).Error; err != nil {
-		return nil
-	}
-
-	return nil
+		return tx.Where("weekly_task_id = ?", task.ID).Find(&task.TaskItems).Error
+	})
 }
 
 // CreateDailyTaskCompletion 创建每日任务完成记录

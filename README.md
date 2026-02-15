@@ -13,24 +13,40 @@ Coder Edu Backend 是一个基于 Go 语言的高性能教育平台后端服务�
 
 1. **仪表盘 (Dashboard)**：实时展示今日任务、学习进度、成就预览及学习数据快照。
 2. **课前准备 (Pre-class)**：包含学习诊断、目标设定、生成个性化学习路径及资源包准备。
-3. **课中学习 (In-class)**：支持任务链驱动、实时学习反馈、在线协作及集成式代码编辑器。
+3. **课中学习 (In-class)**：支持任务链驱动、实时学习反馈、在线协作及集成式代码编辑器（基于 Judge0）。
 4. **课后回顾 (Post-class)**：记录学习日志、阶段性测验、知识迁移任务及反思指南。
 5. **成就系统 (Achievement)**：丰富的徽章墙、积分等级、全球排行榜及目标管理。
-6. **深度分析 (Analytics)**：多维度技能评估、学习曲线分析及智能个性化建议。
-7. **社区互动 (Community)**：集成讨论区、问答区及资源分享平台。
-8. **编程资源管理**：专门针对 C 语言等编程资源的存储与分发。
+6. **协作中心 (Collaboration)**：支持基于 WebSocket 的实时聊天室、私聊、群聊及资源分享。
+7. **深度分析 (Analytics)**：多维度技能评估、学习曲线分析及智能个性化建议。
+8. **编程资源管理**：专门针对 C 语言等编程资源的存储（支持 OSS/MinIO/本地）与分发。
+
+### 特色技术实现
+
+- **智能验证码策略**：支持“15天内免验证”信任设备机制，平衡安全与体验。
+- **大文件分片上传**：针对教学视频支持分片上传及进度查询，确保大文件传输稳定性。
+- **在线代码执行**：集成 Judge0 API，支持多种编程语言的在线运行与自动化评测。
+- **实时通信架构**：基于 Gorilla WebSocket 构建高性能聊天系统，支持消息撤回、已读确认。
+- **多端存储支持**：统一存储接口，支持本地文件系统、MinIO 及阿里云 OSS。
 
 ## 技术栈
 
 - **核心框架**: [Go](https://golang.org/) 1.24+ / [Gin](https://gin-gonic.com/)
-- **数据持久化**: [MySQL](https://www.mysql.com/) / [GORM](https://gorm.io/)
-- **对象存储**: [MinIO](https://min.io/)
+- **数据持久化**: [MySQL](https://www.mysql.com/) / [GORM](https://gorm.io/) / [Redis](https://redis.io/)
+- **对象存储**: [MinIO](https://min.io/) / [Aliyun OSS](https://www.aliyun.com/product/oss)
+- **实时通信**: [Gorilla WebSocket](https://github.com/gorilla/websocket)
+- **代码执行**: [Judge0](https://judge0.com/)
 - **配置管理**: [Viper](https://github.com/spf13/viper)
 - **日志系统**: [Zap](https://github.com/uber-go/zap) + [Lumberjack](https://github.com/natefinch/lumberjack)
-- **身份认证**: [JWT](https://github.com/dgrijalva/jwt-go)
+- **身份认证**: [JWT](https://github.com/dgrijalva/jwt-go) (带设备信任机制)
 - **API 文档**: [Swagger](https://github.com/swaggo/swag)
 - **多媒体处理**: [FFmpeg](https://ffmpeg.org/)
-- **监控与追踪**: [Prometheus](https://prometheus.io/) / [OpenTelemetry](https://opentelemetry.io/) (Jaeger)
+- **监控与追踪**: [Prometheus](https://prometheus.io/) (集成 `/metrics`)
+
+## 权限角色说明
+
+- **学生 (Student)**: 参与课程、提交作业、练习代码、查看进度、参与社区讨论与协作。
+- **教师 (Teacher)**: 管理关卡、发布任务、批改作业、查看学生进度并提供个性化建议。
+- **管理员 (Admin)**: 拥有最高权限，包括用户管理、系统配置、全局资源审核及激励机制设置。
 
 ## 项目结构
 
@@ -56,29 +72,57 @@ Coder Edu Backend 是一个基于 Go 语言的高性能教育平台后端服务�
 
 ## 快速开始
 
-### 本地开发环境
+### 环境准备
 
-1. **环境准备**
-   - 安装 Go 1.24+
-   - 安装 MySQL 8.0+
-   - (可选) 安装 MinIO
+- 安装 Go 1.24+
+- 安装 MySQL 8.0+
+- 安装 Redis 6.0+
+- (可选) 安装 MinIO 或开通阿里云 OSS
+- (可选) 获取 [Judge0 API Key](https://rapidapi.com/judge0-official/api/judge0-ce)
 
-2. **克隆并安装依赖**
+### 配置应用
+
+编辑 `configs/config.yaml`。主要配置项说明：
+
+```yaml
+server:
+  port: 8080        # 服务端口
+  mode: "debug"     # 运行模式: debug/release
+
+database:           # MySQL 配置
+  host: "localhost"
+  dbname: "coder_edu_backend"
+
+storage:
+  type: "oss"       # 存储类型: local/minio/oss
+  oss_endpoint: "..."
+  oss_access_key: "..."
+
+redis:              # Redis 配置 (用于限流和缓存)
+  host: "localhost"
+  port: 6379
+
+judge0:             # 代码评测配置
+  api_key: "..."
+  url: "..."
+```
+
+### 运行应用
+
+1. **克隆并安装依赖**
    ```bash
    git clone <项目仓库地址>
    cd coder_edu_backend
    go mod tidy
    ```
 
-3. **配置应用**
-   编辑 `configs/config.yaml`，填入正确的数据库和中间件连接信息。
-
-4. **运行应用**
+2. **直接运行**
    ```bash
-   # 直接运行
    go run main.go
-   
-   # 或者使用热重载 (推荐)
+   ```
+
+3. **使用热重载 (推荐)**
+   ```bash
    air
    ```
 
@@ -93,7 +137,9 @@ docker-compose up -d
 ### API 文档查看
 
 应用启动后，可以通过以下地址访问交互式 Swagger 文档：
-`http://localhost:<port>/swagger/index.html`
+- Swagger UI: `http://localhost:<port>/swagger/index.html`
+- 指标监控: `http://localhost:<port>/metrics` (Prometheus 格式)
+- 健康检查: `http://localhost:<port>/api/health`
 
 ### 重新生成 Swagger 文档
 
@@ -105,6 +151,78 @@ docker-compose up -d
 # Linux/macOS
 ./scripts/generate_swagger.sh
 ```
+
+## 生产环境部署指南 (安全建议)
+
+为了确保“15天内免验证”等功能在生产环境下安全、稳定地运行，建议在部署时参考以下方案配置 CORS 和 Cookie。
+
+### 方案一：相同主域共享 Cookie（最推荐）
+
+将前后端部署在同一个二级域名下。
+- **前端**: `https://www.example.com`
+- **后端**: `https://api.example.com`
+
+#### 配置要点
+1. **后端设置 Cookie 域名**: 在 `Set-Cookie` 时，将 `Domain` 设置为 `.example.com`。
+2. **Cookie 属性**:
+   - `HttpOnly: true` (防止脚本读取)
+   - `Secure: true` (HTTPS 强制要求)
+   - `SameSite: Lax` (同主域下兼容性最好)
+
+---
+
+### 方案二：完全跨域部署
+
+如果前后端域名完全不同（如 `frontend.com` 和 `backend.com`）。
+
+#### 配置要点
+1. **全站 HTTPS**: 跨站 Cookie 必须配合 `Secure: true`，这要求必须使用 HTTPS。
+2. **后端 Cookie 属性**:
+   - `SameSite: None` (允许跨站发送)
+   - `Secure: true` (必须开启，否则 None 不生效)
+3. **CORS 严格校验**:
+   - `Access-Control-Allow-Origin` 必须指定精确域名，不能用 `*`。
+   - `Access-Control-Allow-Credentials` 必须为 `true`。
+
+---
+
+### 方案三：Nginx 反向代理（最简单）
+
+使用 Nginx 将前后端统一到一个域名下，避开所有跨域问题：
+```nginx
+server {
+    listen 443 ssl;
+    server_name example.com;
+
+    location / {
+        proxy_pass http://frontend_server; # 前端
+    }
+
+    location /api/ {
+        proxy_pass http://backend_server;  # 后端
+    }
+}
+```
+**优点**：浏览器视为同源，Cookie 传递最顺滑。
+
+### 后端代码调整建议 (Go)
+
+在生产环境的 `internal/controller/auth_controller.go` 中，设置 Cookie 时请务必开启 `Secure` 和 `HttpOnly`：
+
+```go
+ctx.SetCookie(
+    "trust_device_token", 
+    token, 
+    15 * 24 * 3600,      // 15天
+    "/", 
+    ".yourdomain.com",   // 生产环境主域名
+    true,                // Secure: 生产环境必须为 true
+    true,                // HttpOnly: 必须为 true
+)
+```
+
+---
+**注意**：在本地开发环境 (127.0.0.1) 下，`Secure` 属性通常可以不开启，但在任何通过非 127.0.0.1 访问的生产环境下，HTTPS 是 Cookie 安全传输的基础。
 
 ## 许可证
 

@@ -6,29 +6,27 @@ import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gin-gonic/gin"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 // UserController 处理用户相关的HTTP请求
 type UserController struct {
-	UserService *service.UserService
-	Config      *config.Config
+	UserService    *service.UserService
+	StorageService *service.StorageService
+	Config         *config.Config
 }
 
 // NewUserController 创建一个新的用户控制器实例
-func NewUserController(userService *service.UserService, cfg *config.Config) *UserController {
+func NewUserController(userService *service.UserService, storageService *service.StorageService, cfg *config.Config) *UserController {
 	return &UserController{
-		UserService: userService,
-		Config:      cfg,
+		UserService:    userService,
+		StorageService: storageService,
+		Config:         cfg,
 	}
 }
 
@@ -238,75 +236,15 @@ func (c *UserController) UploadAvatar(ctx *gin.Context) {
 	// 文件名
 	filename := "avatars/" + time.Now().Format("20060102150405") + "-" + util.GenerateRandomString(6) + ext
 
-	var url string
-	switch c.Config.Storage.Type {
-	case "local":
-		avatarDir := filepath.Join(c.Config.Storage.LocalPath, "avatars")
-		if _, err := os.Stat(avatarDir); os.IsNotExist(err) {
-			os.MkdirAll(avatarDir, 0755)
-		}
+	src, err := file.Open()
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+	defer src.Close()
 
-		dst := filepath.Join(c.Config.Storage.LocalPath, filename)
-		if err := ctx.SaveUploadedFile(file, dst); err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-		url = "/uploads/" + filename
-
-	case "minio":
-		minioClient, err := minio.New(c.Config.Storage.MinioEndpoint, &minio.Options{
-			Creds:  credentials.NewStaticV4(c.Config.Storage.MinioAccessID, c.Config.Storage.MinioSecret, ""),
-			Secure: false,
-		})
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-
-		src, err := file.Open()
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-		defer src.Close()
-
-		_, err = minioClient.PutObject(ctx, c.Config.Storage.MinioBucket, filename, src, file.Size, minio.PutObjectOptions{
-			ContentType: file.Header.Get("Content-Type"),
-		})
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-		url = "/" + c.Config.Storage.MinioBucket + "/" + filename
-
-	case "oss":
-		client, err := oss.New(c.Config.Storage.OSSEndpoint, c.Config.Storage.OSSAccessKey, c.Config.Storage.OSSSecretKey)
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-
-		bucket, err := client.Bucket(c.Config.Storage.OSSBucket)
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-
-		src, err := file.Open()
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-		defer src.Close()
-
-		err = bucket.PutObject(filename, src)
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-		url = fmt.Sprintf("https://%s.%s/%s", c.Config.Storage.OSSBucket, c.Config.Storage.OSSEndpoint, filename)
-
-	default:
+	url, err := c.StorageService.Upload(ctx, filename, src, file.Size, file.Header.Get("Content-Type"))
+	if err != nil {
 		util.InternalServerError(ctx)
 		return
 	}

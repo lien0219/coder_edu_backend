@@ -70,3 +70,13 @@ func (r *ResourceRepository) FindRecommended(userID uint, limit int) ([]model.Re
 	err := r.DB.Order("view_count DESC").Limit(limit).Find(&resources).Error
 	return resources, err
 }
+
+func (r *ResourceRepository) UpdateFields(id uint, resourceType model.ResourceType, updates map[string]interface{}) error {
+	return r.DB.Model(&model.Resource{}).
+		Where("id = ? AND type = ?", id, resourceType).
+		Updates(updates).Error
+}
+
+func (r *ResourceRepository) DeleteByType(id uint, resourceType model.ResourceType) error {
+	return r.DB.Where("id = ? AND type = ?", id, resourceType).Delete(&model.Resource{}).Error
+}

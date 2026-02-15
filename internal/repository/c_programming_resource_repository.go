@@ -126,6 +126,15 @@ func (r *ExerciseCategoryRepository) FindByResourceID(resourceID uint) ([]model.
 	return categories, err
 }
 
+func (r *ExerciseCategoryRepository) UpdateFields(id uint, updates map[string]interface{}) error {
+	return r.DB.Model(&model.ExerciseCategory{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// Delete 删除练习题分类
+func (r *ExerciseCategoryRepository) Delete(id uint) error {
+	return r.DB.Delete(&model.ExerciseCategory{}, id).Error
+}
+
 // ExerciseQuestionRepository 处理练习题题目的数据访问
 
 type ExerciseQuestionRepository struct {
@@ -139,6 +148,11 @@ func NewExerciseQuestionRepository(db *gorm.DB) *ExerciseQuestionRepository {
 // Create 创建新的练习题题目
 func (r *ExerciseQuestionRepository) Create(question *model.ExerciseQuestion) error {
 	return r.DB.Create(question).Error
+}
+
+// Delete 删除练习题题目
+func (r *ExerciseQuestionRepository) Delete(id uint) error {
+	return r.DB.Delete(&model.ExerciseQuestion{}, id).Error
 }
 
 // FindByCategoryID 根据分类ID查找练习题题目，支持分页
@@ -155,4 +169,28 @@ func (r *ExerciseQuestionRepository) FindByCategoryID(categoryID uint, page, lim
 	err = r.DB.Where("category_id = ?", categoryID).Offset(offset).Limit(limit).Find(&questions).Error
 
 	return questions, int(total), err
+}
+
+func (r *ExerciseQuestionRepository) UpdateFields(id uint, updates map[string]interface{}) error {
+	return r.DB.Model(&model.ExerciseQuestion{}).Where("id = ?", id).Updates(updates).Error
+}
+
+func (r *ExerciseQuestionRepository) FindByID(id uint) (*model.ExerciseQuestion, error) {
+	var question model.ExerciseQuestion
+	err := r.DB.First(&question, id).Error
+	return &question, err
+}
+
+func (r *ExerciseQuestionRepository) UpdateQuestion(question *model.ExerciseQuestion) error {
+	return r.DB.Save(question).Error
+}
+
+func (r *ExerciseQuestionRepository) FindAllByCategoryID(categoryID uint) ([]model.ExerciseQuestion, error) {
+	var questions []model.ExerciseQuestion
+	err := r.DB.Where("category_id = ?", categoryID).Find(&questions).Error
+	return questions, err
+}
+
+func (r *ExerciseQuestionRepository) FindQuestionsByCategoryIDWithPagination(categoryID uint, page, limit int) ([]model.ExerciseQuestion, int, error) {
+	return r.FindByCategoryID(categoryID, page, limit)
 }

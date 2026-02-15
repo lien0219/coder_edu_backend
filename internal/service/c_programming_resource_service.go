@@ -190,7 +190,7 @@ func (s *CProgrammingResourceService) GetVideosByResourceID(resourceID uint, pag
 	var videos []model.Resource
 	var total int64
 
-	query := s.DB.Where("module_id = ? AND type = ?", resourceID, model.Video)
+	query := s.ResourceRepo.DB.Where("module_id = ? AND type = ?", resourceID, model.Video)
 	err := query.Model(&model.Resource{}).Count(&total).Error
 	if err != nil {
 		return nil, 0, err
@@ -207,7 +207,7 @@ func (s *CProgrammingResourceService) GetArticlesByResourceID(resourceID uint, p
 	var articles []model.Resource
 	var total int64
 
-	query := s.DB.Where("module_id = ? AND type = ?", resourceID, model.Article)
+	query := s.ResourceRepo.DB.Where("module_id = ? AND type = ?", resourceID, model.Article)
 	err := query.Model(&model.Resource{}).Count(&total).Error
 	if err != nil {
 		return nil, 0, err
@@ -221,29 +221,51 @@ func (s *CProgrammingResourceService) GetArticlesByResourceID(resourceID uint, p
 // 根据资源ID获取所有视频（不分页）
 func (s *CProgrammingResourceService) GetAllVideosByResourceID(resourceID uint) ([]model.Resource, error) {
 	var videos []model.Resource
-	err := s.DB.Where("module_id = ? AND type = ?", resourceID, model.Video).Find(&videos).Error
+	err := s.ResourceRepo.DB.Where("module_id = ? AND type = ?", resourceID, model.Video).Find(&videos).Error
 	return videos, err
 }
 
 // 根据资源ID获取所有文章（不分页）
 func (s *CProgrammingResourceService) GetAllArticlesByResourceID(resourceID uint) ([]model.Resource, error) {
 	var articles []model.Resource
-	err := s.DB.Where("module_id = ? AND type = ?", resourceID, model.Article).Find(&articles).Error
+	err := s.ResourceRepo.DB.Where("module_id = ? AND type = ?", resourceID, model.Article).Find(&articles).Error
 	return articles, err
 }
 
-// 更新视频
+// UpdateVideo 更新视频
 func (s *CProgrammingResourceService) UpdateVideo(videoID uint, updates map[string]interface{}) error {
-	return s.DB.Model(&model.Resource{}).
-		Where("id = ? AND type = ?", videoID, model.Video).
-		Updates(updates).Error
+	return s.ResourceRepo.UpdateFields(videoID, model.Video, updates)
 }
 
-// 更新文章
+// UpdateArticle 更新文章
 func (s *CProgrammingResourceService) UpdateArticle(articleID uint, updates map[string]interface{}) error {
-	return s.DB.Model(&model.Resource{}).
-		Where("id = ? AND type = ?", articleID, model.Article).
-		Updates(updates).Error
+	return s.ResourceRepo.UpdateFields(articleID, model.Article, updates)
+}
+
+// UpdateExerciseCategory 更新练习分类
+func (s *CProgrammingResourceService) UpdateExerciseCategory(id uint, updates map[string]interface{}) error {
+	return s.CategoryRepo.UpdateFields(id, updates)
+}
+
+// UpdateExerciseQuestionFields 更新练习题目字段
+func (s *CProgrammingResourceService) UpdateExerciseQuestionFields(id uint, updates map[string]interface{}) error {
+	return s.QuestionRepo.UpdateFields(id, updates)
+}
+
+// DeleteContentItem 删除内容项
+func (s *CProgrammingResourceService) DeleteContentItem(itemType string, itemID uint) error {
+	switch itemType {
+	case "videos":
+		return s.ResourceRepo.DeleteByType(itemID, model.Video)
+	case "articles":
+		return s.ResourceRepo.DeleteByType(itemID, model.Article)
+	case "exercise-categories":
+		return s.CategoryRepo.Delete(itemID)
+	case "questions":
+		return s.QuestionRepo.Delete(itemID)
+	default:
+		return fmt.Errorf("unsupported item type: %s", itemType)
+	}
 }
 
 // UpdateQuestion 更新练习题题目信息
@@ -515,11 +537,7 @@ func (s *CProgrammingResourceService) SubmitExerciseAnswer(questionID uint, req 
 		}
 
 		// 在当前周中查找与该题目对应的 task_item（exercise_id）
-		var taskItem model.TaskItem
-		err = s.TaskRepo.DB.Joins("JOIN teacher_weekly_tasks ON task_items.weekly_task_id = teacher_weekly_tasks.id").
-			Where("task_items.exercise_id = ? AND task_items.day_of_week = ? AND teacher_weekly_tasks.week_start_date = ? AND teacher_weekly_tasks.week_end_date = ?",
-				questionID, dayOfWeek, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02")).First(&taskItem).Error
-		if err == nil {
+		if taskItem, err := s.TaskRepo.FindTaskItemByExerciseAndWeek(questionID, dayOfWeek, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02")); err == nil {
 			// 标记为已完成（进度 100）
 			_ = s.TaskService.UpdateTaskCompletion(req.UserID, taskItem.ID, true, 100.0, true)
 		}

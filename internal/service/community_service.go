@@ -6,6 +6,7 @@ import (
 	"coder_edu_backend/internal/repository"
 	"context"
 	"fmt"
+	"mime/multipart"
 	"strings"
 	"time"
 
@@ -14,14 +15,15 @@ import (
 )
 
 type CommunityService struct {
-	PostRepo     *repository.PostRepository
-	CommentRepo  *repository.CommentRepository
-	QuestionRepo *repository.QuestionRepository
-	AnswerRepo   *repository.AnswerRepository
-	UserRepo     *repository.UserRepository
-	ResourceRepo *repository.CommunityResourceRepository
-	Redis        *redis.Client
-	Cfg          *config.Config
+	PostRepo       *repository.PostRepository
+	CommentRepo    *repository.CommentRepository
+	QuestionRepo   *repository.QuestionRepository
+	AnswerRepo     *repository.AnswerRepository
+	UserRepo       *repository.UserRepository
+	ResourceRepo   *repository.CommunityResourceRepository
+	Redis          *redis.Client
+	Cfg            *config.Config
+	StorageService *StorageService
 }
 
 func NewCommunityService(
@@ -33,17 +35,31 @@ func NewCommunityService(
 	resourceRepo *repository.CommunityResourceRepository,
 	rdb *redis.Client,
 	cfg *config.Config,
+	storageService *StorageService,
 ) *CommunityService {
 	return &CommunityService{
-		PostRepo:     postRepo,
-		CommentRepo:  commentRepo,
-		QuestionRepo: questionRepo,
-		AnswerRepo:   answerRepo,
-		UserRepo:     userRepo,
-		ResourceRepo: resourceRepo,
-		Redis:        rdb,
-		Cfg:          cfg,
+		PostRepo:       postRepo,
+		CommentRepo:    commentRepo,
+		QuestionRepo:   questionRepo,
+		AnswerRepo:     answerRepo,
+		UserRepo:       userRepo,
+		ResourceRepo:   resourceRepo,
+		Redis:          rdb,
+		Cfg:            cfg,
+		StorageService: storageService,
 	}
+}
+
+func (s *CommunityService) UploadResourceFile(ctx context.Context, file *multipart.FileHeader) (string, error) {
+	filename := "community/" + fmt.Sprintf("%d_%s", time.Now().Unix(), strings.ReplaceAll(file.Filename, " ", "-"))
+
+	src, err := file.Open()
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+
+	return s.StorageService.Upload(ctx, filename, src, file.Size, file.Header.Get("Content-Type"))
 }
 
 type PostRequest struct {

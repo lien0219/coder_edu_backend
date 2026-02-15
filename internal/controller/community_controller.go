@@ -3,18 +3,13 @@ package controller
 import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gin-gonic/gin"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type CommunityController struct {
@@ -633,78 +628,9 @@ func (c *CommunityController) UploadResourceFile(ctx *gin.Context) {
 		return
 	}
 
-	filename := "community/" + strconv.FormatInt(time.Now().Unix(), 10) + "_" + strings.ReplaceAll(file.Filename, " ", "-")
-	var fileURL string
-
-	switch c.CommunityService.Cfg.Storage.Type {
-	case "local":
-		uploadDir := filepath.Join(c.CommunityService.Cfg.Storage.LocalPath, "community")
-		if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
-			os.MkdirAll(uploadDir, os.ModePerm)
-		}
-
-		filepath := filepath.Join(c.CommunityService.Cfg.Storage.LocalPath, filename)
-		if err := ctx.SaveUploadedFile(file, filepath); err != nil {
-			util.LogInternalError(ctx, err)
-			return
-		}
-		fileURL = "/uploads/" + filename
-
-	case "minio":
-		minioClient, err := minio.New(c.CommunityService.Cfg.Storage.MinioEndpoint, &minio.Options{
-			Creds:  credentials.NewStaticV4(c.CommunityService.Cfg.Storage.MinioAccessID, c.CommunityService.Cfg.Storage.MinioSecret, ""),
-			Secure: false,
-		})
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-
-		src, err := file.Open()
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-		defer src.Close()
-
-		_, err = minioClient.PutObject(ctx, c.CommunityService.Cfg.Storage.MinioBucket, filename, src, file.Size, minio.PutObjectOptions{
-			ContentType: file.Header.Get("Content-Type"),
-		})
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-		fileURL = "/" + c.CommunityService.Cfg.Storage.MinioBucket + "/" + filename
-
-	case "oss":
-		client, err := oss.New(c.CommunityService.Cfg.Storage.OSSEndpoint, c.CommunityService.Cfg.Storage.OSSAccessKey, c.CommunityService.Cfg.Storage.OSSSecretKey)
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-
-		bucket, err := client.Bucket(c.CommunityService.Cfg.Storage.OSSBucket)
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-
-		src, err := file.Open()
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-		defer src.Close()
-
-		err = bucket.PutObject(filename, src)
-		if err != nil {
-			util.InternalServerError(ctx)
-			return
-		}
-		fileURL = fmt.Sprintf("https://%s.%s/%s", c.CommunityService.Cfg.Storage.OSSBucket, c.CommunityService.Cfg.Storage.OSSEndpoint, filename)
-
-	default:
-		util.InternalServerError(ctx)
+	fileURL, err := c.CommunityService.UploadResourceFile(ctx, file)
+	if err != nil {
+		util.LogInternalError(ctx, err)
 		return
 	}
 

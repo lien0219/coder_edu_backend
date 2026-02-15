@@ -782,9 +782,7 @@ func (c *CProgrammingResourceController) UpdateContentItem(ctx *gin.Context, con
 			videoData = filteredData
 		}
 
-		return c.ContentService.ResourceRepo.DB.Model(&model.Resource{}).
-			Where("id = ? AND type = ?", itemID, model.Video).
-			Updates(videoData).Error
+		return c.Service.UpdateVideo(itemID, videoData)
 
 	case "article":
 		var articleData map[string]interface{}
@@ -816,9 +814,7 @@ func (c *CProgrammingResourceController) UpdateContentItem(ctx *gin.Context, con
 			articleData = filteredData
 		}
 
-		return c.ContentService.ResourceRepo.DB.Model(&model.Resource{}).
-			Where("id = ? AND type = ?", itemID, model.Article).
-			Updates(articleData).Error
+		return c.Service.UpdateArticle(itemID, articleData)
 
 	case "exercise-category":
 		var categoryData map[string]interface{}
@@ -850,9 +846,7 @@ func (c *CProgrammingResourceController) UpdateContentItem(ctx *gin.Context, con
 			categoryData = make(map[string]interface{})
 		}
 
-		return c.Service.CategoryRepo.DB.Model(&model.ExerciseCategory{}).
-			Where("id = ?", itemID).
-			Updates(categoryData).Error
+		return c.Service.UpdateExerciseCategory(itemID, categoryData)
 
 	case "question":
 		var questionData map[string]interface{}
@@ -884,57 +878,11 @@ func (c *CProgrammingResourceController) UpdateContentItem(ctx *gin.Context, con
 			questionData = make(map[string]interface{})
 		}
 
-		return c.Service.QuestionRepo.DB.Model(&model.ExerciseQuestion{}).
-			Where("id = ?", itemID).
-			Updates(questionData).Error
+		return c.Service.UpdateExerciseQuestionFields(itemID, questionData)
 
 	default:
 		return fmt.Errorf("unsupported content type")
 	}
-	// switch contentType {
-	// case "video", "article":
-	// 	if contentType == "video" {
-	// 		var videoData map[string]interface{}
-	// 		if v, ok := updateData.(map[string]interface{}); ok {
-	// 			filteredData := make(map[string]interface{})
-	// 			for key, value := range v {
-	// 				if key != "duration" && key != "order" && key != "thumbnail" && key != "createdAt" && key != "updatedAt" {
-	// 					filteredData[key] = value
-	// 				}
-	// 			}
-	// 			videoData = filteredData
-	// 		}
-	// 		return c.ContentService.ResourceRepo.DB.Model(&model.Resource{}).
-	// 			Where("id = ? AND type = ?", itemID, model.Video).
-	// 			Updates(videoData).Error
-	// 	} else {
-	// 		// var articleData map[string]interface{}
-	// 		// if a, ok := updateData.(map[string]interface{}); ok {
-	// 		// 	articleData = a
-	// 		// }
-	// 		// return c.ContentService.ResourceRepo.DB.Model(&model.Resource{}).
-	// 		// 	Where("id = ? AND type = ?", itemID, model.Article).
-	// 		// 	Updates(articleData).Error
-	// 		var articleData map[string]interface{}
-	// 		if a, ok := updateData.(map[string]interface{}); ok {
-	// 			articleData = convertMapKeysToSnakeCase(a)
-	// 		}
-
-	// 		return c.ContentService.ResourceRepo.DB.Model(&model.Resource{}).
-	// 			Where("id = ? AND type = ?", itemID, model.Article).
-	// 			Updates(articleData).Error
-	// 	}
-	// case "exercise-category":
-	// 	return c.Service.CategoryRepo.DB.Model(&model.ExerciseCategory{}).
-	// 		Where("id = ?", itemID).
-	// 		Updates(updateData).Error
-	// case "question":
-	// 	return c.Service.QuestionRepo.DB.Model(&model.ExerciseQuestion{}).
-	// 		Where("id = ?", itemID).
-	// 		Updates(updateData).Error
-	// default:
-	// 	return fmt.Errorf("unsupported content type")
-	// }
 }
 
 // DeleteContentItem godoc
@@ -957,22 +905,7 @@ func (c *CProgrammingResourceController) DeleteContentItem(ctx *gin.Context) {
 		return
 	}
 
-	var errResult error
-	switch itemType {
-	case "videos":
-		errResult = c.ContentService.ResourceRepo.DB.Where("id = ? AND type = ?", itemID, model.Video).Delete(&model.Resource{}).Error
-	case "articles":
-		errResult = c.ContentService.ResourceRepo.DB.Where("id = ? AND type = ?", itemID, model.Article).Delete(&model.Resource{}).Error
-	case "exercise-categories":
-		errResult = c.Service.CategoryRepo.Delete(uint(itemID))
-	case "questions":
-		errResult = c.Service.QuestionRepo.Delete(uint(itemID))
-	default:
-		util.BadRequest(ctx, "Unsupported content type")
-		return
-	}
-
-	if errResult != nil {
+	if err := c.Service.DeleteContentItem(itemType, uint(itemID)); err != nil {
 		util.InternalServerError(ctx)
 		return
 	}

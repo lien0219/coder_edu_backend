@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 type ResourceType string
 
 const (
@@ -30,4 +32,15 @@ type Resource struct {
 
 func (Resource) TableName() string {
 	return "resources"
+}
+
+// UploadProgress 跟踪文件上传进度
+type UploadProgress struct {
+	TotalChunks    int          `json:"totalChunks"`
+	UploadedChunks int          `json:"uploadedChunks"`
+	FileSize       int64        `json:"fileSize"`
+	Identifier     string       `json:"identifier"`
+	Filename       string       `json:"filename"`
+	CreatedAt      time.Time    `json:"createdAt"`
+	Chunks         map[int]bool `json:"-"`
 }

@@ -147,10 +147,12 @@ type VideoChunkUploadRequest struct {
 	TotalChunks int    `form:"totalChunks" binding:"required,min=1"`
 	Identifier  string `form:"identifier" binding:"required,max=100"`
 	Filename    string `form:"filename" binding:"required,max=255"`
+	Title       string `form:"title"`
+	Description string `form:"description"`
 }
 
 // UploadVideo godoc
-// @Summary 上传视频文件（仅管理员）
+// @Summary 上传视频文件
 // @Description 专门用于上传视频文件
 // @Tags 内容
 // @Accept  multipart/form-data
@@ -162,9 +164,8 @@ type VideoChunkUploadRequest struct {
 // @Success 200 {object} util.Response{data=object} "上传成功"
 // @Failure 400 {object} util.Response "请求参数错误或文件格式不支持"
 // @Failure 401 {object} util.Response "未授权"
-// @Failure 403 {object} util.Response "权限不足"
 // @Failure 500 {object} util.Response "服务器内部错误"
-// @Router /api/admin/upload/video [post]
+// @Router /api/upload/video [post]
 func (c *ContentController) UploadVideo(ctx *gin.Context) {
 	var req VideoUploadRequest
 	if err := ctx.ShouldBind(&req); err != nil {
@@ -197,7 +198,7 @@ func (c *ContentController) UploadVideo(ctx *gin.Context) {
 }
 
 // UploadVideoChunk godoc
-// @Summary 上传视频文件分块（仅管理员）
+// @Summary 上传视频文件分块
 // @Description 支持大视频文件的分块上传
 // @Tags 内容
 // @Accept  multipart/form-data
@@ -208,12 +209,13 @@ func (c *ContentController) UploadVideo(ctx *gin.Context) {
 // @Param   totalChunks formData int true "总块数"
 // @Param   identifier formData string true "文件唯一标识符"
 // @Param   filename formData string true "原始文件名"
+// @Param   title formData string false "视频标题"
+// @Param   description formData string false "视频描述"
 // @Success 200 {object} util.Response{data=object} "上传成功"
 // @Failure 400 {object} util.Response "请求参数错误"
 // @Failure 401 {object} util.Response "未授权"
-// @Failure 403 {object} util.Response "权限不足"
 // @Failure 500 {object} util.Response "服务器内部错误"
-// @Router /api/admin/upload/video/chunk [post]
+// @Router /api/upload/video/chunk [post]
 func (c *ContentController) UploadVideoChunk(ctx *gin.Context) {
 	var req VideoChunkUploadRequest
 	if err := ctx.ShouldBind(&req); err != nil {
@@ -227,25 +229,38 @@ func (c *ContentController) UploadVideoChunk(ctx *gin.Context) {
 		return
 	}
 
-	progress, finalURL, err := c.ContentService.UploadVideoChunk(ctx, chunkFile, req.ChunkNumber, req.TotalChunks, req.Identifier, req.Filename)
+	progress, resource, err := c.ContentService.UploadVideoChunk(ctx, chunkFile, req.ChunkNumber, req.TotalChunks, req.Identifier, req.Filename, req.Title, req.Description)
 	if err != nil {
 		util.InternalServerError(ctx)
 		return
 	}
 
-	util.Success(ctx, gin.H{
+	isComplete := progress.UploadedChunks == progress.TotalChunks
+	responseData := gin.H{
 		"identifier":     req.Identifier,
 		"chunkNumber":    req.ChunkNumber,
 		"totalChunks":    req.TotalChunks,
 		"uploadedChunks": progress.UploadedChunks,
-		"isComplete":     progress.UploadedChunks == progress.TotalChunks,
+		"isComplete":     isComplete,
 		"progress":       float64(progress.UploadedChunks) / float64(progress.TotalChunks) * 100,
-		"finalURL":       finalURL,
-	})
+	}
+
+	if isComplete && resource != nil {
+		responseData["id"] = resource.ID
+		responseData["finalURL"] = resource.URL
+		responseData["title"] = resource.Title
+		responseData["description"] = resource.Description
+		responseData["duration"] = resource.Duration
+		responseData["size"] = resource.Size
+		responseData["format"] = resource.Format
+		responseData["thumbnail"] = resource.Thumbnail
+	}
+
+	util.Success(ctx, responseData)
 }
 
 // GetUploadProgress godoc
-// @Summary 查询视频上传进度（仅管理员）
+// @Summary 查询视频上传进度
 // @Description 查询文件上传进度
 // @Tags 内容
 // @Accept  json
@@ -255,10 +270,9 @@ func (c *ContentController) UploadVideoChunk(ctx *gin.Context) {
 // @Success 200 {object} util.Response{data=object} "查询成功"
 // @Failure 400 {object} util.Response "请求参数错误"
 // @Failure 401 {object} util.Response "未授权"
-// @Failure 403 {object} util.Response "权限不足"
 // @Failure 404 {object} util.Response "上传记录不存在"
 // @Failure 500 {object} util.Response "服务器内部错误"
-// @Router /api/admin/upload/video/progress/{uploadId} [get]
+// @Router /api/upload/video/progress/{uploadId} [get]
 func (c *ContentController) GetUploadProgress(ctx *gin.Context) {
 	uploadId := ctx.Param("uploadId")
 	if uploadId == "" {

@@ -2200,170 +2200,6 @@ paths:
       summary: 上传模块图标（仅管理员）
       tags:
       - 内容
-  /api/admin/upload/video:
-    post:
-      consumes:
-      - multipart/form-data
-      description: 专门用于上传视频文件
-      parameters:
-      - description: 视频文件
-        in: formData
-        name: video
-        required: true
-        type: file
-      - description: 视频标题
-        in: formData
-        name: title
-        type: string
-      - description: 视频描述
-        in: formData
-        name: description
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 上传成功
-          schema:
-            allOf:
-            - $ref: '#/definitions/util.Response'
-            - properties:
-                data:
-                  type: object
-              type: object
-        "400":
-          description: 请求参数错误或文件格式不支持
-          schema:
-            $ref: '#/definitions/util.Response'
-        "401":
-          description: 未授权
-          schema:
-            $ref: '#/definitions/util.Response'
-        "403":
-          description: 权限不足
-          schema:
-            $ref: '#/definitions/util.Response'
-        "500":
-          description: 服务器内部错误
-          schema:
-            $ref: '#/definitions/util.Response'
-      security:
-      - ApiKeyAuth: []
-      summary: 上传视频文件（仅管理员）
-      tags:
-      - 内容
-  /api/admin/upload/video/chunk:
-    post:
-      consumes:
-      - multipart/form-data
-      description: 支持大视频文件的分块上传
-      parameters:
-      - description: 文件分块数据
-        in: formData
-        name: chunk
-        required: true
-        type: file
-      - description: 当前块序号
-        in: formData
-        name: chunkNumber
-        required: true
-        type: integer
-      - description: 总块数
-        in: formData
-        name: totalChunks
-        required: true
-        type: integer
-      - description: 文件唯一标识符
-        in: formData
-        name: identifier
-        required: true
-        type: string
-      - description: 原始文件名
-        in: formData
-        name: filename
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 上传成功
-          schema:
-            allOf:
-            - $ref: '#/definitions/util.Response'
-            - properties:
-                data:
-                  type: object
-              type: object
-        "400":
-          description: 请求参数错误
-          schema:
-            $ref: '#/definitions/util.Response'
-        "401":
-          description: 未授权
-          schema:
-            $ref: '#/definitions/util.Response'
-        "403":
-          description: 权限不足
-          schema:
-            $ref: '#/definitions/util.Response'
-        "500":
-          description: 服务器内部错误
-          schema:
-            $ref: '#/definitions/util.Response'
-      security:
-      - ApiKeyAuth: []
-      summary: 上传视频文件分块（仅管理员）
-      tags:
-      - 内容
-  /api/admin/upload/video/progress/{uploadId}:
-    get:
-      consumes:
-      - application/json
-      description: 查询文件上传进度
-      parameters:
-      - description: 上传标识符
-        in: path
-        name: uploadId
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 查询成功
-          schema:
-            allOf:
-            - $ref: '#/definitions/util.Response'
-            - properties:
-                data:
-                  type: object
-              type: object
-        "400":
-          description: 请求参数错误
-          schema:
-            $ref: '#/definitions/util.Response'
-        "401":
-          description: 未授权
-          schema:
-            $ref: '#/definitions/util.Response'
-        "403":
-          description: 权限不足
-          schema:
-            $ref: '#/definitions/util.Response'
-        "404":
-          description: 上传记录不存在
-          schema:
-            $ref: '#/definitions/util.Response'
-        "500":
-          description: 服务器内部错误
-          schema:
-            $ref: '#/definitions/util.Response'
-      security:
-      - ApiKeyAuth: []
-      summary: 查询视频上传进度（仅管理员）
-      tags:
-      - 内容
   /api/admin/users:
     get:
       consumes:
@@ -8127,6 +7963,166 @@ paths:
       summary: 获取当前周任务
       tags:
       - 任务管理
+  /api/upload/video:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 专门用于上传视频文件
+      parameters:
+      - description: 视频文件
+        in: formData
+        name: video
+        required: true
+        type: file
+      - description: 视频标题
+        in: formData
+        name: title
+        type: string
+      - description: 视频描述
+        in: formData
+        name: description
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 上传成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "400":
+          description: 请求参数错误或文件格式不支持
+          schema:
+            $ref: '#/definitions/util.Response'
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 上传视频文件
+      tags:
+      - 内容
+  /api/upload/video/chunk:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 支持大视频文件的分块上传
+      parameters:
+      - description: 文件分块数据
+        in: formData
+        name: chunk
+        required: true
+        type: file
+      - description: 当前块序号
+        in: formData
+        name: chunkNumber
+        required: true
+        type: integer
+      - description: 总块数
+        in: formData
+        name: totalChunks
+        required: true
+        type: integer
+      - description: 文件唯一标识符
+        in: formData
+        name: identifier
+        required: true
+        type: string
+      - description: 原始文件名
+        in: formData
+        name: filename
+        required: true
+        type: string
+      - description: 视频标题
+        in: formData
+        name: title
+        type: string
+      - description: 视频描述
+        in: formData
+        name: description
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 上传成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 上传视频文件分块
+      tags:
+      - 内容
+  /api/upload/video/progress/{uploadId}:
+    get:
+      consumes:
+      - application/json
+      description: 查询文件上传进度
+      parameters:
+      - description: 上传标识符
+        in: path
+        name: uploadId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 查询成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/util.Response'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/util.Response'
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/util.Response'
+        "404":
+          description: 上传记录不存在
+          schema:
+            $ref: '#/definitions/util.Response'
+        "500":
+          description: 服务器内部错误
+          schema:
+            $ref: '#/definitions/util.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 查询视频上传进度
+      tags:
+      - 内容
   /api/user/avatar/upload:
     post:
       consumes:

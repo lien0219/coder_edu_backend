@@ -213,30 +213,31 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 	return resource, nil
 }
 
-func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multipart.FileHeader, chunkNumber, totalChunks int, identifier, filename string) (*model.UploadProgress, string, error) {
+func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multipart.FileHeader, chunkNumber, totalChunks int, identifier, filename string, title, description string) (*model.UploadProgress, *model.Resource, error) {
 	// 创建临时目录存储分块
 	tempDir := filepath.Join(s.Cfg.Storage.LocalPath, "temp", identifier)
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 
 	// 保存分块文件
 	chunkPath := filepath.Join(tempDir, fmt.Sprintf("chunk_%d", chunkNumber))
 	src, err := chunkFile.Open()
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	defer src.Close()
 
 	dst, err := os.Create(chunkPath)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
-	defer dst.Close()
 
 	if _, err := io.Copy(dst, src); err != nil {
-		return nil, "", err
+		dst.Close()
+		return nil, nil, err
 	}
+	dst.Close() // 写入完成后立即关闭，不要等 defer，防止win文件锁问题
 
 	// 更新进度 (使用Redis----方便共享)
 	redisKey := uploadProgressKeyPrefix + identifier
@@ -255,10 +256,10 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 			Chunks:         make(map[int]bool),
 		}
 	} else if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	} else {
 		if err := json.Unmarshal([]byte(val), &progress); err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
 	}
 
@@ -274,10 +275,10 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 	// 保存回Redis(设置24小时过期)
 	updatedVal, _ := json.Marshal(progress)
 	if err := s.Redis.Set(ctx, redisKey, updatedVal, 24*time.Hour).Err(); err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 
-	var finalURL string
+	var resource *model.Resource
 	if isComplete {
 		ext := filepath.Ext(filename)
 		videoFilename := "videos/" + time.Now().Format("20060102150405") + "-" +
@@ -286,7 +287,7 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 
 		finalFile, err := os.Create(finalPath)
 		if err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
 
 		for i := 1; i <= totalChunks; i++ {
@@ -294,20 +295,72 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 			data, err := os.ReadFile(chunkPath)
 			if err != nil {
 				finalFile.Close()
-				return nil, "", err
+				return nil, nil, err
 			}
 			if _, err := finalFile.Write(data); err != nil {
 				finalFile.Close()
-				return nil, "", err
+				return nil, nil, err
 			}
 		}
 		finalFile.Close()
 
 		// 上传合并后的文件
-		finalURL, err = s.StorageService.UploadFile(ctx, videoFilename, finalPath, "video/"+strings.TrimPrefix(ext, "."))
+		finalURL, err := s.StorageService.UploadFile(ctx, videoFilename, finalPath, "video/"+strings.TrimPrefix(ext, "."))
 		if err != nil {
 			os.Remove(finalPath) // 失败也要清理
-			return nil, "", err
+			return nil, nil, err
+		}
+
+		// 生成缩略图
+		thumbnailExt := ".jpg"
+		thumbnailFilename := "thumbnails/" + time.Now().Format("20060102150405") + "-" +
+			util.GenerateRandomString(6) + thumbnailExt
+
+		thumbnailDir := filepath.Join(s.Cfg.Storage.LocalPath, "thumbnails")
+		if err := os.MkdirAll(thumbnailDir, 0755); err != nil {
+			logger.Log.Error("创建缩略图目录失败", zap.Error(err))
+		}
+		thumbnailPath := filepath.Join(thumbnailDir, filepath.Base(thumbnailFilename))
+
+		var thumbnailURL string
+		err = util.GenerateThumbnail(finalPath, thumbnailPath, "3")
+		if err != nil {
+			logger.Log.Error("生成缩略图失败", zap.Error(err))
+			thumbnailURL = s.StorageService.GetURL("thumbnails/default-video-thumbnail.jpg")
+		} else {
+			thumbnailURL, err = s.StorageService.UploadFile(ctx, thumbnailFilename, thumbnailPath, "image/jpeg")
+			if err != nil {
+				thumbnailURL = s.StorageService.GetURL("thumbnails/default-video-thumbnail.jpg")
+			}
+			os.Remove(thumbnailPath) // 上传后清理本地临时封面
+		}
+
+		// 获取视频时长
+		videoInfo, err := util.GetVideoInfo(finalPath)
+		var duration float64 = 0
+		if err == nil {
+			duration = videoInfo.Duration
+		}
+
+		// 如果没有提供标题，使用文件名
+		if title == "" {
+			title = strings.TrimSuffix(filename, ext)
+		}
+
+		// 创建资源记录
+		resource = &model.Resource{
+			Title:       title,
+			Description: description,
+			Type:        model.Video,
+			URL:         finalURL,
+			Duration:    duration,
+			Size:        progress.FileSize,
+			Format:      strings.TrimPrefix(ext, "."),
+			Thumbnail:   thumbnailURL,
+		}
+
+		if err := s.ResourceRepo.Create(resource); err != nil {
+			logger.Log.Error("创建资源记录失败", zap.Error(err))
 		}
 
 		// 清理
@@ -317,7 +370,7 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 		s.Redis.Del(context.Background(), redisKey)
 	}
 
-	return progress, finalURL, nil
+	return progress, resource, nil
 }
 
 func (s *ContentService) GetUploadProgress(identifier string) (*model.UploadProgress, error) {

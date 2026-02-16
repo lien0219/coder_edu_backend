@@ -140,6 +140,11 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	rg.POST("/analytics/session/start", c.analytics.StartSession)
 	rg.POST("/analytics/session/:sessionId/end", c.analytics.EndSession)
 
+	// 视频上传相关（通用）
+	rg.POST("/upload/video", c.content.UploadVideo)
+	rg.POST("/upload/video/chunk", c.content.UploadVideoChunk)
+	rg.GET("/upload/video/progress/:uploadId", c.content.GetUploadProgress)
+
 	// 关卡挑战
 	rg.GET("/levels/student", c.level.GetStudentLevels)
 	rg.GET("/levels/student/:id", c.level.GetStudentLevelDetail)
@@ -417,11 +422,6 @@ func (a *App) registerAdminRoutes(router *gin.Engine, c *controllers, repos *rep
 			adminOnly.PUT("/exercise-categories/:id", c.cProgramming.UpdateExerciseCategory)
 			adminOnly.PUT("/questions/:id", c.cProgramming.UpdateQuestion)
 			adminOnly.DELETE("/:itemType/:itemId", c.cProgramming.DeleteContentItem)
-
-			// 上传视频相关路由
-			adminOnly.POST("/upload/video", c.content.UploadVideo)
-			adminOnly.POST("/upload/video/chunk", c.content.UploadVideoChunk)
-			adminOnly.GET("/upload/video/progress/:uploadId", c.content.GetUploadProgress)
 		}
 	}
 }

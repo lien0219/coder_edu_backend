@@ -11,9 +11,13 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +30,9 @@ type ContentService struct {
 	StorageService *StorageService
 	Cfg            *config.Config
 	Redis          *redis.Client
+	httpClient     *http.Client
+	workerSem      chan struct{}  // 并发控制信号量
+	wg             sync.WaitGroup // 优雅停机等待组
 }
 
 func NewContentService(resourceRepo *repository.ResourceRepository, storageService *StorageService, cfg *config.Config, rdb *redis.Client) *ContentService {
@@ -34,6 +41,31 @@ func NewContentService(resourceRepo *repository.ResourceRepository, storageServi
 		StorageService: storageService,
 		Cfg:            cfg,
 		Redis:          rdb,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				IdleConnTimeout:     90 * time.Second,
+				MaxIdleConnsPerHost: 20,
+			},
+		},
+		workerSem: make(chan struct{}, 5), // 限制同时处理视频数量
+	}
+}
+
+// Shutdown 优雅停机，等待所有后台任务完成
+func (s *ContentService) Shutdown(ctx context.Context) error {
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		s.wg.Wait()
+	}()
+
+	select {
+	case <-c:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -119,9 +151,8 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 		return nil, util.ErrInvalidVideoExt
 	}
 
-	// 使用当前时间生成唯一文件名
-	videoFilename := "videos/" + time.Now().Format("20060102150405") + "-" +
-		strings.ReplaceAll(file.Filename, " ", "-")
+	videoID := util.GenerateRandomString(16)
+	videoFilename := fmt.Sprintf("videos/%s%s", videoID, ext)
 
 	// 临时保存到本地进行处理
 	tempDir := filepath.Join(s.Cfg.Storage.LocalPath, "temp")
@@ -131,7 +162,7 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 
 	tempFilename := fmt.Sprintf("temp_video_%d%s", time.Now().UnixNano(), ext)
 	videoPath := filepath.Join(tempDir, tempFilename)
-	defer os.Remove(videoPath) // 上传完成后立即清理
+	defer os.Remove(videoPath)
 
 	src, err := file.Open()
 	if err != nil {
@@ -164,41 +195,14 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 		return nil, err
 	}
 
-	// 生成缩略图
-	thumbnailExt := ".jpg"
-	thumbnailFilename := "thumbnails/" + time.Now().Format("20060102150405") + "-" +
-		strings.ReplaceAll(strings.TrimSuffix(file.Filename, ext), " ", "-") + thumbnailExt
-
-	thumbnailDir := filepath.Join(s.Cfg.Storage.LocalPath, "thumbnails")
-	if err := os.MkdirAll(thumbnailDir, 0755); err != nil {
-		return nil, err
-	}
-	thumbnailPath := filepath.Join(thumbnailDir, filepath.Base(thumbnailFilename))
-	defer os.Remove(thumbnailPath) // 处理完成后清理
-
-	var thumbnailURL string
-	err = util.GenerateThumbnail(videoPath, thumbnailPath, "3")
-	if err != nil {
-		logger.Log.Error("生成缩略图失败", zap.Error(err))
-		thumbnailURL = s.StorageService.GetURL("thumbnails/default-video-thumbnail.jpg")
-	} else {
-		thumbnailURL, err = s.StorageService.UploadFile(ctx, thumbnailFilename, thumbnailPath, "image/jpeg")
-		if err != nil {
-			thumbnailURL = s.StorageService.GetURL("thumbnails/default-video-thumbnail.jpg")
-		}
-	}
-
-	// 获取视频时长
-	videoInfo, err := util.GetVideoInfo(videoPath)
-	var duration float64 = 0
-	if err == nil {
-		duration = videoInfo.Duration
-	}
+	// 同步获取元数据，确保返回给前端正确的数据
+	duration, thumbnailURL := s.processVideoMetadata(ctx, videoURL, videoPath, file.Filename)
 
 	resource := &model.Resource{
 		Title:       title,
 		Description: description,
 		Type:        model.Video,
+		Status:      model.ResourceSuccess,
 		URL:         videoURL,
 		Duration:    duration,
 		Size:        file.Size,
@@ -207,6 +211,7 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 	}
 
 	if err := s.ResourceRepo.Create(resource); err != nil {
+		s.StorageService.Delete(ctx, videoFilename)
 		return nil, err
 	}
 
@@ -261,6 +266,9 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 		if err := json.Unmarshal([]byte(val), &progress); err != nil {
 			return nil, nil, err
 		}
+		if progress.Chunks == nil {
+			progress.Chunks = make(map[int]bool)
+		}
 	}
 
 	// 更新进度
@@ -281,8 +289,8 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 	var resource *model.Resource
 	if isComplete {
 		ext := filepath.Ext(filename)
-		videoFilename := "videos/" + time.Now().Format("20060102150405") + "-" +
-			strings.ReplaceAll(strings.TrimSuffix(filename, ext), " ", "-") + ext
+		videoID := util.GenerateRandomString(16)
+		videoFilename := fmt.Sprintf("videos/%s%s", videoID, ext)
 		finalPath := filepath.Join(s.Cfg.Storage.LocalPath, "temp", identifier+"_final"+ext)
 
 		finalFile, err := os.Create(finalPath)
@@ -292,12 +300,14 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 
 		for i := 1; i <= totalChunks; i++ {
 			chunkPath := filepath.Join(tempDir, fmt.Sprintf("chunk_%d", i))
-			data, err := os.ReadFile(chunkPath)
+			f, err := os.Open(chunkPath)
 			if err != nil {
 				finalFile.Close()
 				return nil, nil, err
 			}
-			if _, err := finalFile.Write(data); err != nil {
+			_, err = io.Copy(finalFile, f)
+			f.Close()
+			if err != nil {
 				finalFile.Close()
 				return nil, nil, err
 			}
@@ -311,66 +321,48 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 			return nil, nil, err
 		}
 
-		// 生成缩略图
-		thumbnailExt := ".jpg"
-		thumbnailFilename := "thumbnails/" + time.Now().Format("20060102150405") + "-" +
-			util.GenerateRandomString(6) + thumbnailExt
-
-		thumbnailDir := filepath.Join(s.Cfg.Storage.LocalPath, "thumbnails")
-		if err := os.MkdirAll(thumbnailDir, 0755); err != nil {
-			logger.Log.Error("创建缩略图目录失败", zap.Error(err))
-		}
-		thumbnailPath := filepath.Join(thumbnailDir, filepath.Base(thumbnailFilename))
-
-		var thumbnailURL string
-		err = util.GenerateThumbnail(finalPath, thumbnailPath, "3")
-		if err != nil {
-			logger.Log.Error("生成缩略图失败", zap.Error(err))
-			thumbnailURL = s.StorageService.GetURL("thumbnails/default-video-thumbnail.jpg")
-		} else {
-			thumbnailURL, err = s.StorageService.UploadFile(ctx, thumbnailFilename, thumbnailPath, "image/jpeg")
-			if err != nil {
-				thumbnailURL = s.StorageService.GetURL("thumbnails/default-video-thumbnail.jpg")
-			}
-			os.Remove(thumbnailPath) // 上传后清理本地临时封面
-		}
-
-		// 获取视频时长
-		videoInfo, err := util.GetVideoInfo(finalPath)
-		var duration float64 = 0
-		if err == nil {
-			duration = videoInfo.Duration
-		}
-
 		// 如果没有提供标题，使用文件名
 		if title == "" {
 			title = strings.TrimSuffix(filename, ext)
 		}
 
-		// 创建资源记录
+		// 1. 同步获取元数据（分片上传最后一步需要准确的时长和封面）
+		duration, thumbnail := s.processVideoMetadata(ctx, finalURL, finalPath, filename)
+
 		resource = &model.Resource{
 			Title:       title,
 			Description: description,
 			Type:        model.Video,
+			Status:      model.ResourceSuccess,
 			URL:         finalURL,
 			Duration:    duration,
 			Size:        progress.FileSize,
 			Format:      strings.TrimPrefix(ext, "."),
-			Thumbnail:   thumbnailURL,
+			Thumbnail:   thumbnail,
 		}
 
 		if err := s.ResourceRepo.Create(resource); err != nil {
 			logger.Log.Error("创建资源记录失败", zap.Error(err))
+			s.StorageService.Delete(ctx, videoFilename) // 清理孤立文件
+			os.Remove(finalPath)
+			return nil, nil, err
 		}
 
-		// 清理
-		os.RemoveAll(tempDir)
-		os.Remove(finalPath)
-		// 从Redis中删除进度
-		s.Redis.Del(context.Background(), redisKey)
+		// 2. 异步执行清理工作
+		s.wg.Add(1)
+		go func(lPath, tDir, rKey string) {
+			defer s.wg.Done()
+			// 延迟几秒清理，确保 localPath 不再被读取（如果 FFmpeg 还没关的话）
+			time.Sleep(2 * time.Second)
+			os.Remove(lPath)
+			os.RemoveAll(tDir)
+			s.Redis.Del(context.Background(), rKey)
+		}(finalPath, tempDir, redisKey)
+
+		return progress, resource, nil
 	}
 
-	return progress, resource, nil
+	return progress, nil, nil
 }
 
 func (s *ContentService) GetUploadProgress(identifier string) (*model.UploadProgress, error) {
@@ -395,4 +387,117 @@ func (s *ContentService) UpdateResource(id uint, resourceType model.ResourceType
 
 func (s *ContentService) DeleteResource(id uint, resourceType model.ResourceType) error {
 	return s.ResourceRepo.DeleteByType(id, resourceType)
+}
+
+// processVideoMetadata 处理视频元数据（时长和封面）
+func (s *ContentService) processVideoMetadata(ctx context.Context, videoURL, localPath, originalFilename string) (float64, string) {
+	// 1. 获取视频时长
+	var duration float64
+	if s.Cfg.Storage.Type == util.StorageOSS {
+		duration = s.getVideoDurationFromOSS(videoURL)
+	}
+
+	// 如果不是 OSS 或 OSS 获取失败，尝试使用本地 FFmpeg
+	if duration == 0 && localPath != "" {
+		if videoInfo, err := util.GetVideoInfo(localPath); err == nil {
+			duration = videoInfo.Duration
+		}
+	}
+
+	// 2. 生成封面图
+	var thumbnailURL string
+	if s.Cfg.Storage.Type == util.StorageOSS {
+		thumbnailURL = videoURL + "?x-oss-process=video/snapshot,t_7000,f_jpg,w_800"
+	} else if localPath != "" {
+		thumbnailExt := ".jpg"
+		thumbnailFilename := "thumbnails/" + time.Now().Format("20060102150405") + "-" +
+			util.GenerateRandomString(6) + thumbnailExt
+
+		thumbnailDir := filepath.Join(s.Cfg.Storage.LocalPath, "thumbnails")
+		os.MkdirAll(thumbnailDir, 0755)
+		thumbnailPath := filepath.Join(thumbnailDir, filepath.Base(thumbnailFilename))
+
+		if err := util.GenerateThumbnail(localPath, thumbnailPath, "3"); err == nil {
+			thumbnailURL, _ = s.StorageService.UploadFile(ctx, thumbnailFilename, thumbnailPath, "image/jpeg")
+			os.Remove(thumbnailPath)
+		}
+	}
+
+	// 如果所有截图方案都失败，使用默认占位图
+	if thumbnailURL == "" {
+		thumbnailURL = s.StorageService.GetURL("thumbnails/default-video-thumbnail.jpg")
+	}
+
+	return duration, thumbnailURL
+}
+
+// getVideoDurationFromOSS 从阿里云OSS获取视频时长（带重试逻辑，解决IMM索引延迟）
+func (s *ContentService) getVideoDurationFromOSS(videoURL string) float64 {
+	u, err := url.Parse(videoURL)
+	if err != nil {
+		logger.Log.Error("解析视频URL失败", zap.Error(err))
+		return 0
+	}
+
+	infoURL := fmt.Sprintf("%s://%s%s?x-oss-process=video/info", u.Scheme, u.Host, u.EscapedPath())
+
+	// 增加重试逻辑，采用指数退避策略
+	backoff := []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second}
+
+	for i := 0; i < len(backoff); i++ {
+		if i > 0 {
+			time.Sleep(backoff[i-1])
+		}
+
+		resp, err := s.httpClient.Get(infoURL)
+		if err != nil {
+			logger.Log.Error("请求OSS时长接口失败", zap.Error(err), zap.Int("retry", i))
+			continue
+		}
+
+		// 如果返回非 200，说明索引还没好或未授权，继续重试
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			logger.Log.Warn("OSS视频信息未就绪，重试中...",
+				zap.Int("status", resp.StatusCode),
+				zap.Int("retry", i),
+				zap.String("response", string(body)))
+			continue
+		}
+
+		var result map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			logger.Log.Error("解析OSS视频信息JSON失败", zap.Error(err))
+			return 0
+		}
+		resp.Body.Close()
+
+		// 增强解析逻辑：检查多个可能的层级
+		if format, ok := result["format"].(map[string]interface{}); ok {
+			if d, exists := format["duration"]; exists {
+				durationStr := fmt.Sprintf("%v", d)
+				duration, _ := strconv.ParseFloat(durationStr, 64)
+				if duration > 0 {
+					return duration
+				}
+			}
+		}
+
+		// 2. streams[0].duration (兼容某些格式)
+		if streams, ok := result["streams"].([]interface{}); ok && len(streams) > 0 {
+			if firstStream, ok := streams[0].(map[string]interface{}); ok {
+				if d, exists := firstStream["duration"]; exists {
+					durationStr := fmt.Sprintf("%v", d)
+					duration, _ := strconv.ParseFloat(durationStr, 64)
+					if duration > 0 {
+						return duration
+					}
+				}
+			}
+		}
+	}
+
+	return 0
 }

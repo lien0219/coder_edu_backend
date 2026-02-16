@@ -584,6 +584,10 @@ definitions:
       size:
         description: 文件大小（字节）
         type: integer
+      status:
+        allOf:
+        - $ref: '#/definitions/model.ResourceStatus'
+        description: 资源状态
       thumbnail:
         description: 缩略图URL
         type: string
@@ -600,6 +604,28 @@ definitions:
       viewCount:
         type: integer
     type: object
+  model.ResourceStatus:
+    enum:
+    - pending
+    - processing
+    - success
+    - failed
+    type: string
+    x-enum-comments:
+      ResourceFailed: 处理失败
+      ResourcePending: 等待处理
+      ResourceProcessing: 处理中
+      ResourceSuccess: 处理成功
+    x-enum-descriptions:
+    - 等待处理
+    - 处理中
+    - 处理成功
+    - 处理失败
+    x-enum-varnames:
+    - ResourcePending
+    - ResourceProcessing
+    - ResourceSuccess
+    - ResourceFailed
   model.ResourceType:
     enum:
     - pdf

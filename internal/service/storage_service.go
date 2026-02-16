@@ -159,7 +159,12 @@ func (p *OSSStorageProvider) Upload(ctx context.Context, filename string, reader
 		return "", err
 	}
 
-	err = bucket.PutObject(filename, reader)
+	options := []oss.Option{
+		oss.ContentType(contentType),
+		oss.ContentDisposition("inline"),
+	}
+
+	err = bucket.PutObject(filename, reader, options...)
 	if err != nil {
 		return "", err
 	}
@@ -172,7 +177,12 @@ func (p *OSSStorageProvider) UploadFile(ctx context.Context, filename string, lo
 		return "", err
 	}
 
-	err = bucket.PutObjectFromFile(filename, localPath)
+	options := []oss.Option{
+		oss.ContentType(contentType),
+		oss.ContentDisposition("inline"),
+	}
+
+	err = bucket.PutObjectFromFile(filename, localPath, options...)
 	if err != nil {
 		return "", err
 	}

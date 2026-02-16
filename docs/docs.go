@@ -12213,6 +12213,14 @@ const docTemplate = `{
                     "description": "文件大小（字节）",
                     "type": "integer"
                 },
+                "status": {
+                    "description": "资源状态",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ResourceStatus"
+                        }
+                    ]
+                },
                 "thumbnail": {
                     "description": "缩略图URL",
                     "type": "string"
@@ -12236,6 +12244,33 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
+        },
+        "model.ResourceStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "processing",
+                "success",
+                "failed"
+            ],
+            "x-enum-comments": {
+                "ResourceFailed": "处理失败",
+                "ResourcePending": "等待处理",
+                "ResourceProcessing": "处理中",
+                "ResourceSuccess": "处理成功"
+            },
+            "x-enum-descriptions": [
+                "等待处理",
+                "处理中",
+                "处理成功",
+                "处理失败"
+            ],
+            "x-enum-varnames": [
+                "ResourcePending",
+                "ResourceProcessing",
+                "ResourceSuccess",
+                "ResourceFailed"
+            ]
         },
         "model.ResourceType": {
             "type": "string",

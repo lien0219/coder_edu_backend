@@ -134,7 +134,6 @@ func (c *ContentController) UploadIcon(ctx *gin.Context) {
 }
 
 // 视频上传相关内容
-
 // VideoUploadRequest 视频上传请求参数
 type VideoUploadRequest struct {
 	Title       string `form:"title"`
@@ -231,7 +230,7 @@ func (c *ContentController) UploadVideoChunk(ctx *gin.Context) {
 
 	progress, resource, err := c.ContentService.UploadVideoChunk(ctx, chunkFile, req.ChunkNumber, req.TotalChunks, req.Identifier, req.Filename, req.Title, req.Description)
 	if err != nil {
-		util.InternalServerError(ctx)
+		util.LogInternalError(ctx, err)
 		return
 	}
 

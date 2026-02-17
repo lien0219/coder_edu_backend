@@ -12,7 +12,10 @@ FILES_CONFIG = {
         r'(password:\s*")([^"]*)(")',
         r'(oss_access_key:\s*")([^"]*)(")',
         r'(oss_secret_key:\s*")([^"]*)(")',
-        r'(api_key:\s*")([^"]*)(")'
+        r'(api_key:\s*")([^"]*)(")',
+        r'(secret:\s*")([^"]*)(")',
+        r'(minio_access_key:\s*")([^"]*)(")',
+        r'(minio_secret_key:\s*")([^"]*)(")'
     ]
 }
 

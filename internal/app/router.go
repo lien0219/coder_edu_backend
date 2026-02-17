@@ -175,6 +175,9 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	rg.GET("/users/level-status", c.user.GetLevelStatus)
 	rg.POST("/users/:id/points", middleware.RoleMiddleware(model.Student, model.Teacher, model.Admin), c.user.UpdateUserPoints)
 
+	// AI 问答
+	rg.POST("/qa/ask", c.qa.Ask)
+
 	// 资源进度
 	rg.GET("/c-programming/resource-progress/:resourceId", c.cProgramming.GetResourceModuleWithProgress)
 	rg.POST("/c-programming/resource-progress/:resourceId/completion", c.cProgramming.UpdateResourceCompletionStatus)

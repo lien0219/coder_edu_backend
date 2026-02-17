@@ -98,6 +98,8 @@ type services struct {
 	chat                 *service.ChatService
 	friendship           *service.FriendshipService
 	chatHub              *service.ChatHub
+	ai                   *service.AIService
+	qa                   *service.QAService
 }
 
 type controllers struct {
@@ -125,6 +127,7 @@ type controllers struct {
 	reflection     *controller.ReflectionController
 	chat           *controller.ChatController
 	health         *controller.HealthController
+	qa             *controller.QAController
 }
 
 func (a *App) RegisterConfigCallback(callback func(*config.Config)) {
@@ -229,6 +232,9 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 	s.chat = service.NewChatService(repos.chat)
 	s.friendship = service.NewFriendshipService(repos.friendship, repos.user)
 
+	s.ai = service.NewAIService(cfg.AI)
+	s.qa = service.NewQAService(db, s.ai)
+
 	return s
 }
 
@@ -258,6 +264,7 @@ func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
 		reflection:     controller.NewReflectionController(s.reflection),
 		chat:           controller.NewChatController(s.chat, s.friendship, s.chatHub, s.storage, a.Config),
 		health:         controller.NewHealthController(db),
+		qa:             controller.NewQAController(s.qa),
 	}
 }
 

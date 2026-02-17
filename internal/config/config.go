@@ -15,6 +15,13 @@ type Config struct {
 	Tracing  TracingConfig
 	Judge0   Judge0Config
 	Redis    RedisConfig
+	AI       AIConfig
+}
+
+type AIConfig struct {
+	BaseURL string `mapstructure:"base_url"`
+	APIKey  string `mapstructure:"api_key"`
+	Model   string `mapstructure:"model"`
 }
 
 type ServerConfig struct {

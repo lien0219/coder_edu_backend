@@ -12,15 +12,15 @@ database:
   parseTime: true
 
 jwt:
-  secret: "REDACTED_JWT_SECRET"
+  secret: "******"
   expire_hours: 12
 
 storage:
   type: "oss" # "local" or "minio" or "oss"
   local_path: "./uploads"
   minio_endpoint: "localhost:9000"
-  minio_access_key: "minioadmin"
-  minio_secret_key: "minioadmin"
+  minio_access_key: "******"
+  minio_secret_key: "******"
   minio_bucket: "coder_edu_backend"
   oss_endpoint: "oss-ap-southeast-1.aliyuncs.com"
   oss_access_key: "******"
@@ -41,3 +41,8 @@ redis:
   port: 6379
   password: "******"
   db: 0
+
+ai:
+  base_url: "https://api.deepseek.com"
+  api_key: "******"
+  model: "deepseek-chat"

@@ -220,6 +220,9 @@ definitions:
     - name
     - role
     type: object
+  gin.H:
+    additionalProperties: {}
+    type: object
   gorm.DeletedAt:
     properties:
       time:
@@ -227,6 +230,25 @@ definitions:
       valid:
         description: Valid is true if Time is not NULL
         type: boolean
+    type: object
+  model.AIQAHistory:
+    properties:
+      answer:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: integer
+      question:
+        type: string
+      sessionId:
+        description: 会话 ID，用于切断历史边界
+        type: string
+      source:
+        description: knowledge_base 或 llm
+        type: string
+      userId:
+        type: integer
     type: object
   model.CProgrammingResource:
     properties:
@@ -789,6 +811,24 @@ definitions:
         type: string
     required:
     - content
+    type: object
+  service.AskRequest:
+    properties:
+      question:
+        type: string
+      sessionId:
+        description: 前端传入当前会话 ID
+        type: string
+    required:
+    - question
+    type: object
+  service.AskResponse:
+    properties:
+      answer:
+        type: string
+      source:
+        description: '"knowledge_base" 或者 "llm"'
+        type: string
     type: object
   service.AssessmentQuestionRequest:
     properties:
@@ -5548,6 +5588,88 @@ paths:
       summary: 提交练习题答案（公开接口）
       tags:
       - C语言编程资源
+  /api/qa/ask:
+    post:
+      consumes:
+      - application/json
+      description: 先检索知识库，如果没有则调用大模型回答
+      parameters:
+      - description: 问题内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.AskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.AskResponse'
+      summary: AI 知识库问答
+      tags:
+      - QA
+  /api/qa/history:
+    get:
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - description: 会话 ID
+        in: query
+        name: sessionId
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+      security:
+      - ApiKeyAuth: []
+      summary: 获取 AI 问答历史
+      tags:
+      - QA
+  /api/qa/history/detail:
+    get:
+      parameters:
+      - description: 会话 ID
+        in: query
+        name: sessionId
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.AIQAHistory'
+            type: array
+      security:
+      - ApiKeyAuth: []
+      summary: 获取会话历史详情
+      tags:
+      - QA
+  /api/qa/report/weekly:
+    get:
+      description: 生成并获取用户的学习周报，采用 SSE 流式返回
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: 获取学习周报
+      tags:
+      - QA
   /api/reflections/my:
     get:
       consumes:

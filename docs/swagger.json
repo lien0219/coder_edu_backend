@@ -6664,6 +6664,139 @@
                 }
             }
         },
+        "/api/qa/ask": {
+            "post": {
+                "description": "先检索知识库，如果没有则调用大模型回答",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QA"
+                ],
+                "summary": "AI 知识库问答",
+                "parameters": [
+                    {
+                        "description": "问题内容",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.AskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.AskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/qa/history": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "tags": [
+                    "QA"
+                ],
+                "summary": "获取 AI 问答历史",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "sessionId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/qa/history/detail": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "tags": [
+                    "QA"
+                ],
+                "summary": "获取会话历史详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "sessionId",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.AIQAHistory"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/qa/report/weekly": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "生成并获取用户的学习周报，采用 SSE 流式返回",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "QA"
+                ],
+                "summary": "获取学习周报",
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/reflections/my": {
             "get": {
                 "security": [
@@ -11672,6 +11805,10 @@
                 }
             }
         },
+        "gin.H": {
+            "type": "object",
+            "additionalProperties": {}
+        },
         "gorm.DeletedAt": {
             "type": "object",
             "properties": {
@@ -11681,6 +11818,34 @@
                 "valid": {
                     "description": "Valid is true if Time is not NULL",
                     "type": "boolean"
+                }
+            }
+        },
+        "model.AIQAHistory": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "question": {
+                    "type": "string"
+                },
+                "sessionId": {
+                    "description": "会话 ID，用于切断历史边界",
+                    "type": "string"
+                },
+                "source": {
+                    "description": "knowledge_base 或 llm",
+                    "type": "string"
+                },
+                "userId": {
+                    "type": "integer"
                 }
             }
         },
@@ -12493,6 +12658,33 @@
             ],
             "properties": {
                 "content": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.AskRequest": {
+            "type": "object",
+            "required": [
+                "question"
+            ],
+            "properties": {
+                "question": {
+                    "type": "string"
+                },
+                "sessionId": {
+                    "description": "前端传入当前会话 ID",
+                    "type": "string"
+                }
+            }
+        },
+        "service.AskResponse": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "source": {
+                    "description": "\"knowledge_base\" 或者 \"llm\"",
                     "type": "string"
                 }
             }

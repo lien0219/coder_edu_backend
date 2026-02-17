@@ -177,6 +177,9 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 
 	// AI 问答
 	rg.POST("/qa/ask", c.qa.Ask)
+	rg.GET("/qa/history", c.qa.GetHistory)
+	rg.GET("/qa/history/detail", c.qa.GetHistoryDetail)
+	rg.GET("/qa/report/weekly", c.qa.GetWeeklyReport) // 学习周报接口
 
 	// 资源进度
 	rg.GET("/c-programming/resource-progress/:resourceId", c.cProgramming.GetResourceModuleWithProgress)

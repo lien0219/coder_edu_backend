@@ -233,7 +233,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 	s.friendship = service.NewFriendshipService(repos.friendship, repos.user)
 
 	s.ai = service.NewAIService(cfg.AI)
-	s.qa = service.NewQAService(db, s.ai)
+	s.qa = service.NewQAService(db, rdb, s.ai)
 
 	return s
 }

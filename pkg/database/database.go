@@ -5,6 +5,7 @@ import (
 	"coder_edu_backend/internal/model"
 	"fmt"
 	"log"
+	"strings"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -99,6 +100,7 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 		&model.Friendship{},
 		&model.FriendRequest{},
 		&model.CommunityResource{},
+		&model.AIQAHistory{},
 	)
 
 	if err != nil {
@@ -106,6 +108,32 @@ func InitDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 	}
 
 	log.Println("Database migration completed")
+
+	// 核心检索字段添加全文索引
+	fullTextTables := map[string][]string{
+		"knowledge_points":          {"title", "article_content"},
+		"exercise_questions":        {"title", "description"},
+		"assessment_questions":      {"content", "explanation"},
+		"post_class_test_questions": {"content", "explanation"},
+		"posts":                     {"title", "content"},
+		"questions":                 {"title", "content"},
+	}
+
+	for table, columns := range fullTextTables {
+		indexName := fmt.Sprintf("idx_fulltext_%s", table)
+		cols := strings.Join(columns, ",")
+		sql := fmt.Sprintf("CREATE FULLTEXT INDEX %s ON %s(%s) WITH PARSER ngram", indexName, table, cols)
+		// 检查索引是否存在，不存在则创建
+		var count int
+		db.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?", table, indexName).Scan(&count)
+		if count == 0 {
+			if err := db.Exec(sql).Error; err != nil {
+				log.Printf("Warning: Failed to create fulltext index on %s: %v", table, err)
+			} else {
+				log.Printf("Successfully created fulltext index on %s", table)
+			}
+		}
+	}
 
 	// 默认的激励短句
 	var count int64

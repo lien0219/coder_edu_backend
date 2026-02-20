@@ -229,7 +229,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 	s.chatHub = service.NewChatHub(rdb, repos.chat, repos.user, repos.friendship)
 	go s.chatHub.Run()
 
-	s.chat = service.NewChatService(repos.chat)
+	s.chat = service.NewChatService(repos.chat, rdb)
 	s.friendship = service.NewFriendshipService(repos.friendship, repos.user)
 
 	s.ai = service.NewAIService(cfg.AI)

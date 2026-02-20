@@ -239,6 +239,7 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	// 协作中心 - 聊天室
 	chat := rg.Group("/chat")
 	{
+		chat.GET("/overview", c.chat.GetOverview)
 		chat.GET("/ws", c.chat.HandleWS)
 		chat.GET("/conversations", c.chat.GetConversations)
 		chat.POST("/groups", c.chat.CreateGroup)

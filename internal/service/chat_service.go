@@ -3,18 +3,25 @@ package service
 import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"coder_edu_backend/pkg/logger"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/go-redis/redis/v8"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type ChatService struct {
 	ChatRepo *repository.ChatRepository
+	Redis    *redis.Client
 }
 
-func NewChatService(chatRepo *repository.ChatRepository) *ChatService {
-	return &ChatService{ChatRepo: chatRepo}
+func NewChatService(chatRepo *repository.ChatRepository, rdb *redis.Client) *ChatService {
+	return &ChatService{ChatRepo: chatRepo, Redis: rdb}
 }
 
 func (s *ChatService) CreateSystemMessage(convID string, content string) (*model.Message, error) {
@@ -422,4 +429,133 @@ func (s *ChatService) GlobalSearch(userID uint, query string, limit, offset int)
 
 func (s *ChatService) MarkAsRead(userID uint, convID string, msgID string) error {
 	return s.ChatRepo.UpdateLastReadMessage(convID, userID, msgID)
+}
+
+// ===== 协作中心概览 =====
+
+// CollaborationOverview 协作中心入口概览数据
+type CollaborationOverview struct {
+	OnlineCount           int                   `json:"onlineCount"`
+	ActiveDiscussionCount int64                 `json:"activeDiscussionCount"`
+	RecentActiveUsers     []ActiveUserBrief     `json:"recentActiveUsers"`
+	LatestMessage         *LatestMessagePreview `json:"latestMessage"`
+}
+
+// ActiveUserBrief 活跃用户简要信息
+type ActiveUserBrief struct {
+	UserID uint   `json:"userId"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar"`
+}
+
+// LatestMessagePreview 最新消息预览
+type LatestMessagePreview struct {
+	SenderName       string    `json:"senderName"`
+	SenderAvatar     string    `json:"senderAvatar"`
+	Content          string    `json:"content"`
+	ConversationID   string    `json:"conversationId"`
+	ConversationName string    `json:"conversationName"`
+	CreatedAt        time.Time `json:"createdAt"`
+}
+
+const overviewCacheTTL = 30 * time.Second // 概览缓存有效期
+
+// GetCollaborationOverview 获取协作中心入口概览数据（带 Redis 缓存）
+func (s *ChatService) GetCollaborationOverview(userID uint, onlineCount int) (*CollaborationOverview, error) {
+	ctx := context.Background()
+	cacheKey := fmt.Sprintf("chat:overview:%d", userID)
+
+	// 1. 尝试从 Redis 读取缓存
+	if s.Redis != nil {
+		cached, err := s.Redis.Get(ctx, cacheKey).Result()
+		if err == nil {
+			var overview CollaborationOverview
+			if json.Unmarshal([]byte(cached), &overview) == nil {
+				overview.OnlineCount = onlineCount
+				return &overview, nil
+			}
+		}
+	}
+
+	// 2. 缓存未命中，查询数据库
+	overview, err := s.buildOverviewFromDB(userID, onlineCount)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 异步写入缓存
+	if s.Redis != nil {
+		go func() {
+			data, err := json.Marshal(overview)
+			if err == nil {
+				s.Redis.Set(ctx, cacheKey, data, overviewCacheTTL)
+			}
+		}()
+	}
+
+	return overview, nil
+}
+
+// buildOverviewFromDB 从数据库构建概览数据
+func (s *ChatService) buildOverviewFromDB(userID uint, onlineCount int) (*CollaborationOverview, error) {
+	overview := &CollaborationOverview{
+		OnlineCount: onlineCount,
+	}
+
+	// 1. 统计当前用户所在群聊中最近 24 小时有消息的会话数
+	since := time.Now().Add(-24 * time.Hour)
+	activeCount, err := s.ChatRepo.CountActiveDiscussions(userID, since)
+	if err != nil {
+		logger.Log.Warn("CountActiveDiscussions failed", zap.Uint("userID", userID), zap.Error(err))
+	} else {
+		overview.ActiveDiscussionCount = activeCount
+	}
+
+	// 2. 获取最近活跃用户（最多 20 个）
+	recentUsers, err := s.ChatRepo.GetRecentActiveUsers(userID, 20)
+	if err != nil {
+		logger.Log.Warn("GetRecentActiveUsers failed", zap.Uint("userID", userID), zap.Error(err))
+	}
+	activeUsers := make([]ActiveUserBrief, 0, len(recentUsers))
+	for _, u := range recentUsers {
+		activeUsers = append(activeUsers, ActiveUserBrief{
+			UserID: u.ID,
+			Name:   u.Name,
+			Avatar: u.Avatar,
+		})
+	}
+	overview.RecentActiveUsers = activeUsers
+
+	// 3. 获取当前用户所有会话中最新的一条消息
+	latestMsg, err := s.ChatRepo.GetLatestMessageForUser(userID)
+	if err == nil && latestMsg != nil {
+		convName := latestMsg.Conversation.Name
+		// 如果是私聊，使用对方姓名作为会话名
+		if latestMsg.Conversation.Type == "private" {
+			var members []model.ConversationMember
+			s.ChatRepo.DB.Preload("User").Where("conversation_id = ?", latestMsg.ConversationID).Find(&members)
+			for _, m := range members {
+				if m.UserID != userID {
+					convName = m.User.Name
+					break
+				}
+			}
+		}
+
+		preview := &LatestMessagePreview{
+			Content:          latestMsg.Content,
+			ConversationID:   latestMsg.ConversationID,
+			ConversationName: convName,
+			CreatedAt:        latestMsg.CreatedAt,
+		}
+		if latestMsg.SenderID != nil {
+			preview.SenderName = latestMsg.Sender.Name
+			preview.SenderAvatar = latestMsg.Sender.Avatar
+		} else {
+			preview.SenderName = "系统"
+		}
+		overview.LatestMessage = preview
+	}
+
+	return overview, nil
 }

@@ -58,6 +58,37 @@ func NewChatController(chatService *service.ChatService, friendshipService *serv
 	}
 }
 
+// GetOverview godoc
+// @Summary 获取协作中心概览
+// @Description 获取协作中心入口页面的摘要数据：在线人数、活跃讨论数、最近活跃用户和最新消息
+// @Tags IM系统
+// @Accept  json
+// @Produce  json
+// @Security ApiKeyAuth
+// @Success 200 {object} util.Response{data=service.CollaborationOverview} "成功"
+// @Failure 401 {object} util.Response "未授权"
+// @Failure 500 {object} util.Response "服务器内部错误"
+// @Router /api/chat/overview [get]
+func (ctrl *ChatController) GetOverview(c *gin.Context) {
+	claims := util.GetUserFromContext(c)
+	if claims == nil {
+		util.Unauthorized(c)
+		return
+	}
+	userID := claims.UserID
+
+	// 获取全站在线人数
+	onlineCount := ctrl.Hub.GetOnlineCount()
+
+	overview, err := ctrl.ChatService.GetCollaborationOverview(userID, onlineCount)
+	if err != nil {
+		util.LogInternalError(c, err)
+		return
+	}
+
+	util.Success(c, overview)
+}
+
 // HandleWS godoc
 // @Summary WebSocket 连接
 // @Description 建立 WebSocket 连接以接收实时消息

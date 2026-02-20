@@ -517,6 +517,48 @@ func (r *ChatRepository) GetUserRelatedIDs(userID uint) ([]uint, error) {
 	return ids, err
 }
 
+// CountActiveDiscussions 统计用户所在群聊中最近 since 以来有消息的会话数
+func (r *ChatRepository) CountActiveDiscussions(userID uint, since time.Time) (int64, error) {
+	var count int64
+	err := r.DB.Model(&model.Conversation{}).
+		Joins("JOIN conversation_members ON conversation_members.conversation_id = conversations.id").
+		Where("conversation_members.user_id = ?", userID).
+		Where("conversations.type = ?", "group").
+		Where("conversations.updated_at >= ?", since).
+		Count(&count).Error
+	return count, err
+}
+
+// GetRecentActiveUsers 获取用户所在会话中最近发过消息的用户（去重，按最近活跃时间倒序）
+func (r *ChatRepository) GetRecentActiveUsers(userID uint, limit int) ([]model.User, error) {
+	var users []model.User
+	err := r.DB.Raw(`
+		SELECT u.id, u.name, u.avatar, MAX(m.created_at) AS last_active
+		FROM users u
+		INNER JOIN messages m ON m.sender_id = u.id
+		INNER JOIN conversation_members cm ON cm.conversation_id = m.conversation_id
+		WHERE cm.user_id = ? AND m.sender_id != ? AND m.created_at >= ?
+		GROUP BY u.id, u.name, u.avatar
+		ORDER BY last_active DESC
+		LIMIT ?
+	`, userID, userID, time.Now().Add(-24*time.Hour), limit).Scan(&users).Error
+	return users, err
+}
+
+// GetLatestMessageForUser 获取用户所有会话中最新的一条消息（含发送者信息和会话名称）
+func (r *ChatRepository) GetLatestMessageForUser(userID uint) (*model.Message, error) {
+	var msg model.Message
+	err := r.DB.Preload("Sender").Preload("Conversation").
+		Joins("JOIN conversation_members ON conversation_members.conversation_id = messages.conversation_id").
+		Where("conversation_members.user_id = ?", userID).
+		Order("messages.created_at DESC").
+		First(&msg).Error
+	if err != nil {
+		return nil, err
+	}
+	return &msg, nil
+}
+
 // SetupPartitions 为消息表创建分区-----暂时不用，留作后续优化
 func (r *ChatRepository) SetupPartitions() error {
 	_ = `

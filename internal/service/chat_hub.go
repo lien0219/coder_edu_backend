@@ -613,6 +613,53 @@ func (h *ChatHub) pushToLocalGroupUsers(payload []byte) {
 	}
 }
 
+// GetOnlineCount 统计全站在线用户数（本地分片 + Redis 多实例）
+func (h *ChatHub) GetOnlineCount() int {
+	// 统计所有 user:online:* 键（覆盖多实例部署）
+	if h.Redis != nil {
+		count := 0
+		var cursor uint64
+		for {
+			keys, nextCursor, err := h.Redis.Scan(h.ctx, cursor, "user:online:*", 200).Result()
+			if err != nil {
+				break
+			}
+			count += len(keys)
+			cursor = nextCursor
+			if cursor == 0 {
+				break
+			}
+		}
+		if count > 0 {
+			return count
+		}
+	}
+
+	// 仅统计本地分片
+	count := 0
+	for i := 0; i < shardCount; i++ {
+		s := h.shards[i]
+		s.mu.RLock()
+		count += len(s.clients)
+		s.mu.RUnlock()
+	}
+	return count
+}
+
+// GetOnlineUserIDs 获取所有在线用户 ID（本地分片）
+func (h *ChatHub) GetOnlineUserIDs() []uint {
+	var ids []uint
+	for i := 0; i < shardCount; i++ {
+		s := h.shards[i]
+		s.mu.RLock()
+		for uid := range s.clients {
+			ids = append(ids, uid)
+		}
+		s.mu.RUnlock()
+	}
+	return ids
+}
+
 func (h *ChatHub) IsUserOnline(userID uint) bool {
 	// 查本地分片
 	s := h.getShard(userID)
@@ -623,7 +670,7 @@ func (h *ChatHub) IsUserOnline(userID uint) bool {
 		return true
 	}
 
-	// 查 Redis (多实例部署)
+	// 查Redis(多实例部署)
 	val, err := h.Redis.Get(h.ctx, fmt.Sprintf("user:online:%d", userID)).Result()
 	return err == nil && val != ""
 }

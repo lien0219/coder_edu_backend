@@ -4044,6 +4044,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/chat/overview": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "获取协作中心入口页面的摘要数据：在线人数、活跃讨论数、最近活跃用户和最新消息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IM系统"
+                ],
+                "summary": "获取协作中心概览",
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/util.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/service.CollaborationOverview"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "未授权",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/chat/privates": {
             "post": {
                 "security": [
@@ -12745,6 +12797,20 @@ const docTemplate = `{
                 "Sunday"
             ]
         },
+        "service.ActiveUserBrief": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "userId": {
+                    "type": "integer"
+                }
+            }
+        },
         "service.AnswerRequest": {
             "type": "object",
             "required": [
@@ -12887,6 +12953,26 @@ const docTemplate = `{
                 "status": {
                     "description": "0: success, 1: compilation error, 2: runtime error, 3: timeout",
                     "type": "integer"
+                }
+            }
+        },
+        "service.CollaborationOverview": {
+            "type": "object",
+            "properties": {
+                "activeDiscussionCount": {
+                    "type": "integer"
+                },
+                "latestMessage": {
+                    "$ref": "#/definitions/service.LatestMessagePreview"
+                },
+                "onlineCount": {
+                    "type": "integer"
+                },
+                "recentActiveUsers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ActiveUserBrief"
+                    }
                 }
             }
         },
@@ -13129,6 +13215,29 @@ const docTemplate = `{
                 },
                 "score": {
                     "type": "integer"
+                }
+            }
+        },
+        "service.LatestMessagePreview": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "conversationId": {
+                    "type": "string"
+                },
+                "conversationName": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "senderAvatar": {
+                    "type": "string"
+                },
+                "senderName": {
+                    "type": "string"
                 }
             }
         },

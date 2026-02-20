@@ -83,13 +83,15 @@ func (ft *FlexibleTime) TimePtr() *time.Time {
 type LevelService struct {
 	LevelRepo        *repository.LevelRepository
 	LevelAttemptRepo *repository.LevelAttemptRepository
+	LearningService  *LearningService
 	DB               *gorm.DB
 }
 
-func NewLevelService(levelRepo *repository.LevelRepository, levelAttemptRepo *repository.LevelAttemptRepository, db *gorm.DB) *LevelService {
+func NewLevelService(levelRepo *repository.LevelRepository, levelAttemptRepo *repository.LevelAttemptRepository, learningService *LearningService, db *gorm.DB) *LevelService {
 	return &LevelService{
 		LevelRepo:        levelRepo,
 		LevelAttemptRepo: levelAttemptRepo,
+		LearningService:  learningService,
 		DB:               db,
 	}
 }
@@ -1899,8 +1901,42 @@ func (s *LevelService) checkAnswer(question model.LevelQuestion, userAnswer inte
 		return false, 0, "论述题需要教师评分"
 
 	case "code":
-		// 编程题：通常需要运行测试，这里暂时返回待评分状态
-		return false, 0, "编程题需要运行测试"
+		// 编程题：调用 LearningService 运行代码并比对结果
+		userAnswerStr, ok := userAnswer.(string)
+		if !ok {
+			return false, 0, "答案格式错误：编程题答案必须是代码字符串"
+		}
+
+		// 调用运行代码服务
+		runReq := CodeExecutionRequest{
+			Code: userAnswerStr,
+		}
+		runResult, err := s.LearningService.RunCode(runReq)
+		if err != nil {
+			logger.Log.Error("编程题运行失败", zap.Error(err))
+			return false, 0, "代码执行环境异常，请稍后重试"
+		}
+
+		// 检查编译状态
+		if runResult.Status == 1 { // 编译错误
+			return false, 0, "编译错误:\n" + runResult.Errors
+		}
+
+		// 检查运行状态（超时等）
+		if runResult.Status != 0 {
+			return false, 0, "运行异常: " + runResult.Errors
+		}
+
+		// 比对运行输出结果
+		// 去除首尾空格和换行符进行比对
+		expectedOutput := strings.TrimSpace(question.CorrectAnswer)
+		actualOutput := strings.TrimSpace(runResult.Output)
+
+		if actualOutput == expectedOutput {
+			return true, question.Points, "运行成功，结果正确"
+		}
+
+		return false, 0, fmt.Sprintf("运行成功，但输出结果不匹配。\n预期输出: %s\n实际输出: %s", expectedOutput, actualOutput)
 
 	default:
 		return false, 0, "不支持的问题类型"

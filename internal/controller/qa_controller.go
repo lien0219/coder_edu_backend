@@ -74,20 +74,34 @@ func (c *QAController) Ask(ctx *gin.Context) {
 	ctx.SSEvent("source", source)
 	ctx.Writer.Flush()
 
-	// 循环读取并发送AI回答内容
-	for content := range stream {
-		ctx.SSEvent("message", content)
-		ctx.Writer.Flush()
-	}
-
-	// 检查是否有错误发生
-	if err := <-errChan; err != nil {
-		ctx.SSEvent("error", err.Error())
-		ctx.Writer.Flush()
-	}
-
-	ctx.SSEvent("end", "done")
-	ctx.Writer.Flush()
+	// 处理流式响应，支持客户端断开检测
+	ctx.Stream(func(w io.Writer) bool {
+		select {
+		case content, ok := <-stream:
+			if !ok {
+				// 流结束，检查是否有错误
+				select {
+				case err := <-errChan:
+					if err != nil {
+						ctx.SSEvent("error", err.Error())
+					}
+				default:
+				}
+				ctx.SSEvent("end", "done")
+				return false
+			}
+			ctx.SSEvent("message", content)
+			return true
+		case err := <-errChan:
+			if err != nil {
+				ctx.SSEvent("error", err.Error())
+			}
+			ctx.SSEvent("end", "done")
+			return false
+		case <-ctx.Request.Context().Done():
+			return false
+		}
+	})
 }
 
 // GetHistory 获取 AI 问答历史记录
@@ -173,6 +187,37 @@ func (c *QAController) GetHistoryDetail(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, histories)
 }
 
+// DeleteSession 删除指定会话的所有历史记录
+// @Summary 删除 AI 问答会话
+// @Description 根据 sessionId 删除该会话的所有历史记录
+// @Tags QA
+// @Security ApiKeyAuth
+// @Param sessionId path string true "会话 ID"
+// @Success 200 {object} gin.H
+// @Router /api/qa/history/{sessionId} [delete]
+func (c *QAController) DeleteSession(ctx *gin.Context) {
+	user, exists := ctx.Get("user")
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+	claims := user.(*util.Claims)
+	userID := claims.UserID
+	sessionID := ctx.Param("sessionId")
+
+	if sessionID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "sessionId 不能为空"})
+		return
+	}
+
+	if err := c.qaService.DeleteSession(userID, sessionID); err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "会话已删除"})
+}
+
 // GetWeeklyReport 获取学习周报 (SSE)
 // @Summary 获取学习周报
 // @Description 生成并获取用户的学习周报，采用 SSE 流式返回
@@ -196,6 +241,63 @@ func (c *QAController) GetWeeklyReport(ctx *gin.Context) {
 	ctx.Header("Cache-Control", "no-cache")
 	ctx.Header("Connection", "keep-alive")
 	ctx.Header("Transfer-Encoding", "chunked")
+
+	ctx.Stream(func(w io.Writer) bool {
+		select {
+		case content, ok := <-out:
+			if !ok {
+				ctx.SSEvent("message", "[DONE]")
+				return false
+			}
+			ctx.SSEvent("message", content)
+			return true
+		case err := <-errChan:
+			if err != nil {
+				ctx.SSEvent("error", err.Error())
+			}
+			return false
+		case <-ctx.Request.Context().Done():
+			return false
+		}
+	})
+}
+
+// DiagnoseRequest 代码诊断请求
+type DiagnoseRequest struct {
+	QuestionID    uint   `json:"questionId" binding:"required"`
+	Code          string `json:"code" binding:"required"`
+	CompilerError string `json:"compilerError"`
+}
+
+// @Summary AI 代码自动诊断
+// @Description 结合题目背景、用户代码和编译器报错信息，提供启发式的代码诊断建议
+// @Tags QA
+// @Accept json
+// @Produce text/event-stream
+// @Security ApiKeyAuth
+// @Param request body DiagnoseRequest true "代码诊断请求参数"
+// @Success 200 {string} string "SSE stream"
+// @Router /api/qa/diagnose [post]
+func (c *QAController) DiagnoseCode(ctx *gin.Context) {
+	user, exists := ctx.Get("user")
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+	claims := user.(*util.Claims)
+	userID := claims.UserID
+
+	var req DiagnoseRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	out, errChan := c.qaService.DiagnoseCode(userID, req.QuestionID, req.Code, req.CompilerError)
+
+	ctx.Header("Content-Type", "text/event-stream")
+	ctx.Header("Cache-Control", "no-cache")
+	ctx.Header("Connection", "keep-alive")
 
 	ctx.Stream(func(w io.Writer) bool {
 		select {

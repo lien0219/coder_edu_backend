@@ -6,6 +6,7 @@ import (
 	"coder_edu_backend/internal/repository"
 	"coder_edu_backend/internal/util"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -558,10 +559,12 @@ func (s *CommunityService) CreateResource(userID uint, role model.UserRole, req 
 func (s *CommunityService) GetResourceDetail(id string, userID uint) (*ResourceResponse, error) {
 	resource, err := s.ResourceRepo.FindByID(id)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, util.ErrResourceNotFound
+		}
 		return nil, err
 	}
 
-	// 增加观看量 (Redis 去重，防止同一用户重复增加)
 	viewKey := fmt.Sprintf("resource_view:%s:%d", id, userID)
 	if userID == 0 {
 		// 这里暂定未登录用户每次进入都增加

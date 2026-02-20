@@ -33,6 +33,18 @@ definitions:
     required:
     - targetUserId
     type: object
+  controller.DiagnoseRequest:
+    properties:
+      code:
+        type: string
+      compilerError:
+        type: string
+      questionId:
+        type: integer
+    required:
+    - code
+    - questionId
+    type: object
   controller.HandleFriendRequestRequest:
     properties:
       action:
@@ -5610,6 +5622,30 @@ paths:
       summary: AI 知识库问答
       tags:
       - QA
+  /api/qa/diagnose:
+    post:
+      consumes:
+      - application/json
+      description: 结合题目背景、用户代码和编译器报错信息，提供启发式的代码诊断建议
+      parameters:
+      - description: 代码诊断请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.DiagnoseRequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: AI 代码自动诊断
+      tags:
+      - QA
   /api/qa/history:
     get:
       parameters:
@@ -5633,6 +5669,25 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: 获取 AI 问答历史
+      tags:
+      - QA
+  /api/qa/history/{sessionId}:
+    delete:
+      description: 根据 sessionId 删除该会话的所有历史记录
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: sessionId
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+      security:
+      - ApiKeyAuth: []
+      summary: 删除 AI 问答会话
       tags:
       - QA
   /api/qa/history/detail:

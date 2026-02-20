@@ -110,7 +110,7 @@ func (s *ContentService) UploadResource(c *gin.Context, file *multipart.FileHead
 func (s *ContentService) UploadIcon(ctx context.Context, file *multipart.FileHeader) (string, error) {
 	// 验证文件类型
 	ext := strings.ToLower(filepath.Ext(file.Filename))
-	if ext != ".png" && ext != ".svg" {
+	if ext != ".png" && ext != ".svg" && ext != ".jpg" && ext != ".jpeg" {
 		return "", util.ErrInvalidIconExt
 	}
 
@@ -125,8 +125,8 @@ func (s *ContentService) UploadIcon(ctx context.Context, file *multipart.FileHea
 	defer src.Close()
 
 	// 深度验证 MIME 类型
-	if _, err := util.ValidateMimeType(src, []string{"image/png", "image/svg+xml"}); err != nil {
-		return "", fmt.Errorf("非法的文件内容，仅允许PNG或SVG格式: %v", err)
+	if _, err := util.ValidateMimeType(src, []string{"image/png", "image/svg+xml", "image/jpeg"}); err != nil {
+		return "", fmt.Errorf("非法的文件内容，仅允许PNG、JPG或SVG格式: %v", err)
 	}
 	// 重置读取指针
 	if seeker, ok := src.(io.Seeker); ok {

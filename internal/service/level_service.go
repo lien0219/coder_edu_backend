@@ -430,6 +430,7 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 		level.AvailableTo = req.AvailableTo.TimePtr()
 
 		if err := tx.Save(level).Error; err != nil {
+			logger.Log.Error("Failed to save level", zap.Error(err), zap.Uint("levelID", level.ID))
 			return err
 		}
 
@@ -441,6 +442,7 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 		}
 
 		if err := tx.Where("level_id = ?", level.ID).Delete(&model.LevelAbility{}).Error; err != nil {
+			logger.Log.Error("Failed to delete level abilities", zap.Error(err), zap.Uint("levelID", level.ID))
 			return err
 		}
 		if len(req.AbilityIDs) > 0 {
@@ -449,11 +451,13 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 				links = append(links, model.LevelAbility{LevelID: level.ID, AbilityID: aid})
 			}
 			if err := tx.Create(&links).Error; err != nil {
+				logger.Log.Error("Failed to create level abilities", zap.Error(err), zap.Uint("levelID", level.ID))
 				return err
 			}
 		}
 
 		if err := tx.Where("level_id = ?", level.ID).Delete(&model.LevelKnowledge{}).Error; err != nil {
+			logger.Log.Error("Failed to delete level knowledge", zap.Error(err), zap.Uint("levelID", level.ID))
 			return err
 		}
 		if len(req.KnowledgeTagIDs) > 0 {
@@ -462,11 +466,13 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 				links = append(links, model.LevelKnowledge{LevelID: level.ID, KnowledgeTagID: kid})
 			}
 			if err := tx.Create(&links).Error; err != nil {
+				logger.Log.Error("Failed to create level knowledge", zap.Error(err), zap.Uint("levelID", level.ID))
 				return err
 			}
 		}
 
-		if err := s.LevelRepo.DeleteQuestionsByLevel(level.ID); err != nil {
+		if err := tx.Where("level_id = ?", level.ID).Delete(&model.LevelQuestion{}).Error; err != nil {
+			logger.Log.Error("Failed to delete level questions", zap.Error(err), zap.Uint("levelID", level.ID))
 			return err
 		}
 		if len(req.Questions) > 0 {
@@ -489,7 +495,8 @@ func (s *LevelService) UpdateLevel(editorID uint, levelID uint, req LevelCreateR
 					Explanation:   q.Explanation,
 				})
 			}
-			if err := s.LevelRepo.CreateQuestions(qEntities); err != nil {
+			if err := tx.Create(&qEntities).Error; err != nil {
+				logger.Log.Error("Failed to create level questions", zap.Error(err), zap.Uint("levelID", level.ID))
 				return err
 			}
 		}
@@ -1415,11 +1422,13 @@ func (s *LevelService) GetStudentLevelDetail(userID, levelID uint) (*StudentLeve
 		}
 	}
 
-	// 生成学习目标（基于能力描述）
+	// 生成学习目标（基于能力描述，去重）
 	var learningObjectives []string
+	seenObjective := make(map[string]bool)
 	for _, ability := range abilities {
-		if ability.Description != "" {
+		if ability.Description != "" && !seenObjective[ability.Description] {
 			learningObjectives = append(learningObjectives, ability.Description)
+			seenObjective[ability.Description] = true
 		}
 	}
 

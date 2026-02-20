@@ -5,7 +5,9 @@ import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
 	"coder_edu_backend/pkg/logger"
+	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -577,7 +579,8 @@ func (c *LevelController) GetStudentLevelDetail(ctx *gin.Context) {
 	levelDetail, err := c.LevelService.GetStudentLevelDetail(user.UserID, uint(levelID))
 	if err != nil {
 		if err.Error() == "level not found" || err.Error() == "level not accessible" ||
-			err.Error() == "level not yet available" || err.Error() == "level no longer available" {
+			err.Error() == "level not yet available" || err.Error() == "level no longer available" ||
+			err.Error() == "record not found" {
 			util.NotFound(ctx)
 		} else {
 			util.InternalServerError(ctx)
@@ -614,7 +617,8 @@ func (c *LevelController) GetStudentLevelQuestions(ctx *gin.Context) {
 	questions, err := c.LevelService.GetStudentLevelQuestions(user.UserID, uint(levelID))
 	if err != nil {
 		if err.Error() == "level not found" || err.Error() == "level not accessible" ||
-			err.Error() == "level not yet available" || err.Error() == "level no longer available" {
+			err.Error() == "level not yet available" || err.Error() == "level no longer available" ||
+			err.Error() == "record not found" {
 			util.NotFound(ctx)
 		} else {
 			util.InternalServerError(ctx)
@@ -872,6 +876,10 @@ func (c *LevelController) StartAttempt(ctx *gin.Context) {
 	}
 	attempt, err := c.LevelService.StartAttempt(user.UserID, uint(id))
 	if err != nil {
+		if errors.Is(err, util.ErrAttemptLimitReached) {
+			util.Error(ctx, http.StatusOK, err.Error())
+			return
+		}
 		util.BadRequest(ctx, err.Error())
 		return
 	}

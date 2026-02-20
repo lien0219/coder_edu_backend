@@ -248,7 +248,7 @@ func (r *CommunityResourceRepository) FindWithPagination(offset, limit int, reso
 
 func (r *CommunityResourceRepository) FindByID(id string) (*model.CommunityResource, error) {
 	var resource model.CommunityResource
-	err := r.DB.Preload("Author").First(&resource, "id = ?", id).Error
+	err := r.DB.Preload("Author").Where("id = ? AND deleted_at IS NULL", id).First(&resource).Error
 	return &resource, err
 }
 

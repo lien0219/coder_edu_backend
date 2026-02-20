@@ -454,8 +454,9 @@ func (r *LevelRepository) GetUserSolvedChallengesCount(userID uint) (int, error)
 func (r *LevelRepository) GetLevelAbilitiesWithDetails(levelID uint) ([]model.Ability, error) {
 	var abilities []model.Ability
 	err := r.DB.Table("abilities").
-		Joins("JOIN level_abilities ON level_abilities.ability_id = abilities.id").
+		Joins("JOIN level_abilities ON level_abilities.ability_id = abilities.id AND level_abilities.deleted_at IS NULL").
 		Where("level_abilities.level_id = ?", levelID).
+		Select("DISTINCT abilities.*").
 		Find(&abilities).Error
 	return abilities, err
 }
@@ -463,8 +464,9 @@ func (r *LevelRepository) GetLevelAbilitiesWithDetails(levelID uint) ([]model.Ab
 func (r *LevelRepository) GetLevelKnowledgeWithDetails(levelID uint) ([]model.KnowledgeTag, error) {
 	var tags []model.KnowledgeTag
 	err := r.DB.Table("knowledge_tags").
-		Joins("JOIN level_knowledge ON level_knowledge.knowledge_tag_id = knowledge_tags.id").
+		Joins("JOIN level_knowledge ON level_knowledge.knowledge_tag_id = knowledge_tags.id AND level_knowledge.deleted_at IS NULL").
 		Where("level_knowledge.level_id = ?", levelID).
+		Select("DISTINCT knowledge_tags.*").
 		Find(&tags).Error
 	return tags, err
 }

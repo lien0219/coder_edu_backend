@@ -179,7 +179,9 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	rg.POST("/qa/ask", c.qa.Ask)
 	rg.GET("/qa/history", c.qa.GetHistory)
 	rg.GET("/qa/history/detail", c.qa.GetHistoryDetail)
-	rg.GET("/qa/report/weekly", c.qa.GetWeeklyReport) // 学习周报接口
+	rg.DELETE("/qa/history/:sessionId", c.qa.DeleteSession) // 删除会话
+	rg.GET("/qa/report/weekly", c.qa.GetWeeklyReport)       // 学习周报接口
+	rg.POST("/qa/diagnose", c.qa.DiagnoseCode)              // 代码诊断接口
 
 	// 资源进度
 	rg.GET("/c-programming/resource-progress/:resourceId", c.cProgramming.GetResourceModuleWithProgress)

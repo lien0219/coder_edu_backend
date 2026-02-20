@@ -7,7 +7,7 @@
 
 ## 项目简介
 
-Coder Edu Backend 是一个基于 Go 语言的高性能教育平台后端服务。它为学习者提供全方位的支持，包括用户认证、学习资源管理、个性化学习路径、实时反馈以及完善的成就系统。
+Coder Edu Backend 是一个基于 Go 语言的高性能教育平台后端服务。它为学习者提供全方位的支持，包括用户认证、学习资源管理、个性化学习路径、**AI 驱动的智能助教**、实时反馈以及完善的成就系统。
 
 ### 核心功能模块
 
@@ -17,12 +17,20 @@ Coder Edu Backend 是一个基于 Go 语言的高性能教育平台后端服务�
 4. **课后回顾 (Post-class)**：记录学习日志、阶段性测验、知识迁移任务及反思指南。
 5. **成就系统 (Achievement)**：丰富的徽章墙、积分等级、全球排行榜及目标管理。
 6. **协作中心 (Collaboration)**：支持基于 WebSocket 的实时聊天室、私聊、群聊及资源分享。
-7. **深度分析 (Analytics)**：多维度技能评估、学习曲线分析及智能个性化建议。
-8. **编程资源管理**：专门针对 C 语言等编程资源的存储（支持 OSS/MinIO/本地）与分发。
+7. **AI 智能助教 (AI Assistant)**：基于大语言模型的流式问答、RAG 知识库检索、多轮对话、代码自动诊断及 AI 学习周报生成。
+8. **深度分析 (Analytics)**：多维度技能评估、学习曲线分析及智能个性化建议。
+9. **编程资源管理**：专门针对 C 语言等编程资源的存储（支持 OSS/MinIO/本地）与分发。
 
 ### 特色技术实现
 
-- **智能验证码策略**：支持“15天内免验证”信任设备机制，平衡安全与体验。
+- **AI 智能助教系统**：
+  - **SSE 流式问答**：基于 Server-Sent Events 实现逐字输出的实时对话体验，支持多轮上下文记忆（自动截取最近 5 轮历史）。
+  - **RAG 知识库检索**：结合 MySQL 全文索引与意图识别引擎（知识/练习/进度/社区四大意图），在调用大模型前自动检索知识点、练习题、学习进度、社区帖子等本地数据作为上下文，实现"知识库优先、大模型兜底"的混合回答策略。
+  - **AI 代码自动诊断**：学生提交代码失败后，系统自动将题目背景、用户代码和编译器报错整合为 Prompt，以启发式引导（不直接给答案）帮助学生定位 Bug。
+  - **AI 学习周报生成**：自动聚合用户一周内的学习进度、练习提交正确率、社区活跃度等数据，调用大模型生成包含学习概况、技术亮点、薄弱环节及下周计划的个性化周报。
+  - **AI 自动标签生成**：离线脚本批量调用大模型为知识点与练习题自动提取关键词标签，降低运营人工成本。
+  - **安全与性能防护**：内置敏感词过滤、Redis 滑动窗口限流（每分钟 10 次）、高频问题 Redis 缓存（5 分钟 TTL）及 Markdown 格式规范注入。
+- **智能验证码策略**：支持"15天内免验证"信任设备机制，平衡安全与体验。
 - **大文件分片上传**：针对教学视频支持分片上传及进度查询，确保大文件传输稳定性。
 - **在线代码执行**：集成 Judge0 API，支持多种编程语言的在线运行与自动化评测。
 - **实时通信架构**：基于 Gorilla WebSocket 构建高性能聊天系统，支持消息撤回、已读确认。
@@ -35,6 +43,7 @@ Coder Edu Backend 是一个基于 Go 语言的高性能教育平台后端服务�
 - **对象存储**: [MinIO](https://min.io/) / [Aliyun OSS](https://www.aliyun.com/product/oss)
 - **实时通信**: [Gorilla WebSocket](https://github.com/gorilla/websocket)
 - **代码执行**: [Judge0](https://judge0.com/)
+- **AI 能力**: LLM 大语言模型 (OpenAI 兼容接口) + RAG 检索增强 + SSE 流式输出
 - **配置管理**: [Viper](https://github.com/spf13/viper)
 - **日志系统**: [Zap](https://github.com/uber-go/zap) + [Lumberjack](https://github.com/natefinch/lumberjack)
 - **身份认证**: [JWT](https://github.com/dgrijalva/jwt-go) (带设备信任机制)
@@ -64,7 +73,7 @@ Coder Edu Backend 是一个基于 Go 语言的高性能教育平台后端服务�
 │   ├── service/          # 业务逻辑层
 │   └── util/             # 常用工具函数 (JWT, Response等)
 ├── pkg/                  # 公共包 (数据库连接、日志初始化、监控等)
-├── scripts/              # 工具脚本 (如 Swagger 生成脚本)
+├── scripts/              # 工具脚本 (自动标签、Swagger 生成、敏感信息管理等)
 ├── main.go               # 项目启动文件
 ├── Dockerfile            # Docker 镜像构建
 └── docker-compose.yml    # 容器编排
@@ -105,6 +114,11 @@ redis:              # Redis 配置 (用于限流和缓存)
 judge0:             # 代码评测配置
   api_key: "..."
   url: "..."
+
+ai:                 # AI 大模型配置 (智能助教、代码诊断、周报、自动标签)
+  base_url: "https://your-ai-api-endpoint"
+  api_key: "your-api-key"
+  model: "your-model-name"
 ```
 
 ### 运行应用
@@ -141,9 +155,63 @@ docker-compose up -d
 - 指标监控: `http://localhost:<port>/metrics` (Prometheus 格式)
 - 健康检查: `http://localhost:<port>/api/health`
 
-### 重新生成 Swagger 文档
+## 工具脚本
 
-如果你修改了 API 注释，请运行：
+项目 `scripts/` 目录下提供了多种开发辅助脚本：
+
+### 自动标签生成 (`scripts/auto_tagging.go`)
+
+该脚本利用 AI 大模型为数据库中的 **知识点 (KnowledgePoint)** 和 **练习题 (ExerciseQuestion)** 自动生成关键词标签，免去人工逐条打标签的繁琐操作。
+
+#### 工作原理
+
+1. 读取 `configs/config.yaml` 中的数据库和 AI 服务配置。
+2. 连接数据库，查询所有知识点和练习题记录。
+3. 对每条记录，将标题和内容/描述拼接为 Prompt，调用 AI 服务提取 3-5 个核心关键词标签。
+4. 将生成的标签输出到控制台（可根据需求扩展为写回数据库）。
+
+#### 前置条件
+
+- 已正确配置 `configs/config.yaml` 中的 `database` 和 `ai` 部分：
+  ```yaml
+  ai:
+    base_url: "https://your-ai-api-endpoint"
+    api_key: "your-api-key"
+  ```
+- 数据库中已存在知识点或练习题数据。
+
+#### 使用方式
+
+在项目根目录下执行：
+
+```bash
+go run scripts/auto_tagging.go
+```
+
+运行后终端将输出类似：
+
+```text
+开始为 12 个知识点和 8 个练习题自动生成标签...
+知识点 [C语言指针基础] -> 标签: 指针,内存地址,解引用,C语言,变量
+练习题 [链表反转] -> 标签: 链表,反转,指针操作,数据结构
+...
+自动打标签任务完成！
+```
+
+### 敏感信息加密 (`scripts/secrets_handler.py`)
+
+用于在提交代码前将配置文件中的敏感信息（如数据库密码、OSS 密钥、API Key 等）替换为 `******`，并在本地开发时恢复。
+
+```bash
+# 提交前加密敏感信息
+python scripts/secrets_handler.py mask
+
+# 拉取代码后恢复敏感信息
+python scripts/secrets_handler.py unmask
+```
+
+### Swagger 文档生成
+
 ```bash
 # Windows
 ./scripts/generate_swagger.bat
@@ -151,6 +219,8 @@ docker-compose up -d
 # Linux/macOS
 ./scripts/generate_swagger.sh
 ```
+
+---
 
 ## 生产环境部署指南 (安全建议)
 

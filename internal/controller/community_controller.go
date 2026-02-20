@@ -46,7 +46,6 @@ func (c *CommunityController) GetPosts(ctx *gin.Context) {
 		userID = user.UserID
 	}
 
-	// 权限检查：如果访问“我的”，必须登录
 	if tab == "my" && userID == 0 {
 		util.Unauthorized(ctx)
 		return
@@ -565,6 +564,10 @@ func (c *CommunityController) GetResourceDetail(ctx *gin.Context) {
 
 	detail, err := c.CommunityService.GetResourceDetail(id, userID)
 	if err != nil {
+		if errors.Is(err, util.ErrResourceNotFound) {
+			util.NotFound(ctx)
+			return
+		}
 		util.LogInternalError(ctx, err)
 		return
 	}
@@ -660,7 +663,6 @@ func (c *CommunityController) DownloadResource(ctx *gin.Context) {
 	}
 
 	// 如果是本地路径或MinIO路径
-	// 旧的本地路径逻辑兼容: /api/community/resources/files/xxx -> resource_file/xxx
 	if strings.HasPrefix(fileURL, "/api/community/resources/files/") {
 		filename := strings.TrimPrefix(fileURL, "/api/community/resources/files/")
 		filepath := "resource_file/" + filename
@@ -670,7 +672,6 @@ func (c *CommunityController) DownloadResource(ctx *gin.Context) {
 		}
 	}
 
-	// 新的本地路径逻辑: /uploads/xxx -> ./uploads/xxx
 	if strings.HasPrefix(fileURL, "/uploads/") {
 		filename := strings.TrimPrefix(fileURL, "/uploads/")
 		filepath := filepath.Join(c.CommunityService.Cfg.Storage.LocalPath, filename)
@@ -680,7 +681,7 @@ func (c *CommunityController) DownloadResource(ctx *gin.Context) {
 		}
 	}
 
-	// 其他情况（如 MinIO），如果配置了静态服务则可以访问，或者这里可以实现 MinIO 下载逻辑
+	// 其他情况（如 MinIO），如果配置了静态服务则可以访问，或者这里可以实现MinIO下载逻辑
 	// 暂时重定向
 	ctx.Redirect(http.StatusFound, fileURL)
 }

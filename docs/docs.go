@@ -6704,6 +6704,45 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/qa/diagnose": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "结合题目背景、用户代码和编译器报错信息，提供启发式的代码诊断建议",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "QA"
+                ],
+                "summary": "AI 代码自动诊断",
+                "parameters": [
+                    {
+                        "description": "代码诊断请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.DiagnoseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/qa/history": {
             "get": {
                 "security": [
@@ -6773,6 +6812,37 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/model.AIQAHistory"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/qa/history/{sessionId}": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "根据 sessionId 删除该会话的所有历史记录",
+                "tags": [
+                    "QA"
+                ],
+                "summary": "删除 AI 问答会话",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
                         }
                     }
                 }
@@ -11532,6 +11602,24 @@ const docTemplate = `{
                 "targetUserId": {
                     "type": "integer",
                     "example": 2
+                }
+            }
+        },
+        "controller.DiagnoseRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "questionId"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "compilerError": {
+                    "type": "string"
+                },
+                "questionId": {
+                    "type": "integer"
                 }
             }
         },

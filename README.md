@@ -294,6 +294,92 @@ ctx.SetCookie(
 ---
 **注意**：在本地开发环境 (127.0.0.1) 下，`Secure` 属性通常可以不开启，但在任何通过非 127.0.0.1 访问的生产环境下，HTTPS 是 Cookie 安全传输的基础。
 
+## AI 智能检索演进路线
+
+当前 AI 问答模块的知识检索基于 **MySQL 全文索引 + 关键词规则意图识别**，架构简洁、零额外依赖。后续计划分阶段向语义检索演进，持续提升回答质量。
+
+### 当前架构 (v1 — 已实现)
+
+```text
+用户问题 → 关键词提取 + 意图识别(规则) → MySQL MATCH/LIKE 检索 → 拼接 Context → LLM 流式回答
+```
+
+| 能力 | 实现方式 |
+|------|---------|
+| 意图识别 | 关键词规则匹配（知识/练习/进度/社区/通用） |
+| 知识检索 | MySQL `MATCH...AGAINST` 全文索引 + `LIKE` 模糊匹配 |
+| 缓存加速 | Redis 缓存检索上下文（5 分钟 TTL） |
+| 多轮对话 | 自动截取最近 5 轮历史，总长度限制 4000 字符 |
+
+**优点**：零额外依赖、部署简单、响应速度快。
+
+**局限**：全文索引是词频匹配，语义理解弱（如"指针怎么用"搜不到标题为"内存地址与引用"的知识点）；意图规则易误判；无跨表语义关联。
+
+---
+
+### 阶段一：向量语义检索 (v2 — 规划中)
+
+引入向量数据库，将关键词匹配升级为 **Embedding 语义检索**：
+
+```text
+用户问题 → Embedding 向量化 → 向量数据库 Top-K 检索 → 拼接 Context → LLM 流式回答
+```
+
+- **向量数据库**: [Milvus](https://milvus.io/)（Go SDK 成熟）或 [Qdrant](https://qdrant.tech/)
+- **Embedding 模型**: OpenAI `text-embedding-3-small` 或本地部署 `bge-m3`（免费无限调用）
+- **改造点**: 新增 `VectorSearcher` 接口，注入 `QAService` 替换 `buildSearchQuery`，业务层无需大改
+
+**预期收益**："指针怎么用" 可以语义匹配到"内存地址与引用"等相关知识点，大幅提升检索召回率。
+
+---
+
+### 阶段二：智能意图识别 (v3 — 规划中)
+
+将硬编码的关键词规则替换为 **LLM Function Calling** 或轻量分类模型：
+
+```text
+用户问题 → LLM Function Calling / 轻量分类模型 → 精准意图 + 实体提取 → 定向检索
+```
+
+- **方案 A**: 利用大模型 Function Calling 能力，一次调用同时完成意图分类和关键实体提取
+- **方案 B**: 本地部署轻量分类模型（如 BERT-tiny），毫秒级推理，零 API 成本
+- **改造点**: 替换 `classifyIntent()` 和 `extractKeywords()` 方法
+
+**预期收益**：消除规则误判，精准识别复合意图（如"这道题的指针哪里错了"同时触发练习 + 知识检索）。
+
+---
+
+### 阶段三：混合检索 + 重排序 (v4 — 远期目标)
+
+结合向量检索与关键词检索，取长补短，并引入重排序模型：
+
+```text
+用户问题 ──┬── Embedding → 向量库 Top-K（语义召回）
+           └── 关键词  → MySQL 全文索引（精确召回）
+                         ↓
+                  RRF / Cross-Encoder 重排序
+                         ↓
+                  Top-N 高质量上下文 → LLM 流式回答
+```
+
+- **融合策略**: Reciprocal Rank Fusion (RRF) 或 Cross-Encoder 重排序模型
+- **推荐模型**: `bge-reranker-v2-m3`（本地部署）或 Cohere Rerank API
+
+**预期收益**：兼具语义理解和精确匹配能力，检索准确率预期达到最优水平。
+
+---
+
+### 技术选型参考
+
+| 组件 | 推荐方案 | 备注 |
+|------|---------|------|
+| 向量数据库 | Milvus / Qdrant | 均支持 Docker 一键部署，Go SDK 可用 |
+| Embedding 模型 | `text-embedding-3-small` / `bge-m3` | 前者接口简单，后者可本地免费部署 |
+| 重排序模型 | `bge-reranker-v2-m3` / Cohere Rerank | 阶段三使用，显著提升精排质量 |
+| 意图分类 | LLM Function Calling / BERT-tiny | 阶段二使用，替代关键词规则 |
+
+> **架构设计说明**：当前检索逻辑高度集中在 `qa_service.go` 的 `buildSearchQuery` 和 `AskStream` 方法中，后续只需新增 `VectorSearcher` 接口并注入 `QAService`，即可平滑升级，无需重构业务层代码。
+
 ## 许可证
 
 本项目采用 [MIT 许可证](LICENSE)。

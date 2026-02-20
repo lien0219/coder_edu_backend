@@ -12766,7 +12766,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "sessionId": {
-                    "description": "前端传入当前会话 ID",
                     "type": "string"
                 }
             }

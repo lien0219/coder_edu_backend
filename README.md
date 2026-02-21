@@ -102,6 +102,10 @@ database:           # MySQL 配置
   host: "localhost"
   dbname: "coder_edu_backend"
 
+jwt:
+  secret: "your-secret-key"   # ⚠️ release 模式下必须 ≥32 字符
+  expire_hours: 12
+
 storage:
   type: "oss"       # 存储类型: local/minio/oss
   oss_endpoint: "..."
@@ -120,6 +124,8 @@ ai:                 # AI 大模型配置 (智能助教、代码诊断、周报�
   api_key: "your-api-key"
   model: "your-model-name"
 ```
+
+> **⚠️ JWT Secret 安全要求**：当 `server.mode` 为 `release` 时，系统会在启动时校验 `jwt.secret` 长度不少于 32 个字符，不满足条件将拒绝启动。建议使用 `openssl rand -base64 48` 生成强密钥。
 
 ### 运行应用
 
@@ -222,9 +228,53 @@ python scripts/secrets_handler.py unmask
 
 ---
 
-## 生产环境部署指南 (安全建议)
+## 生产环境部署指南
 
-为了确保“15天内免验证”等功能在生产环境下安全、稳定地运行，建议在部署时参考以下方案配置 CORS 和 Cookie。
+### 环境变量参考
+
+所有配置项均可通过环境变量覆盖 `config.yaml` 中的值（优先级更高），推荐在 Docker / K8s 环境中使用：
+
+| 环境变量 | 对应配置项 | 说明 |
+|---------|-----------|------|
+| `DATABASE_HOST` | `database.host` | MySQL 主机 |
+| `DATABASE_PORT` | `database.port` | MySQL 端口 |
+| `DATABASE_USER` | `database.user` | MySQL 用户名 |
+| `DATABASE_PASSWORD` | `database.password` | MySQL 密码 |
+| `DATABASE_NAME` | `database.dbname` | 数据库名 |
+| `JWT_SECRET` | `jwt.secret` | JWT 签名密钥 (release ≥32 字符) |
+| `REDIS_HOST` | `redis.host` | Redis 主机 |
+| `REDIS_PORT` | `redis.port` | Redis 端口 |
+| `REDIS_PASSWORD` | `redis.password` | Redis 密码 |
+| `SERVER_MODE` | `server.mode` | 运行模式 (`debug` / `release`) |
+| `STORAGE_TYPE` | `storage.type` | 存储类型 (`local` / `minio` / `oss`) |
+| `OSS_ENDPOINT` | `storage.oss_endpoint` | 阿里云 OSS Endpoint |
+| `OSS_ACCESS_KEY` | `storage.oss_access_key` | OSS AccessKey |
+| `OSS_SECRET_KEY` | `storage.oss_secret_key` | OSS SecretKey |
+| `OSS_BUCKET` | `storage.oss_bucket` | OSS Bucket |
+| `JUDGE0_API_KEY` | `judge0.api_key` | Judge0 API Key |
+| `AI_BASE_URL` | `ai.base_url` | AI 服务地址 |
+| `AI_API_KEY` | `ai.api_key` | AI API Key |
+| `AI_MODEL` | `ai.model` | AI 模型名称 |
+
+### 优雅关机
+
+应用接收到 `SIGINT` / `SIGTERM` 信号后，会按以下顺序执行清理：
+
+1. 停止后台定时任务
+2. 清理 WebSocket 连接和 Redis 在线状态
+3. 关闭 HTTP 服务（等待进行中的请求完成，超时 5 秒）
+4. 关闭分布式追踪 Provider
+5. 关闭 MySQL 数据库连接
+6. 关闭 Redis 连接
+7. 刷写日志缓冲区
+
+### 注册安全策略
+
+注册接口 (`POST /api/register`) 仅允许选择 `student` 或 `teacher` 角色。管理员账号需通过后台或数据库直接创建，无法通过公开注册获取 admin 权限。
+
+### CORS 与 Cookie 部署方案
+
+为了确保"15天内免验证"等功能在生产环境下安全、稳定地运行，建议在部署时参考以下方案配置 CORS 和 Cookie。
 
 ### 方案一：相同主域共享 Cookie（最推荐）
 
@@ -275,24 +325,13 @@ server {
 ```
 **优点**：浏览器视为同源，Cookie 传递最顺滑。
 
-### 后端代码调整建议 (Go)
+### 后端 Cookie 安全策略
 
-在生产环境的 `internal/controller/auth_controller.go` 中，设置 Cookie 时请务必开启 `Secure` 和 `HttpOnly`：
+项目已实现 **Cookie `Secure` 标志自动适配**：当 `server.mode` 设为 `release` 时，`trust_device_token` Cookie 会自动启用 `Secure: true`；开发模式下则为 `false`，方便本地调试。
 
-```go
-ctx.SetCookie(
-    "trust_device_token", 
-    token, 
-    15 * 24 * 3600,      // 15天
-    "/", 
-    ".yourdomain.com",   // 生产环境主域名
-    true,                // Secure: 生产环境必须为 true
-    true,                // HttpOnly: 必须为 true
-)
-```
+如需自定义 Cookie `Domain`（例如共享主域名场景），可在 `auth_controller.go` 的 `SetCookie` 调用中将 domain 参数从 `""` 改为 `.yourdomain.com`。
 
----
-**注意**：在本地开发环境 (127.0.0.1) 下，`Secure` 属性通常可以不开启，但在任何通过非 127.0.0.1 访问的生产环境下，HTTPS 是 Cookie 安全传输的基础。
+> **注意**：在任何通过非 127.0.0.1 访问的生产环境下，HTTPS 是 Cookie 安全传输的基础。
 
 ## AI 智能检索演进路线
 

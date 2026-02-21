@@ -4,15 +4,15 @@ import (
 	"coder_edu_backend/internal/model"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type Claims struct {
 	UserID uint           `json:"user_id"`
 	Role   model.UserRole `json:"role"`
 	Email  string         `json:"email"`
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 }
 
 func GenerateJWT(user *model.User, secret string, expiration time.Duration) (string, error) {
@@ -22,8 +22,8 @@ func GenerateJWT(user *model.User, secret string, expiration time.Duration) (str
 		UserID: user.ID,
 		Role:   user.Role,
 		Email:  user.Email,
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: expirationTime.Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},
 	}
 
@@ -52,5 +52,9 @@ func GetUserFromContext(c *gin.Context) *Claims {
 	if !exists {
 		return nil
 	}
-	return user.(*Claims)
+	claims, ok := user.(*Claims)
+	if !ok {
+		return nil
+	}
+	return claims
 }

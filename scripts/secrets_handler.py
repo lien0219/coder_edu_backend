@@ -6,7 +6,10 @@ import sys
 FILES_CONFIG = {
     "docker-compose.yml": [
         r"(DATABASE_PASSWORD=)([^\s-]+)()",
-        r"(MYSQL_ROOT_PASSWORD=)([^\s-]+)()"
+        r"(MYSQL_ROOT_PASSWORD=)([^\s-]+)()",
+        r"(REDIS_PASSWORD=)([^\s-]+)()",
+        r"(JWT_SECRET=)([^\s-]+)()",
+        r"(--requirepass\s+)([^\s]+)()"
     ],
     "configs/config.yaml": [
         r'(password:\s*")([^"]*)(")',
@@ -102,6 +105,7 @@ def unmask():
         for pattern in patterns:
             if "docker-compose.yml" in filepath:
                 mask_search_pattern = pattern.replace(r"([^\s-]+)", f"({re.escape(MASK)})")
+                mask_search_pattern = mask_search_pattern.replace(r"([^\s]+)", f"({re.escape(MASK)})")
             else:
                 mask_search_pattern = pattern.replace(r'([^"]*)', f"({re.escape(MASK)})")
             

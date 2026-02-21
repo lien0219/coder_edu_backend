@@ -24,7 +24,7 @@ func main() {
 		log.Fatalf("解析配置文件失败: %v", err)
 	}
 
-	db, err := database.InitDB(&cfg.Database)
+	db, err := database.InitDB(&cfg.Database, cfg.Server.Mode)
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}

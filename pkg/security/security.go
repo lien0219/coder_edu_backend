@@ -9,17 +9,21 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// CORS 中间件
-func CORS() gin.HandlerFunc {
+// CORS 中间件 仅允许白名单中的Origin，支持Credentials
+func CORS(allowedOrigins []string) gin.HandlerFunc {
+	originSet := make(map[string]bool, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		originSet[o] = true
+	}
+
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
-		if origin != "" {
+
+		if origin != "" && originSet[origin] {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-		} else {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 
@@ -50,23 +54,52 @@ func Secure() gin.HandlerFunc {
 	}
 }
 
-// RateLimiter 限流中间件
+// visitor 包装限流器和最后活跃时间，用于定期清理
+type visitor struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
+}
+
+// RateLimiter 限流中间件 按IP限流，自动清理过期条目
 func RateLimiter(maxRequests int, window time.Duration) gin.HandlerFunc {
-	store := make(map[string]*rate.Limiter)
+	store := make(map[string]*visitor)
 	var mu sync.Mutex
+
+	go func() {
+		expiry := window * 3
+		if expiry < time.Minute {
+			expiry = time.Minute
+		}
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			mu.Lock()
+			for ip, v := range store {
+				if time.Since(v.lastSeen) > expiry {
+					delete(store, ip)
+				}
+			}
+			mu.Unlock()
+		}
+	}()
+
+	r := rate.Every(window / time.Duration(maxRequests))
 
 	return func(c *gin.Context) {
 		key := c.ClientIP()
 
 		mu.Lock()
-		limiter, exists := store[key]
+		v, exists := store[key]
 		if !exists {
-			limiter = rate.NewLimiter(rate.Every(window), maxRequests)
-			store[key] = limiter
+			v = &visitor{
+				limiter: rate.NewLimiter(r, maxRequests),
+			}
+			store[key] = v
 		}
+		v.lastSeen = time.Now()
 		mu.Unlock()
 
-		if !limiter.Allow() {
+		if !v.limiter.Allow() {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "too many requests"})
 			return
 		}

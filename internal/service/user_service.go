@@ -4,9 +4,10 @@ import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
 	"coder_edu_backend/internal/util"
+	"crypto/rand"
 	"errors"
-	"fmt"
 	"math"
+	"math/big"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -181,10 +182,19 @@ func (s *UserService) DisableUser(id uint, disable bool) error {
 	return s.UserRepo.Update(user)
 }
 
-// generateTempPassword 生成临时密码
+// generateTempPassword 生成安全的随机临时密码（16位，包含大小写字母和数字）
 func generateTempPassword() string {
-	// 生成8位随机密码
-	return fmt.Sprintf("temp%d", time.Now().UnixNano()%100000000)
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	password := make([]byte, 16)
+	for i := range password {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			password[i] = charset[i%len(charset)]
+			continue
+		}
+		password[i] = charset[n.Int64()]
+	}
+	return string(password)
 }
 
 // UpdateUserWithPassword 更新用户信息并修改密码
@@ -284,7 +294,6 @@ func (s *UserService) Checkin(userID uint) (bool, error) {
 	err = s.UpdateUserPoints(userID, points)
 	if err != nil {
 		// 积分更新失败不应影响签到成功状态，但应记录错误
-		// 在实际应用中应该添加日志记录
 	}
 
 	return true, nil

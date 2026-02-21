@@ -8,14 +8,25 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	JWT      JWTConfig
-	Storage  StorageConfig
-	Tracing  TracingConfig
-	Judge0   Judge0Config
-	Redis    RedisConfig
-	AI       AIConfig
+	Server    ServerConfig
+	Database  DatabaseConfig
+	JWT       JWTConfig
+	Storage   StorageConfig
+	Tracing   TracingConfig
+	Judge0    Judge0Config
+	Redis     RedisConfig
+	AI        AIConfig
+	CORS      CORSConfig      `mapstructure:"cors"`
+	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
+}
+
+type CORSConfig struct {
+	AllowedOrigins []string `mapstructure:"allowed_origins"`
+}
+
+type RateLimitConfig struct {
+	MaxRequests   int `mapstructure:"max_requests"`
+	WindowMinutes int `mapstructure:"window_minutes"`
 }
 
 type AIConfig struct {
@@ -82,15 +93,44 @@ func LoadConfig(path string) (*Config, error) {
 	viper.SetEnvPrefix("CODER_EDU")
 	viper.AutomaticEnv()
 
+	// Database
 	viper.BindEnv("database.host", "DATABASE_HOST")
 	viper.BindEnv("database.port", "DATABASE_PORT")
 	viper.BindEnv("database.user", "DATABASE_USER")
 	viper.BindEnv("database.password", "DATABASE_PASSWORD")
 	viper.BindEnv("database.dbname", "DATABASE_NAME")
+
+	// JWT
 	viper.BindEnv("jwt.secret", "JWT_SECRET")
+
+	// Redis
 	viper.BindEnv("redis.host", "REDIS_HOST")
 	viper.BindEnv("redis.port", "REDIS_PORT")
 	viper.BindEnv("redis.password", "REDIS_PASSWORD")
+
+	// Server
+	viper.BindEnv("server.mode", "SERVER_MODE")
+
+	// AI
+	viper.BindEnv("ai.base_url", "AI_BASE_URL")
+	viper.BindEnv("ai.api_key", "AI_API_KEY")
+	viper.BindEnv("ai.model", "AI_MODEL")
+
+	// Storage / OSS
+	viper.BindEnv("storage.type", "STORAGE_TYPE")
+	viper.BindEnv("storage.oss_endpoint", "OSS_ENDPOINT")
+	viper.BindEnv("storage.oss_access_key", "OSS_ACCESS_KEY")
+	viper.BindEnv("storage.oss_secret_key", "OSS_SECRET_KEY")
+	viper.BindEnv("storage.oss_bucket", "OSS_BUCKET")
+	viper.BindEnv("storage.minio_endpoint", "MINIO_ENDPOINT")
+	viper.BindEnv("storage.minio_access_key", "MINIO_ACCESS_KEY")
+	viper.BindEnv("storage.minio_secret_key", "MINIO_SECRET_KEY")
+	viper.BindEnv("storage.minio_bucket", "MINIO_BUCKET")
+
+	// Judge0
+	viper.BindEnv("judge0.api_key", "JUDGE0_API_KEY")
+	viper.BindEnv("judge0.url", "JUDGE0_URL")
+	viper.BindEnv("judge0.host", "JUDGE0_HOST")
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, err

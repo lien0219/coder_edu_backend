@@ -26,9 +26,11 @@ RUN adduser -D appuser
 # 设置工作目录
 WORKDIR /app
 
-# 从构建阶段复制二进制文件和配置文件
+# 从构建阶段复制二进制文件
 COPY --from=builder /app/coder_edu_backend .
-COPY configs/ ./configs/
+
+# 复制不含密钥的配置模板，实际敏感值通过环境变量注入
+COPY configs/config.yaml.example ./configs/config.yaml
 
 # 创建uploads目录用于存储文件
 RUN mkdir -p uploads && chown -R appuser:appuser uploads

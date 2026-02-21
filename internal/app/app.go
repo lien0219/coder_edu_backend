@@ -269,9 +269,19 @@ func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
 }
 
 func (a *App) setupMiddlewares(router *gin.Engine, cfg *config.Config) {
-	router.Use(security.CORS())
+	router.Use(security.CORS(cfg.CORS.AllowedOrigins))
 	router.Use(security.Secure())
-	router.Use(security.RateLimiter(100000, time.Minute)) // 每分钟100000次请求
+
+	// 默认200次/分钟
+	maxReq := cfg.RateLimit.MaxRequests
+	if maxReq <= 0 {
+		maxReq = 200
+	}
+	windowMin := cfg.RateLimit.WindowMinutes
+	if windowMin <= 0 {
+		windowMin = 1
+	}
+	router.Use(security.RateLimiter(maxReq, time.Duration(windowMin)*time.Minute))
 
 	// 分布式追踪中间件
 	if cfg.Tracing.Enabled {
@@ -298,7 +308,11 @@ func NewApp(cfg *config.Config) *App {
 
 	logger.Log.Info("Logger initialized successfully")
 
-	db, err := database.InitDB(&cfg.Database)
+	if cfg.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	db, err := database.InitDB(&cfg.Database, cfg.Server.Mode)
 	if err != nil {
 		logger.Log.Fatal("Failed to initialize database", zap.Error(err))
 		log.Fatalf("Failed to initialize database: %v", err)
@@ -325,6 +339,7 @@ func NewApp(cfg *config.Config) *App {
 	monitoring.Init()
 
 	router := gin.Default()
+	router.MaxMultipartMemory = 1536 << 20 // 1.5 GB
 	app.Router = router
 
 	app.setupMiddlewares(router, cfg)
@@ -361,8 +376,11 @@ func NewApp(cfg *config.Config) *App {
 
 func (a *App) Run() {
 	srv := &http.Server{
-		Addr:    ":" + a.Config.Server.Port,
-		Handler: a.Router,
+		Addr:         ":" + a.Config.Server.Port,
+		Handler:      a.Router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// 启动服务器

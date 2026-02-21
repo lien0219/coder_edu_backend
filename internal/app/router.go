@@ -14,10 +14,11 @@ import (
 )
 
 func (a *App) registerRoutes(router *gin.Engine, c *controllers, repos *repositories, cfg *config.Config) {
-	docs.SwaggerInfo.BasePath = "/api"
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/swagger/doc.json")))
-
-	router.GET("/metrics", monitoring.PrometheusHandler())
+	if cfg.Server.Mode != "release" {
+		docs.SwaggerInfo.BasePath = "/api"
+		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/swagger/doc.json")))
+		router.GET("/metrics", monitoring.PrometheusHandler())
+	}
 
 	// 1. 公共路由(无需登录)
 	a.registerPublicRoutes(router, c)

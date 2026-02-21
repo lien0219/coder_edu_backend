@@ -14,7 +14,6 @@
 *.sln
 *.sw?
 /vendor/
-/go.sum
 Thumbs.db
 desktop.ini
 Dockerfile.prod

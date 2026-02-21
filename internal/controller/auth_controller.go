@@ -13,13 +13,15 @@ type AuthController struct {
 	AuthService    *service.AuthService
 	UserService    *service.UserService
 	CaptchaService *service.CaptchaService
+	IsRelease      bool // 是否为生产环境
 }
 
-func NewAuthController(authService *service.AuthService, userService *service.UserService, captchaService *service.CaptchaService) *AuthController {
+func NewAuthController(authService *service.AuthService, userService *service.UserService, captchaService *service.CaptchaService, isRelease bool) *AuthController {
 	return &AuthController{
 		AuthService:    authService,
 		UserService:    userService,
 		CaptchaService: captchaService,
+		IsRelease:      isRelease,
 	}
 }
 
@@ -29,7 +31,7 @@ type RegisterRequest struct {
 	Name     string `json:"name" binding:"required"`
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=8"`
-	Role     string `json:"role" binding:"required,oneof=student teacher admin"`
+	Role     string `json:"role" binding:"required,oneof=student teacher"`
 }
 
 // Register godoc
@@ -172,9 +174,8 @@ func (c *AuthController) Login(ctx *gin.Context) {
 		if user != nil {
 			trustToken, err := c.CaptchaService.GenerateTrustDeviceToken(user.ID)
 			if err == nil {
-				// 设置 HttpOnly Cookie，有效期 15 天
-				// 注意：在生产环境下建议设置 Secure: true
-				ctx.SetCookie("trust_device_token", trustToken, 15*24*3600, "/", "", false, true)
+				// 设置 HttpOnly Cookie，有效期 15 天；生产环境启用 Secure 标志
+				ctx.SetCookie("trust_device_token", trustToken, 15*24*3600, "/", "", c.IsRelease, true)
 			}
 		}
 	}

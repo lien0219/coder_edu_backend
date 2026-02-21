@@ -32,8 +32,8 @@ COPY --from=builder /app/coder_edu_backend .
 # 复制不含密钥的配置模板，实际敏感值通过环境变量注入
 COPY configs/config.yaml.example ./configs/config.yaml
 
-# 创建uploads目录用于存储文件
-RUN mkdir -p uploads && chown -R appuser:appuser uploads
+# 创建运行时所需目录并设置权限
+RUN mkdir -p uploads resource_file logs && chown -R appuser:appuser uploads resource_file logs
 
 # 切换到非root用户
 USER appuser

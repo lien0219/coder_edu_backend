@@ -61,7 +61,7 @@ type visitor struct {
 }
 
 // RateLimiter 限流中间件 按IP限流，自动清理过期条目
-func RateLimiter(maxRequests int, window time.Duration) gin.HandlerFunc {
+func RateLimiter(maxRequests int, window time.Duration, stopCh chan struct{}) gin.HandlerFunc {
 	store := make(map[string]*visitor)
 	var mu sync.Mutex
 
@@ -72,7 +72,16 @@ func RateLimiter(maxRequests int, window time.Duration) gin.HandlerFunc {
 		}
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
+		for {
+			if stopCh != nil {
+				select {
+				case <-ticker.C:
+				case <-stopCh:
+					return
+				}
+			} else {
+				<-ticker.C
+			}
 			mu.Lock()
 			for ip, v := range store {
 				if time.Since(v.lastSeen) > expiry {

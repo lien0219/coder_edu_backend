@@ -20,6 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -31,6 +32,8 @@ type App struct {
 	Redis           *redis.Client
 	services        *services
 	configCallbacks []func(*config.Config)
+	stopCh          chan struct{}            // 用于通知后台任务退出
+	tracerProvider  *sdktrace.TracerProvider // 分布式追踪 provider，可能为 nil
 }
 
 type repositories struct {
@@ -240,7 +243,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 
 func (a *App) initControllers(s *services, db *gorm.DB) *controllers {
 	return &controllers{
-		auth:           controller.NewAuthController(s.auth, s.user, s.captcha),
+		auth:           controller.NewAuthController(s.auth, s.user, s.captcha, a.Config.Server.Mode == "release"),
 		content:        controller.NewContentController(s.content),
 		motivation:     controller.NewMotivationController(s.motivation),
 		dashboard:      controller.NewDashboardController(s.dashboard),
@@ -281,7 +284,7 @@ func (a *App) setupMiddlewares(router *gin.Engine, cfg *config.Config) {
 	if windowMin <= 0 {
 		windowMin = 1
 	}
-	router.Use(security.RateLimiter(maxReq, time.Duration(windowMin)*time.Minute))
+	router.Use(security.RateLimiter(maxReq, time.Duration(windowMin)*time.Minute, a.stopCh))
 
 	// 分布式追踪中间件
 	if cfg.Tracing.Enabled {
@@ -294,9 +297,16 @@ func (a *App) setupMiddlewares(router *gin.Engine, cfg *config.Config) {
 func (a *App) startBackgroundTasks(s *services) {
 	go func() {
 		ticker := time.NewTicker(time.Minute)
-		for range ticker.C {
-			if err := s.level.ProcessScheduledPublishes(); err != nil {
-				logger.Log.Error("scheduled publish error", zap.Error(err))
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := s.level.ProcessScheduledPublishes(); err != nil {
+					logger.Log.Error("scheduled publish error", zap.Error(err))
+				}
+			case <-a.stopCh:
+				logger.Log.Info("Background tasks stopped")
+				return
 			}
 		}
 	}()
@@ -304,7 +314,6 @@ func (a *App) startBackgroundTasks(s *services) {
 
 func NewApp(cfg *config.Config) *App {
 	logger.InitLogger(cfg)
-	defer logger.Log.Sync()
 
 	logger.Log.Info("Logger initialized successfully")
 
@@ -315,19 +324,18 @@ func NewApp(cfg *config.Config) *App {
 	db, err := database.InitDB(&cfg.Database, cfg.Server.Mode)
 	if err != nil {
 		logger.Log.Fatal("Failed to initialize database", zap.Error(err))
-		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
 	rdb, err := database.InitRedis(&cfg.Redis)
 	if err != nil {
 		logger.Log.Fatal("Failed to initialize redis", zap.Error(err))
-		log.Fatalf("Failed to initialize redis: %v", err)
 	}
 
 	app := &App{
 		Config: cfg,
 		DB:     db,
 		Redis:  rdb,
+		stopCh: make(chan struct{}),
 	}
 
 	repos := app.initRepositories(db, rdb)
@@ -349,11 +357,7 @@ func NewApp(cfg *config.Config) *App {
 		if err != nil {
 			logger.Log.Fatal("Failed to initialize tracing", zap.Error(err))
 		}
-		defer func() {
-			if err := tp.Shutdown(context.Background()); err != nil {
-				logger.Log.Error("Failed to shutdown tracer provider", zap.Error(err))
-			}
-		}()
+		app.tracerProvider = tp
 	}
 
 	app.registerRoutes(router, controllers, repos, cfg)
@@ -375,6 +379,8 @@ func NewApp(cfg *config.Config) *App {
 }
 
 func (a *App) Run() {
+	defer logger.Log.Sync()
+
 	srv := &http.Server{
 		Addr:         ":" + a.Config.Server.Port,
 		Handler:      a.Router,
@@ -397,17 +403,48 @@ func (a *App) Run() {
 	<-quit
 	log.Println("Shutting down server...")
 
-	// 清理 WebSocket连接和Redis在线状态
+	// 1. 通知后台任务退出
+	close(a.stopCh)
+
+	// 2. 清理 WebSocket连接和Redis在线状态
 	if a.services != nil && a.services.chatHub != nil {
 		a.services.chatHub.Stop()
 	}
 
-	// 关闭服务
+	// 3. 关闭 HTTP 服务
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("Server forced to shutdown:", err)
+		logger.Log.Error("Server forced to shutdown", zap.Error(err))
 	}
 
-	log.Println("Server exiting")
+	// 4. 关闭分布式追踪
+	if a.tracerProvider != nil {
+		if err := a.tracerProvider.Shutdown(ctx); err != nil {
+			logger.Log.Error("Failed to shutdown tracer provider", zap.Error(err))
+		}
+	}
+
+	// 5. 关闭数据库连接
+	if a.DB != nil {
+		sqlDB, err := a.DB.DB()
+		if err == nil {
+			if err := sqlDB.Close(); err != nil {
+				logger.Log.Error("Failed to close database connection", zap.Error(err))
+			} else {
+				logger.Log.Info("Database connection closed")
+			}
+		}
+	}
+
+	// 6. 关闭 Redis 连接
+	if a.Redis != nil {
+		if err := a.Redis.Close(); err != nil {
+			logger.Log.Error("Failed to close Redis connection", zap.Error(err))
+		} else {
+			logger.Log.Info("Redis connection closed")
+		}
+	}
+
+	logger.Log.Info("Server exiting")
 }

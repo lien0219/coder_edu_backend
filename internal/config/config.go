@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -12,7 +13,7 @@ type Config struct {
 	Database  DatabaseConfig
 	JWT       JWTConfig
 	Storage   StorageConfig
-	Tracing   TracingConfig
+	Tracing   TracingConfig `mapstructure:"tracing"`
 	Judge0    Judge0Config
 	Redis     RedisConfig
 	AI        AIConfig
@@ -68,8 +69,8 @@ type StorageConfig struct {
 	OSSBucket     string `mapstructure:"oss_bucket"`
 }
 type TracingConfig struct {
-	Enabled           bool
-	CollectorEndpoint string
+	Enabled           bool   `mapstructure:"enabled"`
+	CollectorEndpoint string `mapstructure:"collector_endpoint"`
 }
 
 type Judge0Config struct {
@@ -127,6 +128,10 @@ func LoadConfig(path string) (*Config, error) {
 	viper.BindEnv("storage.minio_secret_key", "MINIO_SECRET_KEY")
 	viper.BindEnv("storage.minio_bucket", "MINIO_BUCKET")
 
+	// Tracing
+	viper.BindEnv("tracing.enabled", "TRACING_ENABLED")
+	viper.BindEnv("tracing.collector_endpoint", "TRACING_COLLECTOR_ENDPOINT")
+
 	// Judge0
 	viper.BindEnv("judge0.api_key", "JUDGE0_API_KEY")
 	viper.BindEnv("judge0.url", "JUDGE0_URL")
@@ -143,9 +148,14 @@ func LoadConfig(path string) (*Config, error) {
 
 	cfg.JWT.ExpireTime = cfg.JWT.ExpireTime * time.Hour
 
+	// 生产环境校验 JWT Secret 强度
+	if cfg.Server.Mode == "release" && len(cfg.JWT.Secret) < 32 {
+		return nil, fmt.Errorf("JWT secret is too short (%d chars), must be at least 32 characters in release mode", len(cfg.JWT.Secret))
+	}
+
 	if cfg.Storage.Type == "local" {
 		if _, err := os.Stat(cfg.Storage.LocalPath); os.IsNotExist(err) {
-			os.MkdirAll(cfg.Storage.LocalPath, os.ModePerm)
+			os.MkdirAll(cfg.Storage.LocalPath, 0755)
 		}
 	}
 

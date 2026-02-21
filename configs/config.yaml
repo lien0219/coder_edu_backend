@@ -27,9 +27,9 @@ storage:
   oss_secret_key: "******"
   oss_bucket: "coder-edu-backend"
 
-Tracing:
-  Enabled: false
-  CollectorEndpoint: http://localhost:8080/api/traces
+tracing:
+  enabled: false
+  collector_endpoint: http://localhost:8080/api/traces
 
 judge0:
   api_key: "******"

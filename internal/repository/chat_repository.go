@@ -56,7 +56,8 @@ func (r *ChatRepository) GetUserConversations(userID uint, query string, limit, 
 
 	db := r.DB.Model(&model.Conversation{}).
 		Joins("JOIN conversation_members ON conversation_members.conversation_id = conversations.id").
-		Where("conversation_members.user_id = ?", userID)
+		Where("conversation_members.user_id = ?", userID).
+		Where("conversation_members.hidden_at IS NULL") // 过滤掉用户隐藏的会话
 
 	if query != "" {
 		searchTerm := "%" + query + "%"
@@ -75,6 +76,21 @@ func (r *ChatRepository) GetUserConversations(userID uint, query string, limit, 
 		Find(&convs).Error
 
 	return convs, total, err
+}
+
+// HideConversation 用户隐藏某个会话（从会话列表中移除，收到新消息时自动恢复）
+func (r *ChatRepository) HideConversation(convID string, userID uint) error {
+	now := time.Now()
+	return r.DB.Model(&model.ConversationMember{}).
+		Where("conversation_id = ? AND user_id = ?", convID, userID).
+		Update("hidden_at", now).Error
+}
+
+// UnhideConversation 取消隐藏会话（收到新消息时自动调用）
+func (r *ChatRepository) UnhideConversation(convID string) error {
+	return r.DB.Model(&model.ConversationMember{}).
+		Where("conversation_id = ? AND hidden_at IS NOT NULL", convID).
+		Update("hidden_at", nil).Error
 }
 
 func (r *ChatRepository) FindPrivateConversation(userID1, userID2 uint) (*model.Conversation, error) {
@@ -213,6 +229,9 @@ func (r *ChatRepository) CreateMessage(msg *model.Message) error {
 			msg.SeqID = uint64(seq)
 		}
 	}
+
+	// 自动恢复被隐藏的会话：有新消息时，取消该会话所有成员的隐藏状态
+	go r.UnhideConversation(msg.ConversationID)
 
 	// 3. 写入 Redis Stream 实现持久化异步队列
 	if r.Redis != nil {

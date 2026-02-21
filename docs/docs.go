@@ -3145,6 +3145,49 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/chat/conversations/{id}/hide": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "从会话列表中隐藏指定会话（不退出群/不删除私聊），收到新消息时自动恢复显示",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IM系统"
+                ],
+                "summary": "隐藏会话",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "$ref": "#/definitions/util.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/chat/conversations/{id}/leave": {
             "post": {
                 "security": [
@@ -12089,6 +12132,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "conversationId": {
+                    "type": "string"
+                },
+                "hiddenAt": {
+                    "description": "用户隐藏会话的时间，为 nil 表示未隐藏",
                     "type": "string"
                 },
                 "joinedAt": {

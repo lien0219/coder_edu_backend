@@ -29,6 +29,7 @@ type ConversationMember struct {
 	Nickname        string     `gorm:"size:50" json:"nickname"`
 	LastReadMsgID   string     `gorm:"type:varchar(36);default:''" json:"lastReadMsgId"` // 记录最后读到的 UUID 消息 ID
 	LastReadMsgTime *time.Time `json:"lastReadMsgTime"`                                  // 最后阅读消息的时间戳
+	HiddenAt        *time.Time `gorm:"index" json:"hiddenAt,omitempty"`                  // 用户隐藏会话的时间，为 nil 表示未隐藏
 	JoinedAt        time.Time  `gorm:"autoCreateTime" json:"joinedAt"`
 }
 

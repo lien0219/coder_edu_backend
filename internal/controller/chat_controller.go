@@ -889,6 +889,34 @@ func (ctrl *ChatController) MarkAsRead(c *gin.Context) {
 	util.Success(c, nil)
 }
 
+// HideConversation godoc
+// @Summary 隐藏会话
+// @Description 从会话列表中隐藏指定会话（不退出群/不删除私聊），收到新消息时自动恢复显示
+// @Tags IM系统
+// @Accept  json
+// @Produce  json
+// @Security ApiKeyAuth
+// @Param   id path string true "会话ID"
+// @Success 200 {object} util.Response "成功"
+// @Failure 500 {object} util.Response "服务器内部错误"
+// @Router /api/chat/conversations/{id}/hide [put]
+func (ctrl *ChatController) HideConversation(c *gin.Context) {
+	claims := util.GetUserFromContext(c)
+	if claims == nil {
+		util.Unauthorized(c)
+		return
+	}
+	userID := claims.UserID
+	convID := c.Param("id")
+
+	if err := ctrl.ChatService.HideConversation(userID, convID); err != nil {
+		util.Error(c, 500, err.Error())
+		return
+	}
+
+	util.Success(c, nil)
+}
+
 // GetMembers godoc
 // @Summary 获取会话成员列表
 // @Description 获取指定会话的成员列表，支持模糊筛选和分页，包含成员在线状态

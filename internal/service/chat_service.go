@@ -431,6 +431,16 @@ func (s *ChatService) MarkAsRead(userID uint, convID string, msgID string) error
 	return s.ChatRepo.UpdateLastReadMessage(convID, userID, msgID)
 }
 
+// HideConversation 隐藏会话（从列表中移除，收到新消息时自动恢复）
+func (s *ChatService) HideConversation(userID uint, convID string) error {
+	// 验证用户是否是该会话的成员
+	_, err := s.ChatRepo.GetMember(convID, userID)
+	if err != nil {
+		return errors.New("你不是该会话成员")
+	}
+	return s.ChatRepo.HideConversation(convID, userID)
+}
+
 // ===== 协作中心概览 =====
 
 // CollaborationOverview 协作中心入口概览数据

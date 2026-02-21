@@ -256,7 +256,8 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 		chat.POST("/conversations/:id/transfer", c.chat.TransferAdmin)       // 转让群主
 		chat.POST("/conversations/:id/messages", c.chat.SendMessage)
 		chat.PUT("/conversations/:id/read", c.chat.MarkAsRead)
-		chat.GET("/search", c.chat.GlobalSearch) // 全局搜索
+		chat.PUT("/conversations/:id/hide", c.chat.HideConversation) // 隐藏会话
+		chat.GET("/search", c.chat.GlobalSearch)                     // 全局搜索
 		chat.POST("/upload", c.chat.UploadFile)
 
 		chat.GET("/users/search", c.chat.SearchUser)

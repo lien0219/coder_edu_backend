@@ -57,9 +57,18 @@ func (s *QAService) GetDB() *gorm.DB {
 	return s.db
 }
 
+// truncateStr 截断字符串到指定的rune长度（避免截断中文字符）
+func truncateStr(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[len(runes)-maxRunes:]) // 取最后maxRunes个字符（中断处附近的内容）
+}
+
 // extractKeywords 简单的关键词提取逻辑
 func (s *QAService) extractKeywords(question string) []string {
-	// 0. 优先提取引号/书名号内的精确名称（如 "测试添加编程题" 或 《指针入门》）
+	// 0. 优先提取引号/书名号内的精确名称（如"测试添加编程题" 或 《指针入门》）
 	var quoted []string
 	for _, pair := range [][2]string{
 		{"\u201c", "\u201d"}, // ""
@@ -100,7 +109,7 @@ func (s *QAService) extractKeywords(question string) []string {
 
 	for _, w := range words {
 		w = strings.TrimSpace(w)
-		if len(w) > 1 && !seen[w] { // 过滤单字（如"在"、"有"）
+		if len(w) > 1 && !seen[w] {
 			keywords = append(keywords, w)
 			seen[w] = true
 		}
@@ -185,7 +194,18 @@ func (s *QAService) classifyIntent(question string) Intent {
 	return IntentGeneral
 }
 
-func (s *QAService) AskStream(userID uint, question string, sessionID string) (<-chan string, string, <-chan error) {
+func (s *QAService) isContinueRequest(question string) bool {
+	q := strings.TrimSpace(question)
+	continueKeywords := []string{"继续", "继续说", "接着说", "接着讲", "往下说", "往下讲", "继续讲", "请继续", "接着", "go on", "continue"}
+	for _, kw := range continueKeywords {
+		if strings.EqualFold(q, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *QAService) AskStream(ctx goctx.Context, userID uint, question string, sessionID string) (<-chan string, string, <-chan error) {
 	sensitiveWords := []string{"政治", "暴力", "色情"}
 	for _, word := range sensitiveWords {
 		if strings.Contains(question, word) {
@@ -195,16 +215,30 @@ func (s *QAService) AskStream(userID uint, question string, sessionID string) (<
 		}
 	}
 
+	if s.isContinueRequest(question) && sessionID == "" {
+		var latestHistory model.AIQAHistory
+		if err := s.db.Where("user_id = ?", userID).Order("created_at desc").First(&latestHistory).Error; err == nil && latestHistory.SessionID != "" {
+			sessionID = latestHistory.SessionID
+			logger.Log.Info("继续请求缺少sessionId，自动回退到最近会话",
+				zap.Uint("userID", userID),
+				zap.String("fallbackSessionID", sessionID))
+		}
+	}
+
 	// 1. 获取历史对话记录 (仅限当前 SessionID，且最近 5 轮)
 	var historyMessages []AIChatMessage
+	var lastHistory *model.AIQAHistory
 	if sessionID != "" {
 		var histories []model.AIQAHistory
 		s.db.Where("user_id = ? AND session_id = ?", userID, sessionID).
 			Order("created_at desc").Limit(5).Find(&histories)
 
-		// 历史记录Token/长度控制 (简单字数检查)
+		if len(histories) > 0 {
+			lastHistory = &histories[0]
+		}
+
 		totalChars := 0
-		maxChars := 4000 // 限制历史记录总长度
+		maxChars := 4000
 
 		for i := len(histories) - 1; i >= 0; i-- {
 			if totalChars+len(histories[i].Question)+len(histories[i].Answer) > maxChars {
@@ -222,9 +256,43 @@ func (s *QAService) AskStream(userID uint, question string, sessionID string) (<
 		}
 	}
 
-	// 2. 意图识别与关键词提取
-	intent := s.classifyIntent(question)
-	keywords := s.extractKeywords(question)
+	isContinuation := false
+	originalQuestion := question
+	if s.isContinueRequest(question) && lastHistory != nil {
+		rootQuestion := lastHistory.Question
+		if s.isContinueRequest(rootQuestion) && sessionID != "" {
+			var olderHistory model.AIQAHistory
+			err := s.db.Where("user_id = ? AND session_id = ? AND question != ?", userID, sessionID, "继续").
+				Order("created_at desc").First(&olderHistory).Error
+			if err == nil {
+				rootQuestion = olderHistory.Question
+			}
+		}
+
+		// 获取上一轮回答的尾部内容，用于明确告诉 AI 接续位置
+		prevAnswer := lastHistory.Answer
+		prevAnswerClean := strings.TrimSuffix(prevAnswer, "... [已停止生成]")
+		answerTail := truncateStr(prevAnswerClean, 500)
+
+		if strings.HasSuffix(prevAnswer, "... [已停止生成]") {
+			// 上一轮回答被明确标记为截断（客户端断开、流错误或 token 限制）
+			isContinuation = true
+			originalQuestion = rootQuestion
+			question = fmt.Sprintf(
+				"请从你上次回答中断的地方继续。上次的问题是：「%s」，你上次的回答在以下位置被中断：\n\n「%s」\n\n请直接接续这段文字继续输出后续内容，不要重复已有内容，不要重新开始。",
+				rootQuestion, answerTail)
+		} else {
+			isContinuation = true
+			originalQuestion = rootQuestion
+			question = fmt.Sprintf(
+				"请继续回答之前的问题。上次的问题是：「%s」，你上次回答的末尾内容是：\n\n「%s」\n\n请从这里接着往下讲，继续展开和补充更多细节，不要重复已有内容。",
+				rootQuestion, answerTail)
+		}
+	}
+
+	// 2. 意图识别与关键词提取（使用原始问题而非"继续"）
+	intent := s.classifyIntent(originalQuestion)
+	keywords := s.extractKeywords(originalQuestion)
 	context := fmt.Sprintf("【当前对话意图: %s】\n", intent)
 	source := "llm"
 
@@ -357,27 +425,110 @@ func (s *QAService) AskStream(userID uint, question string, sessionID string) (<
 	}
 
 	// 6. 调用AI Service获取流式回答（不再在 Prompt 中要求 AI 输出链接）
-	stream, aiErrChan := s.aiService.ChatStream(question, context, historyMessages)
+	stream, aiErrChan, streamResult := s.aiService.ChatStream(question, context, historyMessages)
 
-	// 4. 创建一个包装后的 channel
+	// 7. 创建一个包装后的 channel
 	wrappedOut := make(chan string)
 	wrappedErr := make(chan error, 1)
 
 	tempKey := fmt.Sprintf("qa:stream:temp:%d:%s:%d", userID, sessionID, time.Now().Unix())
+
+	// saveHistory 封装保存对话历史逻辑（正常结束和客户端断开都需要保存）
+	saveHistory := func(fullAnswer string, streamCompleted bool) {
+		// 清理 Redis 暂存
+		s.rdb.Del(goctx.Background(), tempKey)
+
+		if fullAnswer == "" {
+			return
+		}
+
+		finalAnswer := strings.TrimSpace(fullAnswer)
+		answerSuffix := ""
+		if !streamCompleted {
+			answerSuffix = "... [已停止生成]"
+		} else if streamResult.Truncated {
+			// token上限被截断（finish_reason == "length"），同样标记
+			answerSuffix = "... [已停止生成]"
+		}
+
+		// 保存时用原始问题文本（而非改写后的 prompt），方便后续"继续"检测
+		saveQuestion := question
+		if isContinuation && lastHistory != nil {
+			saveQuestion = "继续"
+		}
+
+		var count int64
+		s.db.Model(&model.AIQAHistory{}).Where("user_id = ? AND session_id = ? AND question = ? AND answer = ?",
+			userID, sessionID, saveQuestion, finalAnswer+answerSuffix).Count(&count)
+
+		if count == 0 {
+			history := model.AIQAHistory{
+				UserID:    userID,
+				SessionID: sessionID,
+				Question:  saveQuestion,
+				Answer:    finalAnswer + answerSuffix,
+				Source:    source,
+			}
+			if err := s.db.Create(&history).Error; err != nil {
+				logger.Log.Error("Failed to save QA history", zap.Error(err))
+			} else {
+				logger.Log.Info("QA history saved",
+					zap.Uint("userID", userID),
+					zap.String("sessionID", sessionID),
+					zap.Bool("completed", streamCompleted),
+					zap.Int("answerLen", len(finalAnswer)))
+			}
+		}
+	}
 
 	go func() {
 		defer close(wrappedErr)
 		defer close(wrappedOut)
 
 		var fullAnswer string
-		streamCompleted := false // 标记流是否正常完成
+		streamCompleted := false    // 标记流是否正常完成
+		clientDisconnected := false // 标记客户端是否已断开
 
+		// 消费 AI stream，使用 select 检测客户端断开，避免 goroutine 永久阻塞
 		for content := range stream {
 			fullAnswer += content
 			s.rdb.Set(goctx.Background(), tempKey, fullAnswer, 10*time.Minute)
-			wrappedOut <- content
+
+			// 非阻塞发送：如果客户端已断开（controller 不再读取），不要阻塞在 channel 上
+			select {
+			case wrappedOut <- content:
+				// 正常发送
+			case <-ctx.Done():
+				// 客户端断开连接
+				clientDisconnected = true
+				logger.Log.Info("Client disconnected during stream",
+					zap.Uint("userID", userID),
+					zap.String("sessionID", sessionID),
+					zap.Int("currentAnswerLen", len(fullAnswer)))
+			}
+
+			if clientDisconnected {
+				// 客户端断开后，立即保存当前已有的部分回答到数据库
+				saveHistory(fullAnswer, false)
+				logger.Log.Info("Partial answer saved immediately on disconnect",
+					zap.Uint("userID", userID),
+					zap.String("sessionID", sessionID),
+					zap.Int("savedLen", len(fullAnswer)))
+
+				// 排空 AI stream 避免 goroutine 泄漏（不再追加到 fullAnswer）
+				go func() {
+					for range stream {
+					}
+					select {
+					case <-aiErrChan:
+					default:
+					}
+				}()
+				return
+			}
 		}
 
+		// 检查 AI 错误（仅正常流结束时执行）
 		if err := <-aiErrChan; err != nil {
 			logger.Log.Error("AI stream error", zap.Error(err))
 			wrappedErr <- err
@@ -385,40 +536,17 @@ func (s *QAService) AskStream(userID uint, question string, sessionID string) (<
 			streamCompleted = true
 		}
 
-		// AI 流正常结束后，由后端代码追加引用链接（100% 确定性，不依赖 AI）
+		// AI 流正常结束后，由后端代码追加引用链接
 		if streamCompleted && citationBlock != "" {
 			fullAnswer += citationBlock
-			wrappedOut <- citationBlock
-		}
-
-		// 清理 Redis 暂存
-		s.rdb.Del(goctx.Background(), tempKey)
-
-		// 保存对话历史
-		if fullAnswer != "" {
-			finalAnswer := strings.TrimSpace(fullAnswer)
-			answerSuffix := ""
-			if !streamCompleted {
-				answerSuffix = "... [已停止生成]"
-			}
-
-			var count int64
-			s.db.Model(&model.AIQAHistory{}).Where("user_id = ? AND session_id = ? AND question = ? AND answer = ?",
-				userID, sessionID, question, finalAnswer+answerSuffix).Count(&count)
-
-			if count == 0 {
-				history := model.AIQAHistory{
-					UserID:    userID,
-					SessionID: sessionID,
-					Question:  question,
-					Answer:    finalAnswer + answerSuffix,
-					Source:    source,
-				}
-				if err := s.db.Create(&history).Error; err != nil {
-					logger.Log.Error("Failed to save QA history", zap.Error(err))
-				}
+			select {
+			case wrappedOut <- citationBlock:
+			case <-ctx.Done():
 			}
 		}
+
+		// 正常结束时保存对话历史
+		saveHistory(fullAnswer, streamCompleted)
 	}()
 
 	return wrappedOut, source, wrappedErr
@@ -502,7 +630,8 @@ func (s *QAService) GenerateWeeklyReport(userID uint) (<-chan string, <-chan err
 	systemPrompt := "你是一个专业的编程教育导师。请根据提供的用户过去一周的学习数据，生成一份鼓励性的、专业的学习周报。周报应包含：1. 学习概况总结；2. 技术亮点分析；3. 薄弱环节建议；4. 下周学习规划。请使用 Markdown 格式，并严格遵守之前的 Markdown 渲染指令。"
 
 	// 3. 调用AI生成
-	return s.aiService.ChatStream(systemPrompt, reportContext, nil)
+	stream, errChan, _ := s.aiService.ChatStream(systemPrompt, reportContext, nil)
+	return stream, errChan
 }
 
 // DiagnoseCode 自动代码诊断
@@ -511,7 +640,7 @@ func (s *QAService) DiagnoseCode(userID uint, questionID uint, code string, comp
 	var exercise model.ExerciseQuestion
 	s.db.First(&exercise, questionID)
 
-	// 2. 构造诊断 Context
+	// 2. 构造诊断Context
 	context := fmt.Sprintf("【题目信息】\n标题: %s\n描述: %s\n提示: %s\n\n",
 		exercise.Title, exercise.Description, exercise.Hint)
 	context += fmt.Sprintf("【用户提交的代码】\n```c\n%s\n```\n\n", code)
@@ -520,5 +649,6 @@ func (s *QAService) DiagnoseCode(userID uint, questionID uint, code string, comp
 	systemPrompt := "你是一个资深的编程导师。请分析用户的代码和报错信息，指出逻辑错误或语法错误。要求：1. 不要直接给出完整正确答案；2. 采用启发式引导，指出错误行号和原因；3. 给出修改建议。严格遵守 Markdown 渲染指令。"
 
 	// 3. 调用 AI
-	return s.aiService.ChatStream(systemPrompt, context, nil)
+	stream, errChan, _ := s.aiService.ChatStream(systemPrompt, context, nil)
+	return stream, errChan
 }

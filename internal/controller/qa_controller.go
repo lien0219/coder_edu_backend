@@ -54,8 +54,8 @@ func (c *QAController) Ask(ctx *gin.Context) {
 		return
 	}
 
-	// 流式响应，传入userID和sessionID支持多轮对话
-	stream, source, errChan := c.qaService.AskStream(userID, req.Question, req.SessionID)
+	// 流式响应，传入userID和sessionID支持多轮对话（传入请求 context 用于断开检测）
+	stream, source, errChan := c.qaService.AskStream(ctx.Request.Context(), userID, req.Question, req.SessionID)
 	if stream == nil {
 		// 处理 AskStream 返回 nil 的情况（如触发敏感词）
 		if err := <-errChan; err != nil {

@@ -31,17 +31,24 @@ type ChatCompletionRequest struct {
 
 type ChatCompletionResponse struct {
 	Choices []struct {
-		Message AIChatMessage `json:"message"`
-		Delta   AIChatMessage `json:"delta"` // 流式响应
+		Message      AIChatMessage `json:"message"`
+		Delta        AIChatMessage `json:"delta"`         // 流式响应
+		FinishReason *string       `json:"finish_reason"` // "stop" | "length" | null
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
 }
 
-func (s *AIService) ChatStream(prompt string, context string, history []AIChatMessage) (<-chan string, <-chan error) {
+// StreamResult 包含流式结束后的额外信息
+type StreamResult struct {
+	Truncated bool // 是否因token限制被截断（finish_reason == "length"）
+}
+
+func (s *AIService) ChatStream(prompt string, context string, history []AIChatMessage) (<-chan string, <-chan error, *StreamResult) {
 	out := make(chan string)
 	errChan := make(chan error, 1)
+	result := &StreamResult{}
 
 	// 注入Markdown格式规范，与前端防御性渲染器配合
 	markdownGuideline := "\n\n【Markdown 渲染指令 - 必须严格执行，否则前端无法解析】\n" +
@@ -148,11 +155,15 @@ func (s *AIService) ChatStream(prompt string, context string, history []AIChatMe
 				if content != "" {
 					out <- content
 				}
+				// 检测 finish_reason: "length" 表示回答因token上限被截断
+				if streamResp.Choices[0].FinishReason != nil && *streamResp.Choices[0].FinishReason == "length" {
+					result.Truncated = true
+				}
 			}
 		}
 	}()
 
-	return out, errChan
+	return out, errChan, result
 }
 
 func (s *AIService) Chat(prompt string, context string) (string, error) {

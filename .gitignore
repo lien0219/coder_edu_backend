@@ -26,3 +26,8 @@ Dockerfile.prod
 /videos/
 /uploads/
 /resource_file/
+/coder_edu_backend
+/ssl/
+configs/config.yaml
+deploy.env
+.env

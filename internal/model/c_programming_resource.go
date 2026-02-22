@@ -45,6 +45,7 @@ type ExerciseQuestion struct {
 	Options       json.RawMessage `gorm:"type:json"`                     // 存储选择题选项
 	CorrectAnswer string          `gorm:"type:text"`                     // 存储正确答案
 	Points        int             `gorm:"default:0"`                     // 完成此题可获得的积分
+	Tags          string          `gorm:"size:500;default:''"`           // AI 自动生成的关键词标签，逗号分隔
 }
 
 func (ExerciseQuestion) TableName() string {

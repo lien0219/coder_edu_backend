@@ -51,6 +51,8 @@ func InitDB(cfg *config.DatabaseConfig, mode string) (*gorm.DB, error) {
 
 	// 生产环境跳过AutoMigrate
 	if mode != "release" {
+		// 临时关闭外键检查，避免建表顺序导致的外键依赖错误
+		db.Exec("SET FOREIGN_KEY_CHECKS = 0")
 		err = db.AutoMigrate(
 			&model.User{},
 			&model.Achievement{},
@@ -118,6 +120,9 @@ func InitDB(cfg *config.DatabaseConfig, mode string) (*gorm.DB, error) {
 			&model.CommunityResource{},
 			&model.AIQAHistory{},
 		)
+
+		// 恢复外键检查
+		db.Exec("SET FOREIGN_KEY_CHECKS = 1")
 
 		if err != nil {
 			return nil, err

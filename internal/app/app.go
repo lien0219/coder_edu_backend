@@ -103,6 +103,7 @@ type services struct {
 	chatHub              *service.ChatHub
 	ai                   *service.AIService
 	qa                   *service.QAService
+	autoTagging          *service.AutoTaggingService
 }
 
 type controllers struct {
@@ -237,6 +238,7 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 
 	s.ai = service.NewAIService(cfg.AI)
 	s.qa = service.NewQAService(db, rdb, s.ai)
+	s.autoTagging = service.NewAutoTaggingService(db, s.ai)
 
 	return s
 }
@@ -295,6 +297,7 @@ func (a *App) setupMiddlewares(router *gin.Engine, cfg *config.Config) {
 }
 
 func (a *App) startBackgroundTasks(s *services) {
+	// 每分钟执行：关卡定时发布
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
@@ -306,6 +309,31 @@ func (a *App) startBackgroundTasks(s *services) {
 				}
 			case <-a.stopCh:
 				logger.Log.Info("Background tasks stopped")
+				return
+			}
+		}
+	}()
+
+	// 每24小时执行
+	go func() {
+		select {
+		case <-time.After(5 * time.Minute):
+		case <-a.stopCh:
+			return
+		}
+
+		logger.Log.Info("首次执行自动打标签任务")
+		s.autoTagging.RunAutoTagging()
+
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				logger.Log.Info("定时执行自动打标签任务")
+				s.autoTagging.RunAutoTagging()
+			case <-a.stopCh:
+				logger.Log.Info("Auto tagging task stopped")
 				return
 			}
 		}

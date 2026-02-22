@@ -26,6 +26,7 @@ type KnowledgePoint struct {
 	TimeLimit       int                      `gorm:"default:0" json:"timeLimit"`
 	Order           int                      `gorm:"default:0" json:"order"`
 	CompletionScore int                      `gorm:"default:0" json:"completionScore"`
+	Tags            string                   `gorm:"size:500;default:''" json:"tags"` // AI 自动生成的关键词标签，逗号分隔
 	Videos          []KnowledgePointVideo    `gorm:"foreignKey:KnowledgePointID" json:"videos"`
 	Exercises       []KnowledgePointExercise `gorm:"foreignKey:KnowledgePointID" json:"exercises"`
 	CreatedAt       time.Time                `json:"createdAt"`

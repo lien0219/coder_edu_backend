@@ -60,23 +60,42 @@ Coder Edu Backend 是一个基于 Go 语言的高性能教育平台后端服务�
 ## 项目结构
 
 ```text
-├── api/                  # Swagger 接口定义
-├── configs/              # 配置文件目录
-├── docs/                 # Swagger 生成文档
-├── internal/             # 核心业务逻辑
-│   ├── app/              # 应用启动入口
-│   ├── config/           # 配置加载逻辑
-│   ├── controller/       # 接口控制器 (API Handlers)
-│   ├── middleware/       # 鉴权、日志等中间件
-│   ├── model/            # 数据库模型与定义
-│   ├── repository/       # 数据访问层 (DAO)
-│   ├── service/          # 业务逻辑层
-│   └── util/             # 常用工具函数 (JWT, Response等)
-├── pkg/                  # 公共包 (数据库连接、日志初始化、监控等)
-├── scripts/              # 工具脚本 (自动标签、Swagger 生成、敏感信息管理等)
-├── main.go               # 项目启动文件
-├── Dockerfile            # Docker 镜像构建
-└── docker-compose.yml    # 容器编排
+├── api/                      # Swagger 接口定义
+│   └── swagger/
+├── configs/
+│   ├── config.yaml           # 配置文件（.gitignore，不提交）
+│   └── config.yaml.example   # 配置模板
+├── docs/                     # Swagger 生成文档
+├── internal/                 # 核心业务逻辑
+│   ├── app/                  # 应用启动与路由注册
+│   ├── config/               # 配置加载逻辑
+│   ├── controller/           # 接口控制器 (25 个 Handlers)
+│   ├── middleware/            # 鉴权、日志等中间件
+│   ├── model/                # 数据库模型与定义 (39 个模型)
+│   ├── repository/           # 数据访问层 (26 个 DAO)
+│   ├── service/              # 业务逻辑层 (28 个 Service)
+│   └── util/                 # 工具函数 (JWT, Response, FFmpeg 等)
+├── pkg/                      # 公共包
+│   ├── database/             # MySQL / Redis 连接
+│   ├── logger/               # Zap 日志初始化
+│   ├── monitoring/           # Prometheus 监控
+│   ├── security/             # 安全工具
+│   └── tracing/              # 分布式追踪
+├── scripts/                  # 工具脚本
+│   ├── auto_tagging.go       # AI 自动标签生成
+│   ├── secrets_handler.py    # 敏感信息加密/解密
+│   ├── generate_swagger.bat  # Swagger 生成 (Windows)
+│   └── generate_swagger.sh   # Swagger 生成 (Linux/macOS)
+├── main.go                   # 项目启动文件
+├── Dockerfile                # Docker 镜像构建（支持本地编译部署）
+├── docker-compose.yml        # 容器编排（.gitignore，不提交）
+├── .env.example              # Docker Compose 环境变量模板
+├── nginx.conf                # Nginx 反向代理配置
+├── deploy.ps1                # 一键部署脚本 (Windows PowerShell)
+├── deploy.sh                 # 一键部署脚本 (Linux/macOS)
+├── rollback.ps1              # 一键回滚脚本 (Windows PowerShell)
+├── deploy.env                # 部署配置（.gitignore，不提交）
+└── deploy.env.example        # 部署配置模板
 ```
 
 ## 快速开始
@@ -91,7 +110,13 @@ Coder Edu Backend 是一个基于 Go 语言的高性能教育平台后端服务�
 
 ### 配置应用
 
-编辑 `configs/config.yaml`。主要配置项说明：
+复制 `configs/config.yaml.example` 为 `configs/config.yaml`，填入真实值：
+
+```bash
+cp configs/config.yaml.example configs/config.yaml
+```
+
+主要配置项说明：
 
 ```yaml
 server:
@@ -131,7 +156,7 @@ ai:                 # AI 大模型配置 (智能助教、代码诊断、周报�
 
 1. **克隆并安装依赖**
    ```bash
-   git clone <项目仓库地址>
+   git clone https://github.com/lien0219/coder_edu_backend.git
    cd coder_edu_backend
    go mod tidy
    ```
@@ -148,9 +173,17 @@ ai:                 # AI 大模型配置 (智能助教、代码诊断、周报�
 
 ### Docker 运行
 
-```bash
-docker-compose up -d
-```
+1. 复制环境变量模板并填入真实值：
+   ```bash
+   cp .env.example .env
+   ```
+
+2. 启动服务：
+   ```bash
+   docker-compose up -d
+   ```
+
+> **注意**：`docker-compose.yml` 和 `.env` 均不会提交到 Git，敏感信息安全。
 
 ## 开发者指南
 
@@ -204,17 +237,23 @@ go run scripts/auto_tagging.go
 自动打标签任务完成！
 ```
 
-### 敏感信息加密 (`scripts/secrets_handler.py`)
+### 敏感信息管理
 
-用于在提交代码前将配置文件中的敏感信息（如数据库密码、OSS 密钥、API Key 等）替换为 `******`，并在本地开发时恢复。
+项目采用多层安全策略保护敏感信息：
+
+**1. 文件级隔离**：`configs/config.yaml`、`docker-compose.yml`、`.env`、`deploy.env` 均在 `.gitignore` 中，不会提交到仓库。仓库中只保留 `.example` 模板文件。
+
+**2. Mask/Unmask 脚本** (`scripts/secrets_handler.py`)：
 
 ```bash
-# 提交前加密敏感信息
+# 提交前加密敏感信息（将密码替换为 ******）
 python scripts/secrets_handler.py mask
 
 # 拉取代码后恢复敏感信息
 python scripts/secrets_handler.py unmask
 ```
+
+> 敏感值存储在 `.secrets.json` 中（已加入 `.gitignore`），仅保留在本地。
 
 ### Swagger 文档生成
 
@@ -228,7 +267,54 @@ python scripts/secrets_handler.py unmask
 
 ---
 
-## 生产环境部署指南
+## 生产环境部署
+
+### 一键部署（推荐）
+
+项目提供了自动化部署脚本，在本地交叉编译后上传到服务器，无需在服务器上安装 Go 环境。
+
+#### 首次配置
+
+```bash
+cp deploy.env.example deploy.env
+```
+
+编辑 `deploy.env` 填入服务器信息：
+
+```env
+DEPLOY_SERVER=root@your-server-ip
+DEPLOY_PATH=/opt/coder_edu_backend
+DEPLOY_SERVICE=coder_edu
+HEALTH_CHECK_URL=http://your-server-ip/api/health
+```
+
+#### 部署
+
+```powershell
+# Windows PowerShell
+.\deploy.ps1
+```
+
+```bash
+# Linux / macOS
+bash deploy.sh
+```
+
+脚本自动执行以下步骤：
+
+1. 本地交叉编译 Linux amd64 二进制文件
+2. SCP 上传到服务器
+3. 备份旧版本、停止服务、替换文件、启动服务
+4. 健康检查确认部署成功
+
+#### 回滚
+
+```powershell
+# 回滚到上一个版本
+.\rollback.ps1
+```
+
+> **服务器要求**：阿里云 ECS 2 核 2G 即可运行（MySQL + Redis 使用 Docker，后端直接运行）。
 
 ### 环境变量参考
 

@@ -19,6 +19,10 @@ type Config struct {
 	AI        AIConfig
 	CORS      CORSConfig      `mapstructure:"cors"`
 	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
+
+	// 运行时标志（非配置文件，通过命令行参数设置）
+	ForceMigrate bool `mapstructure:"-"` // 强制执行数据库迁移
+	MigrateOnly  bool `mapstructure:"-"` // 仅迁移模式（迁移后退出）
 }
 
 type CORSConfig struct {

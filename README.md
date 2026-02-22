@@ -86,7 +86,7 @@ Coder Edu Backend 是一个基于 Go 语言的高性能教育平台后端服务�
 │   ├── secrets_handler.py    # 敏感信息加密/解密
 │   ├── generate_swagger.bat  # Swagger 生成 (Windows)
 │   └── generate_swagger.sh   # Swagger 生成 (Linux/macOS)
-├── main.go                   # 项目启动文件
+├── main.go                   # 项目启动文件（支持 --migrate / --migrate-only 参数）
 ├── Dockerfile                # Docker 镜像构建（支持本地编译部署）
 ├── docker-compose.yml        # 容器编排（.gitignore，不提交）
 ├── .env.example              # Docker Compose 环境变量模板
@@ -198,44 +198,29 @@ ai:                 # AI 大模型配置 (智能助教、代码诊断、周报�
 
 项目 `scripts/` 目录下提供了多种开发辅助脚本：
 
-### 自动标签生成 (`scripts/auto_tagging.go`)
+### 自动标签生成
 
-该脚本利用 AI 大模型为数据库中的 **知识点 (KnowledgePoint)** 和 **练习题 (ExerciseQuestion)** 自动生成关键词标签，免去人工逐条打标签的繁琐操作。
+利用 AI 大模型为数据库中的 **知识点 (KnowledgePoint)** 和 **练习题 (ExerciseQuestion)** 自动生成关键词标签，免去人工逐条打标签的繁琐操作。
 
-#### 工作原理
+#### 自动执行（已集成）
 
-1. 读取 `configs/config.yaml` 中的数据库和 AI 服务配置。
-2. 连接数据库，查询所有知识点和练习题记录。
-3. 对每条记录，将标题和内容/描述拼接为 Prompt，调用 AI 服务提取 3-5 个核心关键词标签。
-4. 将生成的标签输出到控制台（可根据需求扩展为写回数据库）。
+自动标签生成已集成到主应用的后台定时任务中：
+- **首次执行**：服务启动后 **5 分钟** 自动运行
+- **定时执行**：每 **24 小时** 自动执行一次
+- **增量处理**：只处理 `tags` 为空的记录，不会重复打标签
 
-#### 前置条件
+#### 手动触发 (`scripts/auto_tagging.go`)
 
-- 已正确配置 `configs/config.yaml` 中的 `database` 和 `ai` 部分：
-  ```yaml
-  ai:
-    base_url: "https://your-ai-api-endpoint"
-    api_key: "your-api-key"
-  ```
-- 数据库中已存在知识点或练习题数据。
-
-#### 使用方式
-
-在项目根目录下执行：
+首次部署或数据库大量导入新数据后，可手动触发立即执行：
 
 ```bash
 go run scripts/auto_tagging.go
 ```
 
-运行后终端将输出类似：
+#### 前置条件
 
-```text
-开始为 12 个知识点和 8 个练习题自动生成标签...
-知识点 [C语言指针基础] -> 标签: 指针,内存地址,解引用,C语言,变量
-练习题 [链表反转] -> 标签: 链表,反转,指针操作,数据结构
-...
-自动打标签任务完成！
-```
+- 已正确配置 `configs/config.yaml` 中的 `database` 和 `ai` 部分
+- 数据库中已存在知识点或练习题数据
 
 ### 敏感信息管理
 
@@ -291,21 +276,40 @@ HEALTH_CHECK_URL=http://your-server-ip/api/health
 #### 部署
 
 ```powershell
-# Windows PowerShell
+# Windows PowerShell - 普通发布（仅代码变更）
 .\deploy.ps1
+
+# Windows PowerShell - 含数据库迁移（新增字段/新增表时使用）
+.\deploy.ps1 -Migrate
 ```
 
 ```bash
-# Linux / macOS
+# Linux / macOS - 普通发布
 bash deploy.sh
+
+# Linux / macOS - 含数据库迁移
+bash deploy.sh --migrate
 ```
 
 脚本自动执行以下步骤：
 
 1. 本地交叉编译 Linux amd64 二进制文件
 2. SCP 上传到服务器
-3. 备份旧版本、停止服务、替换文件、启动服务
-4. 健康检查确认部署成功
+3. 备份旧版本、停止服务、替换文件
+4. **（仅 `-Migrate` 模式）执行数据库迁移（AutoMigrate：自动建表、加字段，不会删除已有字段）**
+5. 启动服务、健康检查确认部署成功
+
+> **何时使用 `-Migrate`？** 当代码中新增了 Model 字段、新增了数据表、或修改了索引时，部署时需要加上 `-Migrate` 参数。普通代码逻辑修改无需此参数。
+> 如果迁移失败，脚本会**自动回滚**到上一个版本。
+
+#### 命令行参数
+
+程序支持以下命令行参数（部署脚本会自动使用，一般不需要手动调用）：
+
+| 参数 | 说明 |
+|------|------|
+| `--migrate` | 启动时强制执行数据库迁移（即使是 release 模式），然后正常运行 |
+| `--migrate-only` | 只执行数据库迁移，完成后退出（部署脚本使用此模式） |
 
 #### 回滚
 

@@ -1,11 +1,20 @@
 #!/bin/bash
 # ============================================
 # 一键部署脚本 - Coder Edu Backend (Linux/Mac)
-# 用法: bash deploy.sh
+# 普通发布: bash deploy.sh
+# 含数据库迁移: bash deploy.sh --migrate
 # 配置: 复制 deploy.env.example 为 deploy.env 并填入真实值
 # ============================================
 
 set -e
+
+# 解析参数
+MIGRATE=false
+for arg in "$@"; do
+    case $arg in
+        --migrate) MIGRATE=true ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/deploy.env"
@@ -26,6 +35,9 @@ echo ""
 echo "========================================"
 echo "  Coder Edu Backend 一键部署"
 echo "  服务器: $SERVER"
+if [ "$MIGRATE" = true ]; then
+    echo "  [含数据库迁移]"
+fi
 echo "========================================"
 echo ""
 
@@ -40,11 +52,30 @@ echo "[2/4] 上传到服务器..."
 scp -o ConnectTimeout=10 ./coder_edu_backend "${SERVER}:${REMOTE_PATH}/coder_edu_backend.new"
 echo "上传成功!"
 
-# 3. 替换并重启
+# 3. 替换文件
 echo ""
-echo "[3/4] 替换文件并重启服务..."
-ssh -o ConnectTimeout=10 $SERVER "cd $REMOTE_PATH && cp coder_edu_backend coder_edu_backend.bak 2>/dev/null; mv coder_edu_backend.new coder_edu_backend && chmod +x coder_edu_backend && systemctl restart $SERVICE_NAME && sleep 2 && systemctl is-active $SERVICE_NAME"
-echo "服务重启成功!"
+echo "[3/4] 替换文件..."
+ssh -o ConnectTimeout=10 $SERVER "cd $REMOTE_PATH && cp coder_edu_backend coder_edu_backend.bak 2>/dev/null; systemctl stop $SERVICE_NAME; mv coder_edu_backend.new coder_edu_backend && chmod +x coder_edu_backend"
+
+# 如果需要数据库迁移
+if [ "$MIGRATE" = true ]; then
+    echo ""
+    echo "[*] 执行数据库迁移..."
+    ssh -o ConnectTimeout=30 $SERVER "cd $REMOTE_PATH && ./coder_edu_backend --migrate-only 2>&1"
+    if [ $? -ne 0 ]; then
+        echo "数据库迁移失败！正在回滚..."
+        ssh $SERVER "cd $REMOTE_PATH && mv coder_edu_backend.bak coder_edu_backend && systemctl start $SERVICE_NAME"
+        echo "已回滚到上一个版本"
+        exit 1
+    fi
+    echo "数据库迁移完成!"
+fi
+
+# 启动服务
+echo ""
+echo "[*] 启动服务..."
+ssh $SERVER "systemctl start $SERVICE_NAME && sleep 2 && systemctl is-active $SERVICE_NAME"
+echo "服务启动成功!"
 
 # 4. 健康检查
 echo ""

@@ -15,7 +15,7 @@ import (
 
 // var DB *gorm.DB
 
-func InitDB(cfg *config.DatabaseConfig, mode string) (*gorm.DB, error) {
+func InitDB(cfg *config.DatabaseConfig, mode string, forceMigrate ...bool) (*gorm.DB, error) {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=%t&loc=Local",
 		cfg.User,
 		cfg.Password,
@@ -49,8 +49,14 @@ func InitDB(cfg *config.DatabaseConfig, mode string) (*gorm.DB, error) {
 
 	log.Println("Database connection established")
 
-	// 生产环境跳过AutoMigrate
-	if mode != "release" {
+	// 判断是否需要执行AutoMigrate
+	shouldMigrate := mode != "release"
+	if len(forceMigrate) > 0 && forceMigrate[0] {
+		shouldMigrate = true
+		log.Println("Force migrate enabled: will run AutoMigrate in release mode")
+	}
+
+	if shouldMigrate {
 		// 临时关闭外键检查，避免建表顺序导致的外键依赖错误
 		db.Exec("SET FOREIGN_KEY_CHECKS = 0")
 		err = db.AutoMigrate(

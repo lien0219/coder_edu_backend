@@ -349,7 +349,7 @@ func NewApp(cfg *config.Config) *App {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	db, err := database.InitDB(&cfg.Database, cfg.Server.Mode)
+	db, err := database.InitDB(&cfg.Database, cfg.Server.Mode, cfg.ForceMigrate)
 	if err != nil {
 		logger.Log.Fatal("Failed to initialize database", zap.Error(err))
 	}

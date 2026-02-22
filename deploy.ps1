@@ -2,9 +2,14 @@
 .SYNOPSIS
     Coder Edu Backend - 一键部署脚本
 .DESCRIPTION
-    用法: powershell -ExecutionPolicy Bypass -File deploy.ps1
+    普通发布: powershell -ExecutionPolicy Bypass -File deploy.ps1
+    含数据库迁移: powershell -ExecutionPolicy Bypass -File deploy.ps1 -Migrate
     配置: 复制 deploy.env.example 为 deploy.env 并填入真实值
 #>
+
+param(
+    [switch]$Migrate  # 是否执行数据库迁移（新增字段/新增表时使用）
+)
 
 # 读取配置文件
 $envFile = Join-Path $PSScriptRoot "deploy.env"
@@ -34,6 +39,9 @@ $HealthUrl = $config["HEALTH_CHECK_URL"]
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Coder Edu Backend 一键部署" -ForegroundColor Cyan
+if ($Migrate) {
+    Write-Host "  [含数据库迁移]" -ForegroundColor Magenta
+}
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -64,22 +72,60 @@ Write-Host "上传成功！" -ForegroundColor Green
 
 # ===== 远程替换并重启 =====
 Write-Host ""
-Write-Host "[3/4] 替换文件并重启服务..." -ForegroundColor Yellow
-$cmd1 = "cd " + $RemotePath + " ; cp coder_edu_backend coder_edu_backend.bak ; systemctl stop " + $ServiceName + " ; mv coder_edu_backend.new coder_edu_backend ; chmod +x coder_edu_backend ; systemctl start " + $ServiceName + " ; sleep 2 ; systemctl is-active " + $ServiceName
+if ($Migrate) {
+    Write-Host "[3/5] 替换文件并执行数据库迁移..." -ForegroundColor Yellow
+} else {
+    Write-Host "[3/4] 替换文件并重启服务..." -ForegroundColor Yellow
+}
+
+$cmd1 = "cd " + $RemotePath + " ; cp coder_edu_backend coder_edu_backend.bak ; systemctl stop " + $ServiceName + " ; mv coder_edu_backend.new coder_edu_backend ; chmod +x coder_edu_backend"
 & ssh -o ConnectTimeout=10 $Server $cmd1
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "重启失败！正在回滚..." -ForegroundColor Red
-    $cmd2 = "cd " + $RemotePath + " ; mv coder_edu_backend.bak coder_edu_backend ; systemctl restart " + $ServiceName
+    Write-Host "替换文件失败！正在回滚..." -ForegroundColor Red
+    $cmd2 = "cd " + $RemotePath + " ; mv coder_edu_backend.bak coder_edu_backend ; systemctl start " + $ServiceName
     & ssh $Server $cmd2
     Write-Host "已回滚到上一个版本" -ForegroundColor Yellow
     exit 1
 }
-Write-Host "服务重启成功！" -ForegroundColor Green
+
+# 如果需要数据库迁移，先执行迁移
+if ($Migrate) {
+    Write-Host "执行数据库迁移..." -ForegroundColor Magenta
+    $migrateCmd = "cd " + $RemotePath + " ; ./coder_edu_backend --migrate-only 2>&1"
+    & ssh -o ConnectTimeout=30 $Server $migrateCmd
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "数据库迁移失败！正在回滚..." -ForegroundColor Red
+        $cmd2 = "cd " + $RemotePath + " ; mv coder_edu_backend.bak coder_edu_backend ; systemctl start " + $ServiceName
+        & ssh $Server $cmd2
+        Write-Host "已回滚到上一个版本" -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Host "数据库迁移完成！" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "[4/5] 启动服务..." -ForegroundColor Yellow
+}
+
+# 启动服务
+$startCmd = "systemctl start " + $ServiceName + " ; sleep 2 ; systemctl is-active " + $ServiceName
+& ssh $Server $startCmd
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "启动失败！正在回滚..." -ForegroundColor Red
+    $cmd2 = "cd " + $RemotePath + " ; mv coder_edu_backend.bak coder_edu_backend ; systemctl start " + $ServiceName
+    & ssh $Server $cmd2
+    Write-Host "已回滚到上一个版本" -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "服务启动成功！" -ForegroundColor Green
 
 # ===== 健康检查 =====
 Write-Host ""
-Write-Host "[4/4] 健康检查..." -ForegroundColor Yellow
+if ($Migrate) {
+    Write-Host "[5/5] 健康检查..." -ForegroundColor Yellow
+} else {
+    Write-Host "[4/4] 健康检查..." -ForegroundColor Yellow
+}
 Start-Sleep -Seconds 3
 
 $healthOk = $false

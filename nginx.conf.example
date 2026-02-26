@@ -1,0 +1,73 @@
+# HTTP 服务器 - 重定向到 HTTPS
+server {
+    listen 80;
+    server_name your-domain.com www.your-domain.com;
+    
+    # 重定向所有 HTTP 请求到 HTTPS
+    return 301 https://$server_name$request_uri;
+}
+
+# HTTPS 服务器
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com www.your-domain.com;
+
+    # SSL 证书配置（请根据实际证书路径修改）
+    ssl_certificate /etc/nginx/ssl/your-domain.com.crt;
+    ssl_certificate_key /etc/nginx/ssl/your-domain.com.key;
+    
+    # SSL 优化配置
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # 安全头
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # 前端静态文件
+    location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        try_files $uri $uri.html $uri/ /index.html;
+    }
+
+    # 后端 API 反向代理
+    location /api/ {
+        proxy_pass http://app:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket 支持（聊天功能）
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+
+        # 上传文件大小限制
+        client_max_body_size 1600m;
+    }
+
+    # 上传文件访问
+    location /uploads/ {
+        proxy_pass http://app:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # Swagger 文档（开发环境）
+    location /swagger/ {
+        proxy_pass http://app:8080;
+        proxy_set_header Host $host;
+    }
+
+    # 错误页面
+    error_page 404 /index.html;
+}

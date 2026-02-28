@@ -413,12 +413,32 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 			defer s.wg.Done()
 			// 延迟足够长的时间，确保元数据处理完成（包括FFmpeg备选方案）
 			// OSS超时60秒 + FFmpeg处理时间，总共延迟70秒
+			logger.Log.Info("开始等待清理临时文件",
+				zap.String("tempDir", tDir),
+				zap.String("localPath", lPath),
+				zap.Duration("delay", 70*time.Second))
 			time.Sleep(70 * time.Second)
+
+			// 清理临时文件
 			if lPath != "" {
-				os.Remove(lPath)
+				if err := os.Remove(lPath); err != nil {
+					logger.Log.Warn("清理临时合并文件失败", zap.String("path", lPath), zap.Error(err))
+				} else {
+					logger.Log.Info("已清理临时合并文件", zap.String("path", lPath))
+				}
 			}
-			os.RemoveAll(tDir)
-			s.Redis.Del(context.Background(), rKey)
+
+			if err := os.RemoveAll(tDir); err != nil {
+				logger.Log.Warn("清理临时分块目录失败", zap.String("dir", tDir), zap.Error(err))
+			} else {
+				logger.Log.Info("已清理临时分块目录", zap.String("dir", tDir))
+			}
+
+			if err := s.Redis.Del(context.Background(), rKey).Err(); err != nil {
+				logger.Log.Warn("清理Redis进度记录失败", zap.String("key", rKey), zap.Error(err))
+			} else {
+				logger.Log.Info("已清理Redis进度记录", zap.String("key", rKey))
+			}
 		}(finalPath, tempDir, redisKey, s.Cfg.Storage.Type == util.StorageOSS)
 
 		return progress, resource, nil

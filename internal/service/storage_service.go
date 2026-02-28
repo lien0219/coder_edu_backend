@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
@@ -336,7 +337,8 @@ func (p *OSSStorageProvider) Delete(ctx context.Context, filename string) error 
 }
 
 func (p *OSSStorageProvider) GetURL(filename string) string {
-	return fmt.Sprintf("https://%s.%s/%s", p.Config.OSSBucket, p.Config.OSSEndpoint, filename)
+	publicEndpoint := strings.Replace(p.Config.OSSEndpoint, "-internal", "", 1)
+	return fmt.Sprintf("https://%s.%s/%s", p.Config.OSSBucket, publicEndpoint, filename)
 }
 
 // UploadChunks 直接从分块上传到OSS（跳过本地合并步骤）

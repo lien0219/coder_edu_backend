@@ -540,7 +540,8 @@ func (s *ContentService) processVideoMetadataWithWait(ctx context.Context, video
 	go func() {
 		var thumbnailURL string
 		if s.Cfg.Storage.Type == util.StorageOSS {
-			thumbnailURL = videoURL + "?x-oss-process=video/snapshot,t_7000,f_jpg,w_800"
+			publicVideoURL := strings.Replace(videoURL, "-internal", "", 1)
+			thumbnailURL = publicVideoURL + "?x-oss-process=video/snapshot,t_7000,f_jpg,w_800"
 		}
 
 		actualLocalPath := localPath
@@ -604,7 +605,8 @@ func (s *ContentService) processVideoMetadata(ctx context.Context, videoURL, loc
 	// 2. 生成封面图
 	var thumbnailURL string
 	if s.Cfg.Storage.Type == util.StorageOSS {
-		thumbnailURL = videoURL + "?x-oss-process=video/snapshot,t_7000,f_jpg,w_800"
+		publicVideoURL := strings.Replace(videoURL, "-internal", "", 1)
+		thumbnailURL = publicVideoURL + "?x-oss-process=video/snapshot,t_7000,f_jpg,w_800"
 	} else if localPath != "" {
 		thumbnailExt := ".jpg"
 		thumbnailFilename := "thumbnails/" + time.Now().Format("20060102150405") + "-" +
@@ -637,7 +639,8 @@ func (s *ContentService) getVideoDurationFromOSS(videoURL string) float64 {
 		return 0
 	}
 
-	infoURL := fmt.Sprintf("%s://%s%s?x-oss-process=video/info", u.Scheme, u.Host, u.EscapedPath())
+	host := strings.Replace(u.Host, "-internal", "", 1)
+	infoURL := fmt.Sprintf("%s://%s%s?x-oss-process=video/info", u.Scheme, host, u.EscapedPath())
 
 	// 设置总超时时间为30秒
 	timeout := 30 * time.Second

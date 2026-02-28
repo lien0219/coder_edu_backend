@@ -406,10 +406,14 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 		}
 
 		// 2. 异步执行清理工作
+		// 注意：需要等待足够长的时间，确保 processVideoMetadataWithWait 中的FFmpeg处理完成
+		// FFmpeg处理可能需要临时合并文件，所以延迟时间要足够长（至少60秒，因为OSS超时是60秒）
 		s.wg.Add(1)
 		go func(lPath, tDir, rKey string, isOSS bool) {
 			defer s.wg.Done()
-			time.Sleep(2 * time.Second)
+			// 延迟足够长的时间，确保元数据处理完成（包括FFmpeg备选方案）
+			// OSS超时60秒 + FFmpeg处理时间，总共延迟70秒
+			time.Sleep(70 * time.Second)
 			if lPath != "" {
 				os.Remove(lPath)
 			}
@@ -511,32 +515,22 @@ func (s *ContentService) processVideoMetadataWithWait(ctx context.Context, video
 	// 并发获取时长和封面
 	go func() {
 		var duration float64
-		if s.Cfg.Storage.Type == util.StorageOSS {
-			duration = s.getVideoDurationFromOSS(videoURL)
-		}
-		// 如果OSS获取失败，尝试使用本地FFmpeg（如果可用）
-		// 生产环境可能未安装FFmpeg，此备选方案可能不可用
-		if duration == 0 {
-			logger.Log.Info("OSS获取视频时长失败，尝试使用FFmpeg备选方案", zap.String("videoURL", videoURL))
-			actualLocalPath := localPath
-			if localPath == "" && isOSS && tempDir != "" {
-				// 临时合并文件用于FFmpeg处理
-				ext := filepath.Ext(originalFilename)
-				actualLocalPath = filepath.Join(s.Cfg.Storage.LocalPath, "temp", fmt.Sprintf("temp_metadata_%d%s", time.Now().UnixNano(), ext))
-				mergeStartTime := time.Now()
-				if err := s.mergeChunksConcurrently(tempDir, actualLocalPath, totalChunks); err == nil {
-					// 合并成功，使用合并后的文件
-					defer os.Remove(actualLocalPath) // 处理完后清理
-					logger.Log.Info("临时合并文件成功，用于FFmpeg处理",
-						zap.String("path", actualLocalPath),
-						zap.Duration("merge_time", time.Since(mergeStartTime)))
-				} else {
-					logger.Log.Warn("临时合并文件失败，无法使用FFmpeg", zap.Error(err))
-					actualLocalPath = "" // 合并失败，无法使用
-				}
-			}
-			if actualLocalPath != "" {
-				logger.Log.Info("使用FFmpeg获取视频时长", zap.String("path", actualLocalPath))
+
+		// 对于OSS类型，优先使用FFmpeg（因为分块文件还在，可以立即合并获取）
+		// 这样可以避免等待OSS视频处理服务（可能需要几十秒）
+		if isOSS && tempDir != "" {
+			// OSS类型，优先使用FFmpeg（分块文件还在）
+			logger.Log.Info("OSS类型，优先使用FFmpeg获取视频时长（分块文件可用）", zap.String("videoURL", videoURL))
+			ext := filepath.Ext(originalFilename)
+			actualLocalPath := filepath.Join(s.Cfg.Storage.LocalPath, "temp", fmt.Sprintf("temp_metadata_%d%s", time.Now().UnixNano(), ext))
+			mergeStartTime := time.Now()
+			if err := s.mergeChunksConcurrently(tempDir, actualLocalPath, totalChunks); err == nil {
+				// 合并成功，使用合并后的文件
+				defer os.Remove(actualLocalPath) // 处理完后清理
+				logger.Log.Info("临时合并文件成功，用于FFmpeg处理",
+					zap.String("path", actualLocalPath),
+					zap.Duration("merge_time", time.Since(mergeStartTime)))
+
 				ffmpegStartTime := time.Now()
 				if videoInfo, err := util.GetVideoInfo(actualLocalPath); err == nil {
 					duration = videoInfo.Duration
@@ -544,15 +538,25 @@ func (s *ContentService) processVideoMetadataWithWait(ctx context.Context, video
 						zap.Float64("duration", duration),
 						zap.Duration("ffmpeg_time", time.Since(ffmpegStartTime)))
 				} else {
-					logger.Log.Warn("FFmpeg获取视频时长失败（可能未安装FFmpeg）", zap.Error(err))
+					logger.Log.Warn("FFmpeg获取视频时长失败（可能未安装FFmpeg），将尝试OSS", zap.Error(err))
 				}
 			} else {
-				logger.Log.Warn("无法使用FFmpeg获取视频时长：本地文件路径为空（生产环境可能未安装FFmpeg，只能依赖OSS）",
-					zap.String("localPath", localPath),
-					zap.Bool("isOSS", isOSS),
-					zap.String("tempDir", tempDir))
+				logger.Log.Warn("临时合并文件失败，无法使用FFmpeg，将尝试OSS", zap.Error(err))
+			}
+		} else if localPath != "" {
+			// 非OSS类型，直接使用已合并的文件
+			logger.Log.Info("使用本地文件获取视频时长", zap.String("path", localPath))
+			if videoInfo, err := util.GetVideoInfo(localPath); err == nil {
+				duration = videoInfo.Duration
 			}
 		}
+
+		// 如果FFmpeg/本地文件获取失败，尝试从OSS获取（作为备选方案）
+		if duration == 0 && s.Cfg.Storage.Type == util.StorageOSS {
+			logger.Log.Info("FFmpeg/本地文件获取失败，尝试从OSS获取视频时长", zap.String("videoURL", videoURL))
+			duration = s.getVideoDurationFromOSS(videoURL)
+		}
+
 		durationChan <- durationResult{duration: duration}
 	}()
 
@@ -650,7 +654,7 @@ func (s *ContentService) processVideoMetadata(ctx context.Context, videoURL, loc
 }
 
 // getVideoDurationFromOSS 从阿里云OSS获取视频时长
-// 总超时时间600秒（10分钟），因为生产环境可能未安装FFmpeg，只能依赖OSS
+// 总超时时间60秒，如果OSS获取失败会尝试使用FFmpeg备选方案
 func (s *ContentService) getVideoDurationFromOSS(videoURL string) float64 {
 	u, err := url.Parse(videoURL)
 	if err != nil {
@@ -661,9 +665,8 @@ func (s *ContentService) getVideoDurationFromOSS(videoURL string) float64 {
 	host := strings.Replace(u.Host, "-internal", "", 1)
 	infoURL := fmt.Sprintf("%s://%s%s?x-oss-process=video/info", u.Scheme, host, u.EscapedPath())
 
-	// 设置总超时时间为600秒（10分钟）
-	// 生产环境可能未安装FFmpeg，只能依赖OSS，所以需要更长的等待时间
-	timeout := 600 * time.Second
+	// 设置总超时时间为60秒
+	timeout := 60 * time.Second
 	startTime := time.Now()
 
 	// 初始重试间隔

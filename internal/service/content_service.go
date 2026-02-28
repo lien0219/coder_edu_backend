@@ -514,24 +514,43 @@ func (s *ContentService) processVideoMetadataWithWait(ctx context.Context, video
 		if s.Cfg.Storage.Type == util.StorageOSS {
 			duration = s.getVideoDurationFromOSS(videoURL)
 		}
-		// 如果OSS获取失败，尝试使用本地FFmpeg
+		// 如果OSS获取失败，尝试使用本地FFmpeg（如果可用）
+		// 生产环境可能未安装FFmpeg，此备选方案可能不可用
 		if duration == 0 {
+			logger.Log.Info("OSS获取视频时长失败，尝试使用FFmpeg备选方案", zap.String("videoURL", videoURL))
 			actualLocalPath := localPath
 			if localPath == "" && isOSS && tempDir != "" {
 				// 临时合并文件用于FFmpeg处理
 				ext := filepath.Ext(originalFilename)
 				actualLocalPath = filepath.Join(s.Cfg.Storage.LocalPath, "temp", fmt.Sprintf("temp_metadata_%d%s", time.Now().UnixNano(), ext))
+				mergeStartTime := time.Now()
 				if err := s.mergeChunksConcurrently(tempDir, actualLocalPath, totalChunks); err == nil {
 					// 合并成功，使用合并后的文件
 					defer os.Remove(actualLocalPath) // 处理完后清理
+					logger.Log.Info("临时合并文件成功，用于FFmpeg处理",
+						zap.String("path", actualLocalPath),
+						zap.Duration("merge_time", time.Since(mergeStartTime)))
 				} else {
+					logger.Log.Warn("临时合并文件失败，无法使用FFmpeg", zap.Error(err))
 					actualLocalPath = "" // 合并失败，无法使用
 				}
 			}
 			if actualLocalPath != "" {
+				logger.Log.Info("使用FFmpeg获取视频时长", zap.String("path", actualLocalPath))
+				ffmpegStartTime := time.Now()
 				if videoInfo, err := util.GetVideoInfo(actualLocalPath); err == nil {
 					duration = videoInfo.Duration
+					logger.Log.Info("FFmpeg成功获取视频时长",
+						zap.Float64("duration", duration),
+						zap.Duration("ffmpeg_time", time.Since(ffmpegStartTime)))
+				} else {
+					logger.Log.Warn("FFmpeg获取视频时长失败（可能未安装FFmpeg）", zap.Error(err))
 				}
+			} else {
+				logger.Log.Warn("无法使用FFmpeg获取视频时长：本地文件路径为空（生产环境可能未安装FFmpeg，只能依赖OSS）",
+					zap.String("localPath", localPath),
+					zap.Bool("isOSS", isOSS),
+					zap.String("tempDir", tempDir))
 			}
 		}
 		durationChan <- durationResult{duration: duration}
@@ -587,7 +606,7 @@ func (s *ContentService) processVideoMetadataWithWait(ctx context.Context, video
 	return durationRes.duration, thumbnailRes.thumbnail
 }
 
-// processVideoMetadata 处理视频元数据（时长和封面）- 完整版本
+// processVideoMetadata 处理视频元数据（时长和封面）
 func (s *ContentService) processVideoMetadata(ctx context.Context, videoURL, localPath, originalFilename string) (float64, string) {
 	// 1. 获取视频时长
 	var duration float64
@@ -631,7 +650,7 @@ func (s *ContentService) processVideoMetadata(ctx context.Context, videoURL, loc
 }
 
 // getVideoDurationFromOSS 从阿里云OSS获取视频时长
-// 总超时时间30秒，使用指数退避策略持续重试
+// 总超时时间600秒（10分钟），因为生产环境可能未安装FFmpeg，只能依赖OSS
 func (s *ContentService) getVideoDurationFromOSS(videoURL string) float64 {
 	u, err := url.Parse(videoURL)
 	if err != nil {
@@ -642,13 +661,14 @@ func (s *ContentService) getVideoDurationFromOSS(videoURL string) float64 {
 	host := strings.Replace(u.Host, "-internal", "", 1)
 	infoURL := fmt.Sprintf("%s://%s%s?x-oss-process=video/info", u.Scheme, host, u.EscapedPath())
 
-	// 设置总超时时间为30秒
-	timeout := 30 * time.Second
+	// 设置总超时时间为600秒（10分钟）
+	// 生产环境可能未安装FFmpeg，只能依赖OSS，所以需要更长的等待时间
+	timeout := 600 * time.Second
 	startTime := time.Now()
 
 	// 初始重试间隔
-	backoff := 1 * time.Second
-	maxBackoff := 5 * time.Second
+	backoff := 2 * time.Second     // 初始间隔2秒
+	maxBackoff := 10 * time.Second // 最大间隔10秒
 	retryCount := 0
 
 	for {
@@ -672,7 +692,7 @@ func (s *ContentService) getVideoDurationFromOSS(videoURL string) float64 {
 		retryCount++
 
 		if err != nil {
-			logger.Log.Warn("请求OSS时长接口失败，重试中...", zap.Error(err), zap.Int("retry", retryCount))
+			logger.Log.Warn("请求OSS时长接口失败，重试中...", zap.Error(err), zap.Int("retry", retryCount), zap.Duration("elapsed", time.Since(startTime)))
 			continue
 		}
 
@@ -680,10 +700,14 @@ func (s *ContentService) getVideoDurationFromOSS(videoURL string) float64 {
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			logger.Log.Warn("OSS视频信息未就绪，重试中...",
-				zap.Int("status", resp.StatusCode),
-				zap.Int("retry", retryCount),
-				zap.String("response", string(body)))
+
+			if retryCount%10 == 0 {
+				logger.Log.Warn("OSS视频信息未就绪，持续重试中...",
+					zap.Int("status", resp.StatusCode),
+					zap.Int("retry", retryCount),
+					zap.Duration("elapsed", time.Since(startTime)),
+					zap.String("response", string(body)))
+			}
 			continue
 		}
 
@@ -725,6 +749,8 @@ func (s *ContentService) getVideoDurationFromOSS(videoURL string) float64 {
 		logger.Log.Warn("OSS返回数据中未找到duration字段，重试中...", zap.Int("retry", retryCount))
 	}
 
-	logger.Log.Warn("获取OSS视频时长失败，30秒内未成功", zap.Int("total_retries", retryCount))
+	logger.Log.Warn("获取OSS视频时长失败",
+		zap.Int("total_retries", retryCount),
+		zap.Duration("elapsed", time.Since(startTime)))
 	return 0
 }

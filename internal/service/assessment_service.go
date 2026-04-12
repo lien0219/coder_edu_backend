@@ -69,14 +69,14 @@ func (s *AssessmentService) CreateQuestion(req AssessmentQuestionRequest) (*mode
 	return q, nil
 }
 
-func (s *AssessmentService) ListQuestions(assessmentID uint) ([]model.AssessmentQuestion, error) {
+func (s *AssessmentService) ListQuestions(assessmentID uint, page, limit int) ([]model.AssessmentQuestion, int64, error) {
 	if assessmentID == 0 {
 		defaultA, err := s.getOrCreateDefaultAssessment()
 		if err == nil {
 			assessmentID = defaultA.ID
 		}
 	}
-	return s.Repo.ListAllQuestions(assessmentID)
+	return s.Repo.ListQuestions(assessmentID, page, limit)
 }
 
 type StudentAssessmentQuestion struct {

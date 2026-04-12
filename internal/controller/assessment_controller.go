@@ -45,6 +45,8 @@ func (c *AssessmentController) CreateQuestion(ctx *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param assessmentId query int false "评估ID"
+// @Param page query int false "页码" default(1)
+// @Param limit query int false "每页数量" default(10)
 // @Success 200 {object} util.Response
 // @Router /api/teacher/assessments/questions [get]
 func (c *AssessmentController) ListQuestions(ctx *gin.Context) {
@@ -55,13 +57,31 @@ func (c *AssessmentController) ListQuestions(ctx *gin.Context) {
 		}
 	}
 
-	qs, err := c.Service.ListQuestions(assessmentID)
+	page := 1
+	if p := ctx.Query("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	limit := 10
+	if l := ctx.Query("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	qs, total, err := c.Service.ListQuestions(assessmentID, page, limit)
 	if err != nil {
 		util.InternalServerError(ctx)
 		return
 	}
 
-	util.Success(ctx, qs)
+	util.Success(ctx, gin.H{
+		"items": qs,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
 }
 
 // @Summary 获取测试题详情

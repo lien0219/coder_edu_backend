@@ -99,7 +99,6 @@ definitions:
         enum:
         - student
         - teacher
-        - admin
         type: string
     required:
     - email
@@ -398,6 +397,9 @@ definitions:
         description: programming, multiple_choice, single_choice
         type: string
       solutionCode:
+        type: string
+      tags:
+        description: AI 自动生成的关键词标签，逗号分隔
         type: string
       title:
         type: string
@@ -6366,6 +6368,16 @@ paths:
       - description: 评估ID
         in: query
         name: assessmentId
+        type: integer
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量
+        in: query
+        name: limit
         type: integer
       produces:
       - application/json

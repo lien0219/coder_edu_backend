@@ -220,7 +220,7 @@ func (s *KnowledgePointService) RewardStudents(rewards []RewardStudentItem) erro
 
 func (s *KnowledgePointService) ListKnowledgePointsForStudent(userID uint) ([]KnowledgePointStudentResponse, error) {
 	var kps []model.KnowledgePoint
-	if err := s.db.Order("`order` ASC, created_at DESC").Find(&kps).Error; err != nil {
+	if err := s.db.Order("`order` ASC, created_at DESC").Limit(20).Find(&kps).Error; err != nil {
 		return nil, err
 	}
 

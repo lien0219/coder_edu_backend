@@ -7847,6 +7847,20 @@ const docTemplate = `{
                         "description": "评估ID",
                         "name": "assessmentId",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "每页数量",
+                        "name": "limit",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -11802,8 +11816,7 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "student",
-                        "teacher",
-                        "admin"
+                        "teacher"
                     ]
                 }
             }
@@ -12237,6 +12250,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "solutionCode": {
+                    "type": "string"
+                },
+                "tags": {
+                    "description": "AI 自动生成的关键词标签，逗号分隔",
                     "type": "string"
                 },
                 "title": {

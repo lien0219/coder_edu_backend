@@ -139,9 +139,16 @@ func (c *LearningPathController) DeleteMaterial(ctx *gin.Context) {
 }
 
 // @Summary 学生端：获取自我评估学习路径
+// @Description 分页（默认每页 10 条），支持关键字、等级、是否解锁、是否完成筛选
 // @Tags 学习路径
 // @Produce json
 // @Security BearerAuth
+// @Param search query string false "标题关键字"
+// @Param level query int false "等级筛选 1基础 2初级 3中级 4高级，不传或 0 为全部"
+// @Param unlocked query bool false "是否已解锁（评估建议等级≥资料等级且有建议等级）"
+// @Param completed query bool false "是否已完成学习"
+// @Param page query int false "页码" default(1)
+// @Param limit query int false "每页条数" default(10)
 // @Success 200 {object} util.Response
 // @Router /api/learning-path/student [get]
 func (c *LearningPathController) GetStudentPath(ctx *gin.Context) {
@@ -151,13 +158,53 @@ func (c *LearningPathController) GetStudentPath(ctx *gin.Context) {
 		return
 	}
 
-	path, err := c.Service.GetStudentPath(user.UserID)
+	page := 1
+	limit := 10
+	if p := ctx.Query("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if l := ctx.Query("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	level, _ := strconv.Atoi(ctx.Query("level"))
+
+	var unlockedPtr *bool
+	if v := ctx.Query("unlocked"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			unlockedPtr = &b
+		}
+	}
+	var completedPtr *bool
+	if v := ctx.Query("completed"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			completedPtr = &b
+		}
+	}
+
+	items, total, err := c.Service.GetStudentPath(user.UserID, service.StudentPathListParams{
+		Page:      page,
+		Limit:     limit,
+		Search:    ctx.Query("search"),
+		Level:     level,
+		Unlocked:  unlockedPtr,
+		Completed: completedPtr,
+	})
 	if err != nil {
 		util.InternalServerError(ctx)
 		return
 	}
 
-	util.Success(ctx, path)
+	util.Success(ctx, gin.H{
+		"items": items,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
 }
 
 // @Summary 学生端：获取指定等级的所有资料

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -37,6 +38,20 @@ func (r *LearningPathRepository) ListMaterials(level int, page, limit int) ([]mo
 	offset := (page - 1) * limit
 	err := query.Order("chapter_number asc, created_at desc").Offset(offset).Limit(limit).Find(&ms).Error
 	return ms, total, err
+}
+
+// FindMaterialsForStudentListing 学生端列表：按需等级、标题关键字，全量查出后再由服务层做解锁态等筛选分页
+func (r *LearningPathRepository) FindMaterialsForStudentListing(level int, search string) ([]model.LearningPathMaterial, error) {
+	var ms []model.LearningPathMaterial
+	q := r.DB.Model(&model.LearningPathMaterial{})
+	if level >= 1 && level <= model.LearningLevelAdvanced {
+		q = q.Where("level = ?", level)
+	}
+	if s := strings.TrimSpace(search); s != "" {
+		q = q.Where("title LIKE ?", "%"+s+"%")
+	}
+	err := q.Order("chapter_number asc, created_at desc").Find(&ms).Error
+	return ms, err
 }
 
 func (r *LearningPathRepository) UpdateMaterial(material *model.LearningPathMaterial) error {

@@ -4,6 +4,7 @@ import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,7 +41,24 @@ type StudentMaterialResponse struct {
 	ChapterNumber int    `json:"chapterNumber"`
 }
 
-func (s *LearningPathService) GetStudentPath(userID uint) ([]StudentMaterialResponse, error) {
+// StudentPathListParams 学生学习路径分页与筛选
+type StudentPathListParams struct {
+	Page      int
+	Limit     int
+	Search    string
+	Level     int // 1-4；0 表示不限
+	Unlocked  *bool
+	Completed *bool
+}
+
+func (s *LearningPathService) GetStudentPath(userID uint, p StudentPathListParams) ([]StudentMaterialResponse, int64, error) {
+	if p.Page < 1 {
+		p.Page = 1
+	}
+	if p.Limit < 1 {
+		p.Limit = 10
+	}
+
 	// 1. 获取学生的学前测试建议等级
 	var recommendedLevel int
 	// 先获取默认评估 ID
@@ -62,16 +80,21 @@ func (s *LearningPathService) GetStudentPath(userID uint) ([]StudentMaterialResp
 		completedMap[c.MaterialID] = true
 	}
 
-	// 2. 获取所有学习资料
-	materials, _, err := s.Repo.ListMaterials(0, 1, 1000) // 获取全部
+	// 2. 获取学习资料（数据库侧：等级、标题筛选）
+	levelFilter := p.Level
+	if !(levelFilter >= 1 && levelFilter <= model.LearningLevelAdvanced) {
+		levelFilter = 0
+	}
+	search := strings.TrimSpace(p.Search)
+	materials, err := s.Repo.FindMaterialsForStudentListing(levelFilter, search)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// 3. 构建返回列表并设置解锁状态
-	res := make([]StudentMaterialResponse, len(materials))
-	for i, m := range materials {
-		res[i] = StudentMaterialResponse{
+	res := make([]StudentMaterialResponse, 0, len(materials))
+	for _, m := range materials {
+		res = append(res, StudentMaterialResponse{
 			ID:            m.ID,
 			Title:         m.Title,
 			Level:         m.Level,
@@ -79,10 +102,30 @@ func (s *LearningPathService) GetStudentPath(userID uint) ([]StudentMaterialResp
 			ChapterNumber: m.ChapterNumber,
 			IsUnlocked:    m.Level <= recommendedLevel && recommendedLevel > 0,
 			IsCompleted:   completedMap[m.ID],
-		}
+		})
 	}
 
-	return res, nil
+	var filtered []StudentMaterialResponse
+	for _, row := range res {
+		if p.Unlocked != nil && row.IsUnlocked != *p.Unlocked {
+			continue
+		}
+		if p.Completed != nil && row.IsCompleted != *p.Completed {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+
+	total := int64(len(filtered))
+	offset := (p.Page - 1) * p.Limit
+	if offset >= len(filtered) {
+		return []StudentMaterialResponse{}, total, nil
+	}
+	end := offset + p.Limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[offset:end], total, nil
 }
 
 type CreateMaterialRequest struct {

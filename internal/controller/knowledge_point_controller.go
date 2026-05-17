@@ -150,9 +150,16 @@ func (c *KnowledgePointController) RewardStudents(ctx *gin.Context) {
 }
 
 // @Summary 获取知识点列表 (学生)
+// @Description 支持分页（默认每页 10 条）与筛选：关键词、类型、完成/提交状态
 // @Tags 知识点
 // @Produce json
 // @Security BearerAuth
+// @Param search query string false "标题或描述关键字"
+// @Param type query string false "知识点类型" Enums(concept,rule,syntax,process,strategy,application,all)
+// @Param completed query bool false "是否已完成（老师审核通过）"
+// @Param submitted query bool false "是否已提交（待审核或已通过）"
+// @Param page query int false "页码" default(1)
+// @Param limit query int false "每页条数" default(10)
 // @Success 200 {object} util.Response
 // @Router /api/knowledge-points/student [get]
 func (c *KnowledgePointController) ListForStudent(ctx *gin.Context) {
@@ -162,13 +169,51 @@ func (c *KnowledgePointController) ListForStudent(ctx *gin.Context) {
 		return
 	}
 
-	kps, err := c.Service.ListKnowledgePointsForStudent(claims.UserID)
+	page := 1
+	limit := 10
+	if p := ctx.Query("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if l := ctx.Query("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	var completedPtr *bool
+	if v := ctx.Query("completed"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			completedPtr = &b
+		}
+	}
+	var submittedPtr *bool
+	if v := ctx.Query("submitted"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			submittedPtr = &b
+		}
+	}
+
+	kps, total, err := c.Service.ListKnowledgePointsForStudent(claims.UserID, service.KnowledgePointStudentListParams{
+		Page:      page,
+		Limit:     limit,
+		Search:    ctx.Query("search"),
+		Type:      ctx.Query("type"),
+		Completed: completedPtr,
+		Submitted: submittedPtr,
+	})
 	if err != nil {
 		util.InternalServerError(ctx)
 		return
 	}
 
-	util.Success(ctx, kps)
+	util.Success(ctx, gin.H{
+		"items": kps,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
 }
 
 // @Summary 获取知识点详情 (学生)

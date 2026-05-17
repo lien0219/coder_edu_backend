@@ -73,6 +73,16 @@ type KnowledgePointStudentResponse struct {
 	CompletionScore int                      `json:"completionScore"`
 }
 
+// KnowledgePointStudentListParams 学生知识点列表分页与筛选参数
+type KnowledgePointStudentListParams struct {
+	Page      int
+	Limit     int
+	Search    string
+	Type      string
+	Completed *bool
+	Submitted *bool
+}
+
 type PointsRankingEntry struct {
 	ID      uint   `json:"id"`
 	Ranking int    `json:"ranking"`
@@ -218,16 +228,32 @@ func (s *KnowledgePointService) RewardStudents(rewards []RewardStudentItem) erro
 	})
 }
 
-func (s *KnowledgePointService) ListKnowledgePointsForStudent(userID uint) ([]KnowledgePointStudentResponse, error) {
+func (s *KnowledgePointService) ListKnowledgePointsForStudent(userID uint, p KnowledgePointStudentListParams) ([]KnowledgePointStudentResponse, int64, error) {
+	if p.Page < 1 {
+		p.Page = 1
+	}
+	if p.Limit < 1 {
+		p.Limit = 10
+	}
+
+	q := s.db.Model(&model.KnowledgePoint{}).Order("`order` ASC, created_at DESC")
+	if t := strings.TrimSpace(p.Type); t != "" && !strings.EqualFold(t, "all") {
+		q = q.Where("type = ?", t)
+	}
+	if search := strings.TrimSpace(p.Search); search != "" {
+		pat := "%" + search + "%"
+		q = q.Where("(title LIKE ? OR description LIKE ?)", pat, pat)
+	}
+
 	var kps []model.KnowledgePoint
-	if err := s.db.Order("`order` ASC, created_at DESC").Limit(20).Find(&kps).Error; err != nil {
-		return nil, err
+	if err := q.Find(&kps).Error; err != nil {
+		return nil, 0, err
 	}
 
 	// 1. 获取完成状态 (老师审核通过)
 	var completions []model.KnowledgePointCompletion
 	if err := s.db.Where("user_id = ?", userID).Find(&completions).Error; err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	completionMap := make(map[string]bool)
 	for _, c := range completions {
@@ -237,7 +263,7 @@ func (s *KnowledgePointService) ListKnowledgePointsForStudent(userID uint) ([]Kn
 	// 2. 获取提交状态 (如果最新一次提交被驳回，则视为未提交，允许重交)
 	var submissions []model.KnowledgePointSubmission
 	if err := s.db.Where("user_id = ?", userID).Order("created_at ASC").Find(&submissions).Error; err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	submissionMap := make(map[string]bool)
 	for _, sub := range submissions {
@@ -259,7 +285,27 @@ func (s *KnowledgePointService) ListKnowledgePointsForStudent(userID uint) ([]Kn
 		})
 	}
 
-	return resp, nil
+	var filtered []KnowledgePointStudentResponse
+	for _, r := range resp {
+		if p.Completed != nil && r.IsCompleted != *p.Completed {
+			continue
+		}
+		if p.Submitted != nil && r.IsSubmitted != *p.Submitted {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+
+	total := int64(len(filtered))
+	offset := (p.Page - 1) * p.Limit
+	if offset >= len(filtered) {
+		return []KnowledgePointStudentResponse{}, total, nil
+	}
+	end := offset + p.Limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[offset:end], total, nil
 }
 
 func (s *KnowledgePointService) GetKnowledgePointForStudent(id string, userID uint) (interface{}, error) {

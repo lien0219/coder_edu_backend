@@ -2,6 +2,7 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -112,6 +113,24 @@ func (r *LevelAttemptRepository) GetWeeklyStats(userID uint, weeks int, specific
 	}
 
 	err := db.Scan(&stats).Error
+	return stats, err
+}
+
+func (r *LevelAttemptRepository) GetDailyStats(userID uint, days int) ([]model.ChallengeDailyData, error) {
+	var stats []model.ChallengeDailyData
+
+	now := time.Now()
+	loc := now.Location()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	start := today.AddDate(0, 0, -(days - 1))
+	end := today.AddDate(0, 0, 1)
+
+	err := r.DB.Table("level_attempts").
+		Select("DATE_FORMAT(ended_at, '%Y-%m-%d') as date, COUNT(*) as completed_challenges, COALESCE(AVG(score), 0) as average_score").
+		Where("user_id = ? AND success = ? AND ended_at IS NOT NULL AND deleted_at IS NULL AND ended_at >= ? AND ended_at < ?", userID, true, start, end).
+		Group("date").
+		Order("date ASC").
+		Scan(&stats).Error
 	return stats, err
 }
 

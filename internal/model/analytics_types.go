@@ -44,6 +44,13 @@ type ChallengeWeeklyData struct {
 	CompletedCount int     `json:"completedCount"`
 }
 
+// ChallengeDailyData 挑战日数据
+type ChallengeDailyData struct {
+	Date                string  `json:"date"`
+	CompletedChallenges int     `json:"completedChallenges"`
+	AverageScore        float64 `json:"averageScore"`
+}
+
 // SkillRadar 技能雷达图
 type SkillRadar struct {
 	Skills            []string `json:"skills"`

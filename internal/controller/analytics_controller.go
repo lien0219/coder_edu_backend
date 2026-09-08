@@ -202,6 +202,30 @@ func (c *AnalyticsController) GetWeeklyChallengeStats(ctx *gin.Context) {
 	util.Success(ctx, stats)
 }
 
+// @Summary 获取每日挑战统计
+// @Description 获取当前用户最近7个自然日（含今天）的挑战完成数量与平均成绩
+// @Tags 分析
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} util.Response
+// @Router /api/analytics/challenges/daily [get]
+func (c *AnalyticsController) GetDailyChallengeStats(ctx *gin.Context) {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return
+	}
+
+	stats, err := c.AnalyticsService.GetDailyChallengeStats(user.UserID)
+	if err != nil {
+		util.InternalServerError(ctx)
+		return
+	}
+
+	util.Success(ctx, stats)
+}
+
 // @Summary 记录学习会话
 // @Description 记录用户的学习会话开始
 // @Tags 分析

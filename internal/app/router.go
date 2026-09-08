@@ -134,6 +134,7 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	rg.GET("/analytics/overview", c.analytics.GetOverview)
 	rg.GET("/analytics/progress", c.analytics.GetProgress)
 	rg.GET("/analytics/challenges/weekly", c.analytics.GetWeeklyChallengeStats)
+	rg.GET("/analytics/challenges/daily", c.analytics.GetDailyChallengeStats)
 	rg.GET("/analytics/skills", c.analytics.GetSkills)
 	rg.GET("/analytics/abilities", c.analytics.GetAbilities)
 	rg.GET("/analytics/levels/:levelId/curve", c.analytics.GetLevelCurve)

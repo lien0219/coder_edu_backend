@@ -88,6 +88,40 @@ func (s *AnalyticsService) GetWeeklyChallengeStats(userID uint, weeks int, speci
 	return result, nil
 }
 
+func (s *AnalyticsService) GetDailyChallengeStats(userID uint) ([]model.ChallengeDailyData, error) {
+	const days = 7
+
+	stats, err := s.LevelAttemptRepo.GetDailyStats(userID, days)
+	if err != nil {
+		return nil, err
+	}
+
+	statsMap := make(map[string]model.ChallengeDailyData, len(stats))
+	for _, item := range stats {
+		statsMap[item.Date] = item
+	}
+
+	now := time.Now()
+	loc := now.Location()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+
+	result := make([]model.ChallengeDailyData, 0, days)
+	for i := days - 1; i >= 0; i-- {
+		dateStr := today.AddDate(0, 0, -i).Format("2006-01-02")
+		if val, ok := statsMap[dateStr]; ok {
+			result = append(result, val)
+			continue
+		}
+		result = append(result, model.ChallengeDailyData{
+			Date:                dateStr,
+			CompletedChallenges: 0,
+			AverageScore:        0,
+		})
+	}
+
+	return result, nil
+}
+
 func (s *AnalyticsService) GetLearningOverview(userID uint) (*model.LearningOverview, error) {
 	// 获取总体进度
 	progress, err := s.ProgressRepo.GetOverallProgress(userID)

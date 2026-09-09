@@ -88,20 +88,21 @@ func (s *AnalyticsService) GetWeeklyChallengeStats(userID uint, weeks int, speci
 	return result, nil
 }
 
-func (s *AnalyticsService) GetDailyChallengeStats(userID uint) ([]model.ChallengeDailyData, error) {
-	const days = 7
-
+func (s *AnalyticsService) GetDailyChallengeStats(userID uint, days int) ([]model.ChallengeDailyData, error) {
 	stats, err := s.LevelAttemptRepo.GetDailyStats(userID, days)
 	if err != nil {
 		return nil, err
 	}
 
+	return fillDailyChallengeRange(time.Now(), days, stats), nil
+}
+
+func fillDailyChallengeRange(now time.Time, days int, stats []model.ChallengeDailyData) []model.ChallengeDailyData {
 	statsMap := make(map[string]model.ChallengeDailyData, len(stats))
 	for _, item := range stats {
 		statsMap[item.Date] = item
 	}
 
-	now := time.Now()
 	loc := now.Location()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 
@@ -119,7 +120,7 @@ func (s *AnalyticsService) GetDailyChallengeStats(userID uint) ([]model.Challeng
 		})
 	}
 
-	return result, nil
+	return result
 }
 
 func (s *AnalyticsService) GetLearningOverview(userID uint) (*model.LearningOverview, error) {

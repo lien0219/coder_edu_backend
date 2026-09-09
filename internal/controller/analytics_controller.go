@@ -1,9 +1,11 @@
 package controller
 
 import (
+	"fmt"
+	"strconv"
+
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -203,12 +205,14 @@ func (c *AnalyticsController) GetWeeklyChallengeStats(ctx *gin.Context) {
 }
 
 // @Summary 获取每日挑战统计
-// @Description 获取当前用户最近7个自然日（含今天）的挑战完成数量与平均成绩
+// @Description 获取当前用户最近 N 个自然日（含今天）的挑战完成数量与平均成绩，N 仅允许 7、14、21
 // @Tags 分析
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Param days query int false "最近自然日天数，仅允许 7、14、21（默认7）" Enums(7,14,21) default(7)
 // @Success 200 {object} util.Response
+// @Failure 400 {object} util.Response
 // @Router /api/analytics/challenges/daily [get]
 func (c *AnalyticsController) GetDailyChallengeStats(ctx *gin.Context) {
 	user := util.GetUserFromContext(ctx)
@@ -217,13 +221,37 @@ func (c *AnalyticsController) GetDailyChallengeStats(ctx *gin.Context) {
 		return
 	}
 
-	stats, err := c.AnalyticsService.GetDailyChallengeStats(user.UserID)
+	days, err := parseDailyChallengeDays(ctx.Query("days"))
+	if err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
+	stats, err := c.AnalyticsService.GetDailyChallengeStats(user.UserID, days)
 	if err != nil {
 		util.InternalServerError(ctx)
 		return
 	}
 
 	util.Success(ctx, stats)
+}
+
+func parseDailyChallengeDays(raw string) (int, error) {
+	if raw == "" {
+		return 7, nil
+	}
+
+	days, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("days must be 7, 14, or 21")
+	}
+
+	switch days {
+	case 7, 14, 21:
+		return days, nil
+	default:
+		return 0, fmt.Errorf("days must be 7, 14, or 21")
+	}
 }
 
 // @Summary 记录学习会话

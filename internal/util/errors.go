@@ -30,4 +30,17 @@ var (
 	ErrAnswersFieldMissing     = errors.New("answers field missing")
 	ErrAnswersFieldMustBeArray = errors.New("answers field must be array")
 	ErrResourceNotFound        = errors.New("resource not found")
+	ErrNoPublishedAssessment     = errors.New("暂无测验")
+	ErrAssessmentPaperStale      = errors.New("试卷已更新，请重新开始测验")
+	ErrAssessmentSubmitInvalid   = errors.New("提交内容无效")
+	ErrAssessmentRetestDenied    = errors.New("您已完成测试，暂不可重测")
+	ErrAssessmentSubmitMissingMeta   = errors.New("请提交领取的试卷ID、试卷版本和请求编号")
+	ErrAssessmentIdempotencyConflict = errors.New("重复提交内容与原记录不一致")
+	ErrAssessmentPaperUnavailable    = errors.New("试卷未发布或暂无有效题目")
+)
+
+const (
+	ErrCodeAssessmentPaperStale          = "ASSESSMENT_PAPER_STALE"
+	ErrCodeAssessmentIdempotencyConflict = "ASSESSMENT_IDEMPOTENCY_CONFLICT"
+	ErrCodeAssessmentPaperUnavailable    = "ASSESSMENT_PAPER_UNAVAILABLE"
 )

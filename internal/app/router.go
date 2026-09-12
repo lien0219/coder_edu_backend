@@ -322,22 +322,25 @@ func (a *App) registerTeacherRoutes(rg *gin.RouterGroup, c *controllers) {
 		teacher.GET("/suggestions", c.suggestion.ListTeacherSuggestions)
 		teacher.DELETE("/suggestions/:id", c.suggestion.DeleteSuggestion)
 
-		// 学前测试管理
-		teacher.POST("/assessments", c.assessment.CreateAssessment)
-		teacher.GET("/assessments", c.assessment.ListAssessments)
-		teacher.GET("/assessments/:id", c.assessment.GetAssessment)
-		teacher.POST("/assessments/questions", c.assessment.CreateQuestion)
-		teacher.GET("/assessments/questions", c.assessment.ListQuestions)
-		teacher.GET("/assessments/questions/:id", c.assessment.GetQuestion)
-		teacher.PUT("/assessments/questions/:id", c.assessment.UpdateQuestion)
-		teacher.DELETE("/assessments/questions/:id", c.assessment.DeleteQuestion)
-
-		// 提交管理
-		teacher.GET("/assessments/submissions", c.assessment.ListSubmissions)
-		teacher.GET("/assessments/submissions/:id", c.assessment.GetSubmissionDetail)
-		teacher.POST("/assessments/submissions/:id/grade", c.assessment.GradeSubmission)
-		teacher.DELETE("/assessments/submissions/:id", c.assessment.DeleteSubmission)
-		teacher.POST("/assessments/retest", c.assessment.SetUserRetest)
+		// 学前测试：父组含 Student，这里必须再限制为教师/管理员
+		assessments := teacher.Group("/assessments")
+		assessments.Use(c.assessment.TeacherOrAdmin())
+		{
+			assessments.POST("", c.assessment.CreateAssessment)
+			assessments.GET("", c.assessment.ListAssessments)
+			assessments.POST("/questions", c.assessment.CreateQuestion)
+			assessments.GET("/questions", c.assessment.ListQuestions)
+			assessments.GET("/questions/:id", c.assessment.GetQuestion)
+			assessments.PUT("/questions/:id", c.assessment.UpdateQuestion)
+			assessments.DELETE("/questions/:id", c.assessment.DeleteQuestion)
+			assessments.GET("/submissions", c.assessment.ListSubmissions)
+			assessments.GET("/submissions/:id", c.assessment.GetSubmissionDetail)
+			assessments.POST("/submissions/:id/grade", c.assessment.GradeSubmission)
+			assessments.DELETE("/submissions/:id", c.assessment.DeleteSubmission)
+			assessments.POST("/retest", c.assessment.SetUserRetest)
+			assessments.POST("/:id/publish", c.assessment.PublishAssessment)
+			assessments.GET("/:id", c.assessment.GetAssessment)
+		}
 
 		// 知识点管理
 		teacher.POST("/knowledge-points", c.knowledgePoint.Create)

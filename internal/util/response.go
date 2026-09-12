@@ -10,9 +10,10 @@ import (
 
 // Response 统一响应结构
 type Response struct {
-	Code    int         `json:"code"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
+	Code      int         `json:"code"`
+	Message   string      `json:"message"`
+	Data      interface{} `json:"data,omitempty"`
+	ErrorCode string      `json:"errorCode,omitempty"`
 }
 
 // PageResponse 分页响应结构
@@ -43,6 +44,14 @@ func Error(c *gin.Context, code int, message string) {
 	c.JSON(code, Response{
 		Code:    code,
 		Message: message,
+	})
+}
+
+func ErrorWithCode(c *gin.Context, httpStatus int, errorCode, message string) {
+	c.JSON(httpStatus, Response{
+		Code:      httpStatus,
+		Message:   message,
+		ErrorCode: errorCode,
 	})
 }
 

@@ -3,7 +3,14 @@ package service
 import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"coder_edu_backend/internal/util"
 	"encoding/json"
+	"errors"
+	"sort"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
 )
 
 type AssessmentService struct {
@@ -89,17 +96,22 @@ type StudentAssessmentQuestion struct {
 	Order        int             `json:"order"`
 }
 
-func (s *AssessmentService) ListStudentQuestions() ([]StudentAssessmentQuestion, error) {
-	defaultA, err := s.getOrCreateDefaultAssessment()
+type StudentPaperResponse struct {
+	AssessmentID uint                        `json:"assessmentId"`
+	Title        string                      `json:"title"`
+	PaperVersion string                      `json:"paperVersion"`
+	Questions    []StudentAssessmentQuestion `json:"questions"`
+}
+
+func (s *AssessmentService) ListStudentQuestions() (*StudentPaperResponse, error) {
+	paper, qs, err := s.Repo.FindPublishedAssessmentWithQuestions()
 	if err != nil {
 		return nil, err
 	}
-
-	qs, err := s.Repo.ListAllQuestions(defaultA.ID)
+	version, err := ComputePaperVersion(paper.ID, qs)
 	if err != nil {
 		return nil, err
 	}
-
 	res := make([]StudentAssessmentQuestion, len(qs))
 	for i, q := range qs {
 		res[i] = StudentAssessmentQuestion{
@@ -112,7 +124,12 @@ func (s *AssessmentService) ListStudentQuestions() ([]StudentAssessmentQuestion,
 			Order:        q.Order,
 		}
 	}
-	return res, nil
+	return &StudentPaperResponse{
+		AssessmentID: paper.ID,
+		Title:        paper.Title,
+		PaperVersion: version,
+		Questions:    res,
+	}, nil
 }
 
 func (s *AssessmentService) GetQuestion(id uint) (*model.AssessmentQuestion, error) {
@@ -154,6 +171,10 @@ type AssessmentRequest struct {
 	TimeLimit   int    `json:"timeLimit"`
 }
 
+type PublishAssessmentRequest struct {
+	IsPublished bool `json:"isPublished"`
+}
+
 func (s *AssessmentService) CreateAssessment(req AssessmentRequest) (*model.Assessment, error) {
 	a := &model.Assessment{
 		Title:       req.Title,
@@ -174,74 +195,197 @@ func (s *AssessmentService) GetAssessment(id uint) (*model.Assessment, error) {
 	return s.Repo.FindAssessmentByID(id)
 }
 
+func (s *AssessmentService) SetAssessmentPublished(id uint, published bool) (*model.Assessment, error) {
+	a, err := s.Repo.FindAssessmentByID(id)
+	if err != nil {
+		return nil, err
+	}
+	a.IsPublished = published
+	if published {
+		now := time.Now()
+		a.PublishedAt = &now
+	}
+	if err := s.Repo.UpdateAssessment(a); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
 type AssessmentSubmissionRequest struct {
-	AssessmentID uint                   `json:"assessmentId"`
-	Answers      []model.QuestionAnswer `json:"answers"`
+	AssessmentID    uint                   `json:"assessmentId"`
+	PaperVersion    string                 `json:"paperVersion"`
+	ClientRequestID string                 `json:"clientRequestId"`
+	Answers         []model.QuestionAnswer `json:"answers"`
+}
+
+func isUniqueConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate")
 }
 
 func (s *AssessmentService) SubmitAssessment(userID uint, req AssessmentSubmissionRequest) (*model.AssessmentSubmission, error) {
-	if req.AssessmentID == 0 {
-		defaultA, err := s.getOrCreateDefaultAssessment()
-		if err != nil {
-			return nil, err
+	req.PaperVersion = strings.TrimSpace(req.PaperVersion)
+	req.ClientRequestID = strings.TrimSpace(req.ClientRequestID)
+	if req.AssessmentID == 0 || req.PaperVersion == "" || req.ClientRequestID == "" {
+		return nil, util.ErrAssessmentSubmitMissingMeta
+	}
+
+	existing, err := s.Repo.FindSubmissionByClientRequestID(userID, req.ClientRequestID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return replayIfCompatible(existing, req)
+	}
+
+	paper, err := s.Repo.FindAssessmentByID(req.AssessmentID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, util.ErrAssessmentSubmitInvalid
 		}
-		req.AssessmentID = defaultA.ID
+		return nil, err
+	}
+	if !paper.IsPublished {
+		return nil, util.ErrAssessmentPaperUnavailable
 	}
 
 	questions, err := s.Repo.ListAllQuestions(req.AssessmentID)
 	if err != nil {
 		return nil, err
 	}
-
-	questionMap := make(map[uint]model.AssessmentQuestion)
-	for _, q := range questions {
-		questionMap[q.ID] = q
+	if len(questions) == 0 {
+		return nil, util.ErrAssessmentPaperUnavailable
 	}
 
-	totalScore := 0
-	for _, ans := range req.Answers {
-		if q, ok := questionMap[ans.QuestionID]; ok {
-			if ans.Answer == q.Answer {
-				totalScore += q.Points
-			}
-		}
+	version, err := ComputePaperVersion(req.AssessmentID, questions)
+	if err != nil {
+		return nil, err
+	}
+	if version != req.PaperVersion {
+		return nil, util.ErrAssessmentPaperStale
 	}
 
-	answersJSON, _ := json.Marshal(req.Answers)
-
-	// 查找是否已存在提交记录
-	existing, err := s.Repo.FindSubmissionByUserAndAssessment(userID, req.AssessmentID)
-	if err == nil && existing != nil {
-		// 如果存在，则覆盖旧数据
-		existing.Answers = answersJSON
-		existing.TotalScore = totalScore
-		existing.Status = "pending"   // 重新设为待审核
-		existing.Feedback = ""        // 清空旧评语
-		existing.RecommendedLevel = 0 // 重置建议等级
-		if err := s.Repo.UpdateSubmission(existing); err != nil {
-			return nil, err
-		}
-		_ = s.Repo.UpdateUserAssessmentStatus(userID, false)
-		return existing, nil
-	}
-
-	// 如果不存在，创建新记录
-	submission := &model.AssessmentSubmission{
-		UserID:       userID,
-		AssessmentID: req.AssessmentID,
-		Answers:      answersJSON,
-		TotalScore:   totalScore,
-		Status:       "pending",
-	}
-
-	if err := s.Repo.CreateSubmission(submission); err != nil {
+	results, autoScore, objectiveMax, pendingManual, err := validateAndScoreAnswers(questions, req.Answers)
+	if err != nil {
 		return nil, err
 	}
 
-	// 自动更新用户状态为不可重测
-	_ = s.Repo.UpdateUserAssessmentStatus(userID, false)
+	answersJSON, err := json.Marshal(req.Answers)
+	if err != nil {
+		return nil, err
+	}
+	itemJSON, err := json.Marshal(results)
+	if err != nil {
+		return nil, err
+	}
 
-	return submission, nil
+	var created *model.AssessmentSubmission
+	txErr := s.Repo.WithTx(func(tx *repository.AssessmentRepository) error {
+		replay, findErr := tx.FindSubmissionByClientRequestID(userID, req.ClientRequestID)
+		if findErr != nil {
+			return findErr
+		}
+		if replay != nil {
+			matched, replayErr := replayIfCompatible(replay, req)
+			if replayErr != nil {
+				return replayErr
+			}
+			created = matched
+			return nil
+		}
+
+		user, lockErr := tx.LockUserForUpdate(userID)
+		if lockErr != nil {
+			return lockErr
+		}
+		if !user.CanTakeAssessment {
+			return util.ErrAssessmentRetestDenied
+		}
+
+		maxAttempt, maxErr := tx.MaxAttemptNo(userID, req.AssessmentID)
+		if maxErr != nil {
+			return maxErr
+		}
+
+		created = &model.AssessmentSubmission{
+			UserID:             userID,
+			AssessmentID:       req.AssessmentID,
+			AttemptNo:          maxAttempt + 1,
+			ClientRequestID:    req.ClientRequestID,
+			PaperVersion:       req.PaperVersion,
+			Answers:            answersJSON,
+			ItemResults:        itemJSON,
+			TotalScore:         autoScore,
+			AutoScore:          autoScore,
+			ObjectiveMax:       objectiveMax,
+			PendingManualCount: pendingManual,
+			ScoringStatus:      model.ScoringStatusAwaitingTeacher,
+			Status:             model.SubmissionStatusPending,
+			RecommendedLevel:   0,
+		}
+		if createErr := tx.CreateSubmission(created); createErr != nil {
+			if isUniqueConstraintError(createErr) {
+				replay, replayErr := tx.FindSubmissionByClientRequestID(userID, req.ClientRequestID)
+				if replayErr != nil {
+					return replayErr
+				}
+				if replay != nil {
+					matched, replayErr := replayIfCompatible(replay, req)
+					if replayErr != nil {
+						return replayErr
+					}
+					created = matched
+					return nil
+				}
+				return util.ErrAssessmentRetestDenied
+			}
+			return createErr
+		}
+		return tx.UpdateUserAssessmentStatus(userID, false)
+	})
+	if txErr != nil {
+		return nil, txErr
+	}
+	return created, nil
+}
+
+func replayIfCompatible(existing *model.AssessmentSubmission, req AssessmentSubmissionRequest) (*model.AssessmentSubmission, error) {
+	if existing.AssessmentID != req.AssessmentID || existing.PaperVersion != req.PaperVersion {
+		return nil, util.ErrAssessmentIdempotencyConflict
+	}
+	if !sameSubmittedAnswers(existing.Answers, req.Answers) {
+		return nil, util.ErrAssessmentIdempotencyConflict
+	}
+	return existing, nil
+}
+
+func sameSubmittedAnswers(stored json.RawMessage, incoming []model.QuestionAnswer) bool {
+	var storedAns []model.QuestionAnswer
+	if len(stored) > 0 {
+		if err := json.Unmarshal(stored, &storedAns); err != nil {
+			return false
+		}
+	}
+	return answersFingerprint(storedAns) == answersFingerprint(incoming)
+}
+
+func answersFingerprint(answers []model.QuestionAnswer) string {
+	cloned := append([]model.QuestionAnswer(nil), answers...)
+	sort.Slice(cloned, func(i, j int) bool { return cloned[i].QuestionID < cloned[j].QuestionID })
+	for i := range cloned {
+		cloned[i].Answer = strings.TrimSpace(cloned[i].Answer)
+	}
+	raw, err := json.Marshal(cloned)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }
 
 func (s *AssessmentService) ListSubmissions(page, limit int, status string, studentName string) ([]model.AssessmentSubmission, int64, error) {
@@ -296,7 +440,8 @@ func (s *AssessmentService) GradeSubmission(id uint, req GradeSubmissionRequest)
 	submission.TotalScore = req.Score
 	submission.Feedback = req.Feedback
 	submission.RecommendedLevel = req.RecommendedLevel
-	submission.Status = "completed"
+	submission.Status = model.SubmissionStatusCompleted
+	submission.ScoringStatus = model.ScoringStatusTeacherCompleted
 
 	return s.Repo.UpdateSubmission(submission)
 }
@@ -305,31 +450,120 @@ func (s *AssessmentService) DeleteSubmission(id uint) error {
 	return s.Repo.DeleteSubmission(id)
 }
 
+type ConfirmedDiagnosis struct {
+	AssessmentID     uint   `json:"assessmentId"`
+	SubmissionID     uint   `json:"submissionId"`
+	AttemptNo        int    `json:"attemptNo"`
+	RecommendedLevel int    `json:"recommendedLevel"`
+	Status           string `json:"status"`
+	PaperVersion     string `json:"paperVersion,omitempty"`
+}
+
 type StudentAssessmentStatus struct {
-	Submission        *model.AssessmentSubmission `json:"submission"`
-	CanTakeAssessment bool                        `json:"canTakeAssessment"`
+	Submission             *model.AssessmentSubmission `json:"submission"`
+	LastConfirmedDiagnosis *ConfirmedDiagnosis         `json:"lastConfirmedDiagnosis"`
+	StaleDiagnosis         *ConfirmedDiagnosis         `json:"staleDiagnosis,omitempty"`
+	HistoricalDiagnosis    *ConfirmedDiagnosis         `json:"historicalDiagnosis,omitempty"`
+	CanTakeAssessment      bool                        `json:"canTakeAssessment"`
+	HasPublishedPaper      bool                        `json:"hasPublishedPaper"`
+	AssessmentID           uint                        `json:"assessmentId,omitempty"`
+	PaperVersion           string                      `json:"paperVersion,omitempty"`
+}
+
+func missingPaperVersion(v string) bool {
+	return strings.TrimSpace(v) == ""
+}
+
+func diagnosisFromSubmission(sub *model.AssessmentSubmission) *ConfirmedDiagnosis {
+	if sub == nil {
+		return nil
+	}
+	return &ConfirmedDiagnosis{
+		AssessmentID:     sub.AssessmentID,
+		SubmissionID:     sub.ID,
+		AttemptNo:        sub.AttemptNo,
+		RecommendedLevel: sub.RecommendedLevel,
+		Status:           sub.Status,
+		PaperVersion:     sub.PaperVersion,
+	}
+}
+
+func (s *AssessmentService) GetConfirmedDiagnosisForUser(userID uint) (*ConfirmedDiagnosis, error) {
+	paper, qs, err := s.Repo.FindPublishedAssessmentWithQuestions()
+	if err != nil {
+		if errors.Is(err, util.ErrNoPublishedAssessment) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	version, err := ComputePaperVersion(paper.ID, qs)
+	if err != nil {
+		return nil, err
+	}
+	sub, err := s.Repo.FindConfirmedDiagnosis(userID, paper.ID, version)
+	if err != nil {
+		return nil, err
+	}
+	return diagnosisFromSubmission(sub), nil
 }
 
 func (s *AssessmentService) GetStudentAssessmentStatus(userID uint) (*StudentAssessmentStatus, error) {
-	// 获取用户重测权限状态
 	canTake, err := s.Repo.GetUserAssessmentStatus(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取默认评估 ID
-	defaultA, err := s.getOrCreateDefaultAssessment()
+	status := &StudentAssessmentStatus{
+		CanTakeAssessment: canTake,
+	}
+
+	paper, qs, err := s.Repo.FindPublishedAssessmentWithQuestions()
+	if errors.Is(err, util.ErrNoPublishedAssessment) {
+		return status, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取提交记录
-	submission, _ := s.Repo.FindSubmissionByUserAndAssessment(userID, defaultA.ID)
+	version, err := ComputePaperVersion(paper.ID, qs)
+	if err != nil {
+		return nil, err
+	}
 
-	return &StudentAssessmentStatus{
-		Submission:        submission,
-		CanTakeAssessment: canTake,
-	}, nil
+	status.HasPublishedPaper = true
+	status.AssessmentID = paper.ID
+	status.PaperVersion = version
+
+	latest, err := s.Repo.FindLatestAttempt(userID, paper.ID)
+	if err != nil {
+		return nil, err
+	}
+	status.Submission = latest
+
+	confirmed, err := s.Repo.FindConfirmedDiagnosis(userID, paper.ID, version)
+	if err != nil {
+		return nil, err
+	}
+	if confirmed != nil {
+		status.LastConfirmedDiagnosis = diagnosisFromSubmission(confirmed)
+		return status, nil
+	}
+
+	anyConfirmed, err := s.Repo.FindConfirmedDiagnosis(userID, paper.ID, "")
+	if err != nil {
+		return nil, err
+	}
+	if anyConfirmed == nil {
+		return status, nil
+	}
+	if missingPaperVersion(anyConfirmed.PaperVersion) {
+		status.HistoricalDiagnosis = diagnosisFromSubmission(anyConfirmed)
+		return status, nil
+	}
+	if anyConfirmed.PaperVersion != version {
+		status.StaleDiagnosis = diagnosisFromSubmission(anyConfirmed)
+	}
+	return status, nil
 }
 
 type StudentAssessmentResult struct {
@@ -342,38 +576,37 @@ type StudentAssessmentResult struct {
 }
 
 func (s *AssessmentService) GetStudentAssessmentResult(userID uint) (*StudentAssessmentResult, error) {
-	// 获取用户测试状态
 	canTake, err := s.Repo.GetUserAssessmentStatus(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取默认测试 ID
-	defaultA, err := s.getOrCreateDefaultAssessment()
+	result := &StudentAssessmentResult{
+		CanTakeAssessment: canTake,
+		HasSubmitted:      false,
+		Status:            "untested",
+	}
+
+	paper, _, err := s.Repo.FindPublishedAssessmentWithQuestions()
+	if errors.Is(err, util.ErrNoPublishedAssessment) {
+		return result, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取提交记录
-	submission, err := s.Repo.FindSubmissionByUserAndAssessment(userID, defaultA.ID)
-
-	result := &StudentAssessmentResult{
-		CanTakeAssessment: canTake,
-	}
-
+	submission, err := s.Repo.FindLatestAttempt(userID, paper.ID)
 	if err != nil {
-		// 没有提交记录
-		result.HasSubmitted = false
-		result.Status = "untested"
+		return nil, err
+	}
+	if submission == nil {
 		return result, nil
 	}
 
-	// 有提交记录
 	result.HasSubmitted = true
 	result.Status = submission.Status
 	result.TotalScore = submission.TotalScore
 	result.Feedback = submission.Feedback
 	result.RecommendedLevel = submission.RecommendedLevel
-
 	return result, nil
 }

@@ -59,18 +59,16 @@ func (s *LearningPathService) GetStudentPath(userID uint, p StudentPathListParam
 		p.Limit = 10
 	}
 
-	// 1. 获取学生的学前测试建议等级
 	var recommendedLevel int
-	// 先获取默认评估 ID
-	var assessmentID uint = 1 // 默认
-	as, _, err := s.AssessmentRepo.ListAssessments(1, 1)
-	if err == nil && len(as) > 0 {
-		assessmentID = as[0].ID
-	}
-
-	submission, err := s.AssessmentRepo.FindSubmissionByUserAndAssessment(userID, assessmentID)
-	if err == nil && submission != nil {
-		recommendedLevel = submission.RecommendedLevel
+	paper, qs, err := s.AssessmentRepo.FindPublishedAssessmentWithQuestions()
+	if err == nil && paper != nil {
+		version, verErr := ComputePaperVersion(paper.ID, qs)
+		if verErr == nil {
+			confirmed, confErr := s.AssessmentRepo.FindConfirmedDiagnosis(userID, paper.ID, version)
+			if confErr == nil && confirmed != nil {
+				recommendedLevel = confirmed.RecommendedLevel
+			}
+		}
 	}
 
 	// 获取用户已完成的记录
@@ -191,17 +189,16 @@ type MaterialDetailResponse struct {
 }
 
 func (s *LearningPathService) GetMaterialsByLevel(userID uint, level int) ([]MaterialDetailResponse, error) {
-	// 1. 检查权限：只有当学生建议等级 >= 请求等级时，才允许获取详细内容
 	var recommendedLevel int
-	var assessmentID uint = 1
-	as, _, err := s.AssessmentRepo.ListAssessments(1, 1)
-	if err == nil && len(as) > 0 {
-		assessmentID = as[0].ID
-	}
-
-	submission, err := s.AssessmentRepo.FindSubmissionByUserAndAssessment(userID, assessmentID)
-	if err == nil && submission != nil {
-		recommendedLevel = submission.RecommendedLevel
+	paper, qs, err := s.AssessmentRepo.FindPublishedAssessmentWithQuestions()
+	if err == nil && paper != nil {
+		version, verErr := ComputePaperVersion(paper.ID, qs)
+		if verErr == nil {
+			confirmed, confErr := s.AssessmentRepo.FindConfirmedDiagnosis(userID, paper.ID, version)
+			if confErr == nil && confirmed != nil {
+				recommendedLevel = confirmed.RecommendedLevel
+			}
+		}
 	}
 
 	if level > recommendedLevel {

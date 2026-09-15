@@ -137,6 +137,26 @@ func TestUnansweredObjectivePersistsZero(t *testing.T) {
 	}
 }
 
+func TestScoreRecordsPaperOrdinalNotDatabaseID(t *testing.T) {
+	qs := []model.AssessmentQuestion{
+		question(3, model.AssessmentQuestion{QuestionType: "single_choice", Content: "循环题", Options: choiceOptions(), Answer: "0", Points: 5}),
+		question(2, model.AssessmentQuestion{QuestionType: "single_choice", Content: "数组题", Options: choiceOptions(), Answer: "0", Points: 5}),
+	}
+	results, _, _, _, err := validateAndScoreAnswers(qs, []model.QuestionAnswer{
+		{QuestionID: 3, Answer: "1"},
+		{QuestionID: 2, Answer: "1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if results[0].QuestionID != 3 || results[0].QuestionIndex != 1 || results[0].QuestionSummary != "循环题" {
+		t.Fatalf("first item %+v", results[0])
+	}
+	if results[1].QuestionID != 2 || results[1].QuestionIndex != 2 || results[1].QuestionSummary != "数组题" {
+		t.Fatalf("second item %+v", results[1])
+	}
+}
+
 func TestAmbiguousKeyExcludedFromObjectiveMax(t *testing.T) {
 	qs := []model.AssessmentQuestion{
 		question(1, model.AssessmentQuestion{QuestionType: "true_false", Answer: "0", Points: 5}),

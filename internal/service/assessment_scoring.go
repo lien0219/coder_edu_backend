@@ -33,6 +33,9 @@ type paperVersionPayload struct {
 	Questions    []paperVersionQuestion `json:"questions"`
 }
 
+// ComputePaperVersion 只哈希试卷内容（题干选项、标准答案、分值、题目更新时间）。
+// 题目–知识点关联不进入版本：改映射不得使已确认诊断失效。
+// 推荐使用提交时写入 item_results.knowledgePointIds 的快照，避免旧答卷套用新关联。
 func ComputePaperVersion(assessmentID uint, questions []model.AssessmentQuestion) (string, error) {
 	payload := paperVersionPayload{
 		AssessmentID: assessmentID,
@@ -101,6 +104,20 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func questionSummary(q model.AssessmentQuestion) string {
+	s := strings.TrimSpace(q.Title)
+	if s == "" {
+		s = strings.TrimSpace(q.Content)
+	}
+	s = strings.Join(strings.Fields(s), " ")
+	runes := []rune(s)
+	const max = 40
+	if len(runes) > max {
+		return string(runes[:max]) + "…"
+	}
+	return s
 }
 
 func isTrueToken(s string) bool {
@@ -218,6 +235,7 @@ func scoreQuestion(q model.AssessmentQuestion, rawAnswer string) (scoredItem, er
 	item := model.AssessmentItemResult{
 		QuestionID:   q.ID,
 		QuestionType: q.QuestionType,
+		MaxPoints:    q.Points,
 	}
 	rawAnswer = strings.TrimSpace(rawAnswer)
 	switch q.QuestionType {
@@ -353,11 +371,13 @@ func validateAndScoreAnswers(questions []model.AssessmentQuestion, answers []mod
 	autoScore := 0
 	objectiveMax := 0
 	pendingManual := 0
-	for _, q := range questions {
+	for i, q := range questions {
 		scored, err := scoreQuestion(q, answerByID[q.ID])
 		if err != nil {
 			return nil, 0, 0, 0, err
 		}
+		scored.Result.QuestionIndex = i + 1
+		scored.Result.QuestionSummary = questionSummary(q)
 		results = append(results, scored.Result)
 		autoScore += scored.Result.PointsAwarded
 		if scored.Result.AutoResult == model.AutoResultPendingManual {

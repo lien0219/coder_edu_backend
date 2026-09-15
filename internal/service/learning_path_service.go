@@ -3,11 +3,15 @@ package service
 import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"coder_edu_backend/internal/util"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type LearningPathService struct {
@@ -51,7 +55,13 @@ type StudentPathListParams struct {
 	Completed *bool
 }
 
-func (s *LearningPathService) GetStudentPath(userID uint, p StudentPathListParams) ([]StudentMaterialResponse, int64, error) {
+type StudentPathResult struct {
+	Items           []StudentMaterialResponse   `json:"items"`
+	Total           int64                       `json:"total"`
+	Recommendations MaterialRecommendationBlock `json:"recommendations"`
+}
+
+func (s *LearningPathService) GetStudentPath(userID uint, p StudentPathListParams) (*StudentPathResult, error) {
 	if p.Page < 1 {
 		p.Page = 1
 	}
@@ -59,26 +69,23 @@ func (s *LearningPathService) GetStudentPath(userID uint, p StudentPathListParam
 		p.Limit = 10
 	}
 
-	var recommendedLevel int
-	paper, qs, err := s.AssessmentRepo.FindPublishedAssessmentWithQuestions()
-	if err == nil && paper != nil {
-		version, verErr := ComputePaperVersion(paper.ID, qs)
-		if verErr == nil {
-			confirmed, confErr := s.AssessmentRepo.FindConfirmedDiagnosis(userID, paper.ID, version)
-			if confErr == nil && confirmed != nil {
-				recommendedLevel = confirmed.RecommendedLevel
-			}
-		}
+	confirmed, err := s.loadConfirmedDiagnosis(userID)
+	if err != nil {
+		return nil, err
 	}
+	recommendedLevel := recommendedLevelOf(confirmed)
 
-	// 获取用户已完成的记录
 	completions, _ := s.Repo.GetUserCompletions(userID)
 	completedMap := make(map[string]bool)
 	for _, c := range completions {
 		completedMap[c.MaterialID] = true
 	}
 
-	// 2. 获取学习资料（数据库侧：等级、标题筛选）
+	recs, recErr := s.BuildMaterialRecommendations(userID, confirmed, completedMap)
+	if recErr != nil {
+		return nil, recErr
+	}
+
 	levelFilter := p.Level
 	if !(levelFilter >= 1 && levelFilter <= model.LearningLevelAdvanced) {
 		levelFilter = 0
@@ -86,10 +93,9 @@ func (s *LearningPathService) GetStudentPath(userID uint, p StudentPathListParam
 	search := strings.TrimSpace(p.Search)
 	materials, err := s.Repo.FindMaterialsForStudentListing(levelFilter, search)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	// 3. 构建返回列表并设置解锁状态
 	res := make([]StudentMaterialResponse, 0, len(materials))
 	for _, m := range materials {
 		res = append(res, StudentMaterialResponse{
@@ -116,26 +122,57 @@ func (s *LearningPathService) GetStudentPath(userID uint, p StudentPathListParam
 
 	total := int64(len(filtered))
 	offset := (p.Page - 1) * p.Limit
-	if offset >= len(filtered) {
-		return []StudentMaterialResponse{}, total, nil
+	items := []StudentMaterialResponse{}
+	if offset < len(filtered) {
+		end := offset + p.Limit
+		if end > len(filtered) {
+			end = len(filtered)
+		}
+		items = filtered[offset:end]
 	}
-	end := offset + p.Limit
-	if end > len(filtered) {
-		end = len(filtered)
-	}
-	return filtered[offset:end], total, nil
+	return &StudentPathResult{
+		Items:           items,
+		Total:           total,
+		Recommendations: recs,
+	}, nil
 }
 
 type CreateMaterialRequest struct {
-	Level         int    `json:"level" binding:"required"`
-	TotalChapters int    `json:"totalChapters"`
-	ChapterNumber int    `json:"chapterNumber"`
-	Title         string `json:"title" binding:"required"`
-	Content       string `json:"content" binding:"required"`
-	Points        int    `json:"points"`
+	Level             int       `json:"level" binding:"required"`
+	TotalChapters     int       `json:"totalChapters"`
+	ChapterNumber     int       `json:"chapterNumber"`
+	Title             string    `json:"title" binding:"required"`
+	Content           string    `json:"content" binding:"required"`
+	Points            int       `json:"points"`
+	KnowledgePointIDs *[]string `json:"knowledgePointIds"` // nil=不改关联；[]=清空
 }
 
-func (s *LearningPathService) CreateMaterial(creatorID uint, req CreateMaterialRequest) (*model.LearningPathMaterial, error) {
+type MaterialView struct {
+	model.LearningPathMaterial
+	KnowledgePointIDs []string `json:"knowledgePointIds"`
+}
+
+func (s *LearningPathService) attachMaterialKnowledgePoints(ms []model.LearningPathMaterial) ([]MaterialView, error) {
+	ids := make([]string, len(ms))
+	for i, m := range ms {
+		ids[i] = m.ID
+	}
+	linked, err := s.Repo.ListKnowledgePointIDsByMaterialIDs(ids)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]MaterialView, len(ms))
+	for i, m := range ms {
+		kps := linked[m.ID]
+		if kps == nil {
+			kps = []string{}
+		}
+		views[i] = MaterialView{LearningPathMaterial: m, KnowledgePointIDs: kps}
+	}
+	return views, nil
+}
+
+func (s *LearningPathService) CreateMaterial(creatorID uint, req CreateMaterialRequest) (*MaterialView, error) {
 	material := &model.LearningPathMaterial{
 		ID:            uuid.New().String(),
 		Level:         req.Level,
@@ -146,21 +183,50 @@ func (s *LearningPathService) CreateMaterial(creatorID uint, req CreateMaterialR
 		Points:        req.Points,
 		CreatorID:     creatorID,
 	}
-	if err := s.Repo.CreateMaterial(material); err != nil {
+	err := s.Repo.WithTx(func(tx *repository.LearningPathRepository) error {
+		if err := tx.CreateMaterial(material); err != nil {
+			return err
+		}
+		if req.KnowledgePointIDs != nil {
+			return tx.ReplaceMaterialKnowledgePoints(material.ID, *req.KnowledgePointIDs)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	return material, nil
+	views, err := s.attachMaterialKnowledgePoints([]model.LearningPathMaterial{*material})
+	if err != nil {
+		return nil, err
+	}
+	return &views[0], nil
 }
 
-func (s *LearningPathService) ListMaterials(level int, page, limit int) ([]model.LearningPathMaterial, int64, error) {
-	return s.Repo.ListMaterials(level, page, limit)
+func (s *LearningPathService) ListMaterials(level int, page, limit int) ([]MaterialView, int64, error) {
+	ms, total, err := s.Repo.ListMaterials(level, page, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	views, err := s.attachMaterialKnowledgePoints(ms)
+	if err != nil {
+		return nil, 0, err
+	}
+	return views, total, nil
 }
 
-func (s *LearningPathService) GetMaterial(id string) (*model.LearningPathMaterial, error) {
-	return s.Repo.FindMaterialByID(id)
+func (s *LearningPathService) GetMaterial(id string) (*MaterialView, error) {
+	material, err := s.Repo.FindMaterialByID(id)
+	if err != nil {
+		return nil, err
+	}
+	views, err := s.attachMaterialKnowledgePoints([]model.LearningPathMaterial{*material})
+	if err != nil {
+		return nil, err
+	}
+	return &views[0], nil
 }
 
-func (s *LearningPathService) UpdateMaterial(id string, req CreateMaterialRequest) (*model.LearningPathMaterial, error) {
+func (s *LearningPathService) UpdateMaterial(id string, req CreateMaterialRequest) (*MaterialView, error) {
 	material, err := s.Repo.FindMaterialByID(id)
 	if err != nil {
 		return nil, err
@@ -173,10 +239,23 @@ func (s *LearningPathService) UpdateMaterial(id string, req CreateMaterialReques
 	material.Content = req.Content
 	material.Points = req.Points
 
-	if err := s.Repo.UpdateMaterial(material); err != nil {
+	err = s.Repo.WithTx(func(tx *repository.LearningPathRepository) error {
+		if err := tx.UpdateMaterial(material); err != nil {
+			return err
+		}
+		if req.KnowledgePointIDs != nil {
+			return tx.ReplaceMaterialKnowledgePoints(material.ID, *req.KnowledgePointIDs)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	return material, nil
+	views, err := s.attachMaterialKnowledgePoints([]model.LearningPathMaterial{*material})
+	if err != nil {
+		return nil, err
+	}
+	return &views[0], nil
 }
 
 func (s *LearningPathService) DeleteMaterial(id string) error {
@@ -189,20 +268,14 @@ type MaterialDetailResponse struct {
 }
 
 func (s *LearningPathService) GetMaterialsByLevel(userID uint, level int) ([]MaterialDetailResponse, error) {
-	var recommendedLevel int
-	paper, qs, err := s.AssessmentRepo.FindPublishedAssessmentWithQuestions()
-	if err == nil && paper != nil {
-		version, verErr := ComputePaperVersion(paper.ID, qs)
-		if verErr == nil {
-			confirmed, confErr := s.AssessmentRepo.FindConfirmedDiagnosis(userID, paper.ID, version)
-			if confErr == nil && confirmed != nil {
-				recommendedLevel = confirmed.RecommendedLevel
-			}
-		}
+	confirmed, err := s.loadConfirmedDiagnosis(userID)
+	if err != nil {
+		return nil, err
 	}
+	recommendedLevel := recommendedLevelOf(confirmed)
 
-	if level > recommendedLevel {
-		return nil, nil // 或者返回一个特定的错误，表示未解锁
+	if level < model.LearningLevelBasic || level > model.LearningLevelAdvanced || level > recommendedLevel {
+		return nil, nil
 	}
 
 	// 获取用户已完成的记录
@@ -229,32 +302,69 @@ func (s *LearningPathService) GetMaterialsByLevel(userID uint, level int) ([]Mat
 	return res, nil
 }
 
-func (s *LearningPathService) CompleteMaterial(userID uint, materialID string) error {
-	// 1. 检查是否已经完成过
-	existing, err := s.Repo.FindCompletion(userID, materialID)
-	if err == nil && existing != nil {
-		return nil // 已经完成过了
+func (s *LearningPathService) assertMaterialAccessible(userID uint, material *model.LearningPathMaterial) error {
+	if material == nil {
+		return util.ErrResourceNotFound
 	}
-
-	// 2. 获取资料信息以获取积分
-	material, err := s.Repo.FindMaterialByID(materialID)
+	confirmed, err := s.loadConfirmedDiagnosis(userID)
 	if err != nil {
 		return err
 	}
-
-	// 3. 创建完成记录
-	completion := &model.LearningPathCompletion{
-		UserID:      userID,
-		MaterialID:  materialID,
-		CompletedAt: time.Now(),
+	level := recommendedLevelOf(confirmed)
+	if level <= 0 || material.Level > level {
+		return util.ErrMaterialNotAccessible
 	}
+	return nil
+}
 
-	if err := s.Repo.CreateCompletion(completion); err != nil {
+func (s *LearningPathService) CompleteMaterial(userID uint, materialID string) error {
+	material, err := s.Repo.FindMaterialByID(materialID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return util.ErrResourceNotFound
+		}
 		return err
 	}
 
-	// 4. 奖励积分 (如果 Points > 0)
-	if material.Points > 0 {
+	existing, err := s.Repo.FindCompletion(userID, materialID)
+	if err == nil && existing != nil && existing.ID != 0 {
+		return nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	if err := s.assertMaterialAccessible(userID, material); err != nil {
+		return err
+	}
+
+	return s.Repo.DB.Transaction(func(tx *gorm.DB) error {
+		pathTx := &repository.LearningPathRepository{DB: tx}
+		replay, findErr := pathTx.FindCompletion(userID, materialID)
+		if findErr == nil && replay != nil && replay.ID != 0 {
+			return nil
+		}
+		if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return findErr
+		}
+
+		completion := &model.LearningPathCompletion{
+			UserID:      userID,
+			MaterialID:  materialID,
+			CompletedAt: time.Now(),
+		}
+		if createErr := pathTx.CreateCompletion(completion); createErr != nil {
+			if isLearningPathCompletionConflict(createErr) {
+				return nil
+			}
+			return createErr
+		}
+
+		if material.Points <= 0 {
+			return nil
+		}
+
+		logTx := &repository.LearningLogRepository{DB: tx}
 		log := &model.LearningLog{
 			UserID:    userID,
 			Activity:  "learning_path_complete",
@@ -262,13 +372,13 @@ func (s *LearningPathService) CompleteMaterial(userID uint, materialID string) e
 			Score:     material.Points,
 			Completed: true,
 		}
-		_ = s.LearningLogRepo.Create(log)
+		if logErr := logTx.Create(log); logErr != nil {
+			return logErr
+		}
 
-		// 显式更新用户表中的 XP 字段
-		_ = s.UserRepo.UpdateXP(userID, material.Points)
-	}
-
-	return nil
+		userTx := &repository.UserRepository{DB: tx}
+		return userTx.AddXP(userID, material.Points)
+	})
 }
 
 type RecordLearningTimeRequest struct {
@@ -278,6 +388,12 @@ type RecordLearningTimeRequest struct {
 func (s *LearningPathService) RecordLearningTime(userID uint, materialID string, duration int) error {
 	material, err := s.Repo.FindMaterialByID(materialID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return util.ErrResourceNotFound
+		}
+		return err
+	}
+	if err := s.assertMaterialAccessible(userID, material); err != nil {
 		return err
 	}
 
@@ -289,4 +405,31 @@ func (s *LearningPathService) RecordLearningTime(userID uint, materialID string,
 	}
 
 	return s.LearningLogRepo.Create(log)
+}
+
+// isLearningPathCompletionConflict 仅识别 (user_id, material_id) 目标唯一索引冲突。
+// 其他唯一冲突、死锁、锁等待超时、连接错误不得当作“已完成”。
+func isLearningPathCompletionConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) {
+		return mysqlErr.Number == 1062 &&
+			strings.Contains(mysqlErr.Message, "idx_learning_path_completion_user_material")
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "deadlock") || strings.Contains(msg, "lock wait timeout") {
+		return false
+	}
+	hasIndex := strings.Contains(msg, "idx_learning_path_completion_user_material")
+	hasCols := strings.Contains(msg, "learning_path_completions") &&
+		strings.Contains(msg, "user_id") &&
+		strings.Contains(msg, "material_id")
+	if !hasIndex && !hasCols {
+		return false
+	}
+	return strings.Contains(msg, "duplicate") ||
+		strings.Contains(msg, "unique") ||
+		strings.Contains(msg, "constraint failed")
 }

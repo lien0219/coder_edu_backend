@@ -3,10 +3,25 @@ package controller
 import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
+	"errors"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+func respondLearningPathError(ctx *gin.Context, err error) {
+	switch {
+	case errors.Is(err, util.ErrInvalidKnowledgePoint):
+		util.BadRequest(ctx, err.Error())
+	case errors.Is(err, util.ErrMaterialNotAccessible):
+		util.Error(ctx, 403, err.Error())
+	case errors.Is(err, util.ErrResourceNotFound), errors.Is(err, gorm.ErrRecordNotFound):
+		util.NotFound(ctx)
+	default:
+		util.InternalServerError(ctx)
+	}
+}
 
 type LearningPathController struct {
 	Service *service.LearningPathService
@@ -39,7 +54,7 @@ func (c *LearningPathController) CreateMaterial(ctx *gin.Context) {
 
 	material, err := c.Service.CreateMaterial(user.UserID, req)
 	if err != nil {
-		util.InternalServerError(ctx)
+		respondLearningPathError(ctx, err)
 		return
 	}
 
@@ -86,7 +101,7 @@ func (c *LearningPathController) GetMaterial(ctx *gin.Context) {
 
 	m, err := c.Service.GetMaterial(id)
 	if err != nil {
-		util.NotFound(ctx)
+		respondLearningPathError(ctx, err)
 		return
 	}
 
@@ -113,7 +128,7 @@ func (c *LearningPathController) UpdateMaterial(ctx *gin.Context) {
 
 	m, err := c.Service.UpdateMaterial(id, req)
 	if err != nil {
-		util.InternalServerError(ctx)
+		respondLearningPathError(ctx, err)
 		return
 	}
 
@@ -186,7 +201,7 @@ func (c *LearningPathController) GetStudentPath(ctx *gin.Context) {
 		}
 	}
 
-	items, total, err := c.Service.GetStudentPath(user.UserID, service.StudentPathListParams{
+	result, err := c.Service.GetStudentPath(user.UserID, service.StudentPathListParams{
 		Page:      page,
 		Limit:     limit,
 		Search:    ctx.Query("search"),
@@ -200,10 +215,11 @@ func (c *LearningPathController) GetStudentPath(ctx *gin.Context) {
 	}
 
 	util.Success(ctx, gin.H{
-		"items": items,
-		"total": total,
-		"page":  page,
-		"limit": limit,
+		"items":           result.Items,
+		"total":           result.Total,
+		"page":            page,
+		"limit":           limit,
+		"recommendations": result.Recommendations,
 	})
 }
 
@@ -260,7 +276,7 @@ func (c *LearningPathController) RecordLearningTime(ctx *gin.Context) {
 	}
 
 	if err := c.Service.RecordLearningTime(user.UserID, id, req.Duration); err != nil {
-		util.InternalServerError(ctx)
+		respondLearningPathError(ctx, err)
 		return
 	}
 
@@ -283,7 +299,7 @@ func (c *LearningPathController) CompleteMaterial(ctx *gin.Context) {
 
 	id := ctx.Param("id")
 	if err := c.Service.CompleteMaterial(user.UserID, id); err != nil {
-		util.InternalServerError(ctx)
+		respondLearningPathError(ctx, err)
 		return
 	}
 

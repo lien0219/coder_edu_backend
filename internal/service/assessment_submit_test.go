@@ -6,8 +6,10 @@ package service
 // SELECT FOR UPDATE、事务隔离、唯一约束冲突语义。
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -104,6 +106,11 @@ func openAssessmentTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE UNIQUE INDEX idx_assessment_attempt ON assessment_submissions (user_id, assessment_id, attempt_no)`,
 		`CREATE UNIQUE INDEX idx_assessment_submit_idempotent ON assessment_submissions (user_id, client_request_id)`,
+		`CREATE TABLE assessment_question_knowledge_points (
+			assessment_question_id INTEGER NOT NULL,
+			knowledge_point_id TEXT NOT NULL,
+			PRIMARY KEY (assessment_question_id, knowledge_point_id)
+		)`,
 	}
 	for _, stmt := range stmts {
 		if err := db.Exec(stmt).Error; err != nil {
@@ -166,6 +173,10 @@ func publishPaper(t *testing.T, svc *AssessmentService, title string, questions 
 	return loaded, ver
 }
 
+func intPtr(v int) *int {
+	return &v
+}
+
 func newAssessmentService(t *testing.T) (*AssessmentService, *gorm.DB) {
 	db := openAssessmentTestDB(t)
 	return NewAssessmentService(repository.NewAssessmentRepository(db)), db
@@ -201,6 +212,91 @@ func TestStudentGetDoesNotCreateOrFallback(t *testing.T) {
 	}
 	if paper.PaperVersion != ver {
 		t.Fatalf("version mismatch")
+	}
+}
+
+func TestListStudentQuestionsOmitsAnswerKeysAndKeepsDistinctIDs(t *testing.T) {
+	svc, _ := newAssessmentService(t)
+	loopOpts := json.RawMessage(`[{"label":"A","text":"2","isCorrect":false},{"label":"B","text":"3","isCorrect":true,"answer":"3"}]`)
+	arrayOpts := json.RawMessage(`[{"label":"A","text":"10"},{"label":"B","text":"20","isCorrect":true},{"label":"C","text":"30"}]`)
+	published, _ := publishPaper(t, svc, "student-safe-paper", []model.AssessmentQuestion{
+		{QuestionType: "single_choice", Content: "循环题", Options: loopOpts, Answer: "B", Explanation: "循环次数是3", Points: 5},
+		{QuestionType: "single_choice", Content: "数组题", Options: arrayOpts, Answer: "B", Explanation: "长度是20", Points: 5},
+	})
+
+	paper, err := svc.ListStudentQuestions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paper.AssessmentID != published.ID {
+		t.Fatalf("want paper %d, got %d", published.ID, paper.AssessmentID)
+	}
+	if len(paper.Questions) != 2 {
+		t.Fatalf("want 2 questions, got %d", len(paper.Questions))
+	}
+	if paper.Questions[0].ID == 0 || paper.Questions[1].ID == 0 || paper.Questions[0].ID == paper.Questions[1].ID {
+		t.Fatalf("student paper must return two different question ids: %+v", paper.Questions)
+	}
+
+	raw, err := json.Marshal(paper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	qs, ok := decoded["questions"].([]interface{})
+	if !ok || len(qs) != 2 {
+		t.Fatalf("questions json %+v", decoded["questions"])
+	}
+	ids := map[float64]struct{}{}
+	for _, item := range qs {
+		q, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("question not object: %#v", item)
+		}
+		if _, exists := q["answer"]; exists {
+			t.Fatal("student question must not expose answer")
+		}
+		if _, exists := q["explanation"]; exists {
+			t.Fatal("student question must not expose explanation")
+		}
+		if _, exists := q["correctAnswer"]; exists {
+			t.Fatal("student question must not expose correctAnswer")
+		}
+		id, _ := q["id"].(float64)
+		if id == 0 {
+			t.Fatal("missing question id")
+		}
+		if _, dup := ids[id]; dup {
+			t.Fatalf("duplicate question id %v", id)
+		}
+		ids[id] = struct{}{}
+		opts, _ := q["options"].([]interface{})
+		if len(opts) == 0 {
+			t.Fatal("options missing")
+		}
+		for _, optRaw := range opts {
+			opt, _ := optRaw.(map[string]interface{})
+			if _, exists := opt["isCorrect"]; exists {
+				t.Fatalf("option leaked isCorrect: %#v", opt)
+			}
+			if _, exists := opt["answer"]; exists {
+				t.Fatalf("option leaked answer: %#v", opt)
+			}
+			if _, exists := opt["explanation"]; exists {
+				t.Fatalf("option leaked explanation: %#v", opt)
+			}
+		}
+	}
+
+	teacherQ, err := svc.GetQuestion(paper.Questions[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if teacherQ.Answer != "B" || teacherQ.Explanation == "" {
+		t.Fatalf("teacher question must keep answer/explanation: %+v", teacherQ)
 	}
 }
 
@@ -464,7 +560,7 @@ func TestStudentIsolationAndDiagnosisScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.GradeSubmission(subA.ID, GradeSubmissionRequest{Score: 10, RecommendedLevel: 3, Feedback: "ok"}); err != nil {
+	if err := svc.GradeSubmission(subA.ID, GradeSubmissionRequest{Score: intPtr(10), RecommendedLevel: 3, Feedback: "ok"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -486,21 +582,30 @@ func TestStudentIsolationAndDiagnosisScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pending.AttemptNo != 2 || pending.RecommendedLevel != 0 {
-		t.Fatalf("new pending %+v", pending)
+	if pending.AttemptNo != 2 {
+		t.Fatalf("new attempt %+v", pending)
+	}
+	if pending.Status != model.SubmissionStatusCompleted || pending.RecommendedLevel != 1 {
+		t.Fatalf("objective retest must auto-complete as the new diagnosis %+v", pending)
 	}
 	statusA, err := svc.GetStudentAssessmentStatus(a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if statusA.LastConfirmedDiagnosis == nil || statusA.LastConfirmedDiagnosis.RecommendedLevel != 3 {
-		t.Fatalf("pending retest must keep confirmed diagnosis %+v", statusA.LastConfirmedDiagnosis)
+	if statusA.LastConfirmedDiagnosis == nil || statusA.LastConfirmedDiagnosis.SubmissionID != pending.ID {
+		t.Fatalf("objective retest must replace confirmed diagnosis %+v", statusA.LastConfirmedDiagnosis)
+	}
+	if statusA.LastConfirmedDiagnosis.RecommendedLevel != 1 {
+		t.Fatalf("wrong-answer retest level %+v", statusA.LastConfirmedDiagnosis)
 	}
 	if statusA.LastConfirmedDiagnosis.PaperVersion != ver {
 		t.Fatalf("confirmed diagnosis must match claimed version %s", ver)
 	}
+	if statusA.LastConfirmedDiagnosis.ScoringStatus != model.ScoringStatusSystemCompleted {
+		t.Fatalf("retest source %+v", statusA.LastConfirmedDiagnosis)
+	}
 	if statusA.Submission == nil || statusA.Submission.ID != pending.ID {
-		t.Fatalf("latest attempt should be pending %+v", statusA.Submission)
+		t.Fatalf("latest attempt should be the retest %+v", statusA.Submission)
 	}
 
 	qs[0].Answer = "1"
@@ -514,7 +619,7 @@ func TestStudentIsolationAndDiagnosisScope(t *testing.T) {
 	if statusEdited.LastConfirmedDiagnosis != nil {
 		t.Fatalf("edited paper must not silently reuse old diagnosis %+v", statusEdited.LastConfirmedDiagnosis)
 	}
-	if statusEdited.StaleDiagnosis == nil || statusEdited.StaleDiagnosis.RecommendedLevel != 3 {
+	if statusEdited.StaleDiagnosis == nil || statusEdited.StaleDiagnosis.RecommendedLevel != 1 {
 		t.Fatalf("incompatible diagnosis should be flagged stale %+v", statusEdited.StaleDiagnosis)
 	}
 
@@ -547,7 +652,7 @@ func TestDeleteThenRetestKeepsHistoryAndIncrementsAttemptNo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.GradeSubmission(first.ID, GradeSubmissionRequest{Score: 10, RecommendedLevel: 2, Feedback: "keep"}); err != nil {
+	if err := svc.GradeSubmission(first.ID, GradeSubmissionRequest{Score: intPtr(10), RecommendedLevel: 2, Feedback: "keep"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.DeleteSubmission(first.ID); err != nil {
@@ -605,7 +710,7 @@ func TestLegacyDiagnosisWithoutVersionKeepsHistoryDisplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.GradeSubmission(sub.ID, GradeSubmissionRequest{Score: 10, RecommendedLevel: 3, Feedback: "old"}); err != nil {
+	if err := svc.GradeSubmission(sub.ID, GradeSubmissionRequest{Score: intPtr(10), RecommendedLevel: 3, Feedback: "old"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.Repo.DB.Model(&model.AssessmentSubmission{}).Where("id = ?", sub.ID).UpdateColumn("paper_version", "").Error; err != nil {
@@ -643,5 +748,217 @@ func TestLegacyDiagnosisWithoutVersionKeepsHistoryDisplay(t *testing.T) {
 	}
 	if stored.RecommendedLevel != 3 || stored.PaperVersion != "" {
 		t.Fatalf("must keep teacher grade and empty version %+v", stored)
+	}
+}
+
+func TestObjectivePaperAutoCompletesAndIdempotentReplay(t *testing.T) {
+	svc, _ := newAssessmentService(t)
+	userID := createTestUser(t, svc.Repo.DB, true)
+	paper, ver := publishPaper(t, svc, "auto-obj", []model.AssessmentQuestion{{
+		QuestionType: "single_choice", Content: "x", Options: choiceOptions(), Answer: "0", Points: 10,
+	}})
+	qs, _ := svc.Repo.ListAllQuestions(paper.ID)
+	req := AssessmentSubmissionRequest{
+		AssessmentID:    paper.ID,
+		PaperVersion:    ver,
+		ClientRequestID: "auto-once",
+		Answers:         []model.QuestionAnswer{{QuestionID: qs[0].ID, Answer: "0"}},
+	}
+	first, err := svc.SubmitAssessment(userID, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Status != model.SubmissionStatusCompleted || first.ScoringStatus != model.ScoringStatusSystemCompleted {
+		t.Fatalf("pure objective must auto-complete %+v", first)
+	}
+	if first.AutoScore != 10 || first.TotalScore != 10 || first.RecommendedLevel != 4 {
+		t.Fatalf("auto score/level %+v", first)
+	}
+	canTake, err := svc.GetUserAssessmentStatus(userID)
+	if err != nil || canTake {
+		t.Fatalf("can_take_assessment must stay false, canTake=%v err=%v", canTake, err)
+	}
+
+	replay, err := svc.SubmitAssessment(userID, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replay.ID != first.ID {
+		t.Fatalf("idempotent replay created a second row %d vs %d", replay.ID, first.ID)
+	}
+	var count int64
+	svc.Repo.DB.Model(&model.AssessmentSubmission{}).Where("user_id = ?", userID).Count(&count)
+	if count != 1 {
+		t.Fatalf("want 1 submission, got %d", count)
+	}
+
+	status, err := svc.GetStudentAssessmentStatus(userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastConfirmedDiagnosis == nil || status.LastConfirmedDiagnosis.SubmissionID != first.ID {
+		t.Fatalf("auto-complete must be current diagnosis %+v", status.LastConfirmedDiagnosis)
+	}
+	raw, err := json.Marshal(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"explanation"`) || strings.Contains(string(raw), `"correctAnswer"`) {
+		t.Fatalf("student result must not leak standard answers: %s", raw)
+	}
+}
+
+func TestUnansweredObjectiveStillAutoCompletes(t *testing.T) {
+	svc, _ := newAssessmentService(t)
+	userID := createTestUser(t, svc.Repo.DB, true)
+	paper, ver := publishPaper(t, svc, "unanswered-obj", []model.AssessmentQuestion{
+		{QuestionType: "single_choice", Content: "q1", Options: choiceOptions(), Answer: "0", Points: 10},
+		{QuestionType: "true_false", Content: "q2", Options: tfOptions(), Answer: "0", Points: 10},
+	})
+	sub, err := svc.SubmitAssessment(userID, AssessmentSubmissionRequest{
+		AssessmentID:    paper.ID,
+		PaperVersion:    ver,
+		ClientRequestID: "blank-obj",
+		Answers:         nil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.Status != model.SubmissionStatusCompleted || sub.RecommendedLevel != 1 {
+		t.Fatalf("blank objective must auto-complete at level 1 %+v", sub)
+	}
+	if sub.AutoScore != 0 || sub.TotalScore != 0 || sub.ObjectiveMax != 20 {
+		t.Fatalf("blank scoring %+v", sub)
+	}
+	if sub.ScoringStatus != model.ScoringStatusSystemCompleted {
+		t.Fatalf("source %+v", sub)
+	}
+}
+
+func TestMixedPaperStaysPending(t *testing.T) {
+	svc, _ := newAssessmentService(t)
+	userID := createTestUser(t, svc.Repo.DB, true)
+	paper, ver := publishPaper(t, svc, "mixed", []model.AssessmentQuestion{
+		{QuestionType: "single_choice", Content: "x", Options: choiceOptions(), Answer: "0", Points: 10},
+		{QuestionType: "essay", Content: "write", Points: 10},
+	})
+	qs, _ := svc.Repo.ListAllQuestions(paper.ID)
+	sub, err := svc.SubmitAssessment(userID, AssessmentSubmissionRequest{
+		AssessmentID:    paper.ID,
+		PaperVersion:    ver,
+		ClientRequestID: "mixed-1",
+		Answers: []model.QuestionAnswer{
+			{QuestionID: qs[0].ID, Answer: "0"},
+			{QuestionID: qs[1].ID, Answer: "text"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.Status != model.SubmissionStatusPending || sub.RecommendedLevel != 0 {
+		t.Fatalf("mixed paper must wait for teacher %+v", sub)
+	}
+	if sub.ScoringStatus != model.ScoringStatusAwaitingTeacher || sub.PendingManualCount != 1 {
+		t.Fatalf("mixed scoring %+v", sub)
+	}
+	status, err := svc.GetStudentAssessmentStatus(userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastConfirmedDiagnosis != nil {
+		t.Fatalf("pending mixed must not become confirmed %+v", status.LastConfirmedDiagnosis)
+	}
+}
+
+func TestObjectiveMaxZeroDoesNotAutoComplete(t *testing.T) {
+	svc, _ := newAssessmentService(t)
+	userID := createTestUser(t, svc.Repo.DB, true)
+	a, err := svc.CreateAssessment(AssessmentRequest{Title: "zero-max"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := &model.AssessmentQuestion{
+		AssessmentID: a.ID,
+		QuestionType: "single_choice",
+		Content:      "x",
+		Options:      choiceOptions(),
+		Answer:       "0",
+		Points:       0,
+	}
+	if err := svc.Repo.CreateQuestion(q); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SetAssessmentPublished(a.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	qs, err := svc.Repo.ListAllQuestions(a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ver, err := ComputePaperVersion(a.ID, qs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := svc.SubmitAssessment(userID, AssessmentSubmissionRequest{
+		AssessmentID:    a.ID,
+		PaperVersion:    ver,
+		ClientRequestID: "zero-max-1",
+		Answers:         []model.QuestionAnswer{{QuestionID: qs[0].ID, Answer: "0"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.Status != model.SubmissionStatusPending || sub.RecommendedLevel != 0 || sub.ObjectiveMax != 0 {
+		t.Fatalf("objectiveMax=0 must not auto-complete %+v", sub)
+	}
+}
+
+func TestTeacherOverrideLevelKeepsObjectiveScore(t *testing.T) {
+	svc, _ := newAssessmentService(t)
+	userID := createTestUser(t, svc.Repo.DB, true)
+	qsDef := make([]model.AssessmentQuestion, 6)
+	for i := range qsDef {
+		qsDef[i] = model.AssessmentQuestion{
+			QuestionType: "single_choice", Content: "q", Options: choiceOptions(), Answer: "0", Points: 10,
+		}
+	}
+	paper, ver := publishPaper(t, svc, "forty-sixty", qsDef)
+	qs, _ := svc.Repo.ListAllQuestions(paper.ID)
+	answers := make([]model.QuestionAnswer, len(qs))
+	for i, q := range qs {
+		ans := "0"
+		if i >= 4 {
+			ans = "1"
+		}
+		answers[i] = model.QuestionAnswer{QuestionID: q.ID, Answer: ans}
+	}
+	sub, err := svc.SubmitAssessment(userID, AssessmentSubmissionRequest{
+		AssessmentID:    paper.ID,
+		PaperVersion:    ver,
+		ClientRequestID: "forty-sixty",
+		Answers:         answers,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.AutoScore != 40 || sub.ObjectiveMax != 60 || sub.RecommendedLevel != 2 {
+		t.Fatalf("40/60 auto level 2 %+v", sub)
+	}
+	if err := svc.GradeSubmission(sub.ID, GradeSubmissionRequest{
+		Score:            intPtr(60),
+		RecommendedLevel: 1,
+		Feedback:         "override",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := svc.Repo.FindSubmissionByID(sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.AutoScore != 40 || loaded.TotalScore != 40 || loaded.ObjectiveMax != 60 {
+		t.Fatalf("teacher level override must keep 40/60 %+v", loaded)
+	}
+	if loaded.RecommendedLevel != 1 || loaded.ScoringStatus != model.ScoringStatusTeacherCompleted {
+		t.Fatalf("teacher override source/level %+v", loaded)
 	}
 }

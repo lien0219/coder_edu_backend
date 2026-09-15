@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type AssessmentController struct {
@@ -82,6 +83,10 @@ func (c *AssessmentController) CreateQuestion(ctx *gin.Context) {
 
 	q, err := c.Service.CreateQuestion(req)
 	if err != nil {
+		if errors.Is(err, util.ErrInvalidKnowledgePoint) {
+			util.BadRequest(ctx, err.Error())
+			return
+		}
 		util.InternalServerError(ctx)
 		return
 	}
@@ -150,7 +155,11 @@ func (c *AssessmentController) GetQuestion(ctx *gin.Context) {
 
 	q, err := c.Service.GetQuestion(uint(id))
 	if err != nil {
-		util.NotFound(ctx)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			util.NotFound(ctx)
+			return
+		}
+		util.InternalServerError(ctx)
 		return
 	}
 
@@ -267,6 +276,14 @@ func (c *AssessmentController) UpdateQuestion(ctx *gin.Context) {
 
 	q, err := c.Service.UpdateQuestion(uint(id), req)
 	if err != nil {
+		if errors.Is(err, util.ErrInvalidKnowledgePoint) {
+			util.BadRequest(ctx, err.Error())
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			util.NotFound(ctx)
+			return
+		}
 		util.InternalServerError(ctx)
 		return
 	}

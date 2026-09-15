@@ -2,6 +2,7 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"coder_edu_backend/internal/util"
 	"time"
 
 	"gorm.io/gorm"
@@ -44,10 +45,21 @@ func (r *UserRepository) Update(user *model.User) error {
 }
 
 func (r *UserRepository) UpdateXP(userID uint, xp int) error {
-	return r.DB.Model(&model.User{}).
+	return r.AddXP(userID, xp)
+}
+
+// AddXP 为用户增加 XP，必须更新到恰好一行，否则返回错误供事务回滚。
+func (r *UserRepository) AddXP(userID uint, xp int) error {
+	res := r.DB.Model(&model.User{}).
 		Where("id = ?", userID).
-		UpdateColumn("xp", gorm.Expr("xp + ?", xp)).
-		Error
+		UpdateColumn("xp", gorm.Expr("xp + ?", xp))
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return util.ErrXPUpdateFailed
+	}
+	return nil
 }
 
 func (r *UserRepository) UpdateLastLogin(userID uint) error {

@@ -223,16 +223,19 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 	rg.POST("/student/migration-tasks/:id/submit", c.migrationTask.SubmitTask)
 	rg.POST("/student/migration-tasks/:id/learning-time", c.migrationTask.RecordLearningTime)
 
-	// 学前测试
-	rg.GET("/assessments/questions", c.assessment.GetStudentQuestions)
-	rg.POST("/assessments/submit", c.assessment.SubmitAssessment)
-	rg.GET("/assessments/result", c.assessment.GetMyResult)
+	// 学前诊断与学生学习路径：仅学生。管理员按 RoleMiddleware 既有规则放行。
+	studentOnly := rg.Group("")
+	studentOnly.Use(middleware.RoleMiddleware(model.Student))
+	{
+		studentOnly.GET("/assessments/questions", c.assessment.GetStudentQuestions)
+		studentOnly.POST("/assessments/submit", c.assessment.SubmitAssessment)
+		studentOnly.GET("/assessments/result", c.assessment.GetMyResult)
 
-	// 学习路径
-	rg.GET("/learning-path/student", c.learningPath.GetStudentPath)
-	rg.GET("/learning-path/levels/:level/materials", c.learningPath.GetMaterialsByLevel)
-	rg.POST("/learning-path/materials/:id/learning-time", c.learningPath.RecordLearningTime)
-	rg.POST("/learning-path/materials/:id/complete", c.learningPath.CompleteMaterial)
+		studentOnly.GET("/learning-path/student", c.learningPath.GetStudentPath)
+		studentOnly.GET("/learning-path/levels/:level/materials", c.learningPath.GetMaterialsByLevel)
+		studentOnly.POST("/learning-path/materials/:id/learning-time", c.learningPath.RecordLearningTime)
+		studentOnly.POST("/learning-path/materials/:id/complete", c.learningPath.CompleteMaterial)
+	}
 
 	// 有效反思
 	rg.GET("/reflections/my", c.reflection.GetMyReflection)

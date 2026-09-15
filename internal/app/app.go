@@ -3,6 +3,7 @@ package app
 import (
 	"coder_edu_backend/internal/config"
 	"coder_edu_backend/internal/controller"
+	"coder_edu_backend/internal/middleware"
 	"coder_edu_backend/internal/repository"
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/pkg/database"
@@ -374,7 +375,8 @@ func NewApp(cfg *config.Config) *App {
 	// 监控初始化
 	monitoring.Init()
 
-	router := gin.Default()
+	router := gin.New()
+	router.Use(middleware.SafeLogger(), middleware.SafeRecovery())
 	router.MaxMultipartMemory = 1536 << 20 // 1.5 GB
 	app.Router = router
 

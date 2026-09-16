@@ -2,8 +2,11 @@ package repository
 
 import (
 	"coder_edu_backend/internal/model"
+	"coder_edu_backend/internal/util"
+	"errors"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type AssessmentRepository struct {
@@ -80,6 +83,105 @@ func (r *AssessmentRepository) ListAssessments(page, limit int) ([]model.Assessm
 	return as, total, err
 }
 
+func (r *AssessmentRepository) UpdateAssessment(a *model.Assessment) error {
+	return r.DB.Save(a).Error
+}
+
+func (r *AssessmentRepository) FindPublishedAssessmentWithQuestions() (*model.Assessment, []model.AssessmentQuestion, error) {
+	var a model.Assessment
+	err := r.DB.Where("is_published = ?", true).
+		Where("id IN (SELECT assessment_id FROM assessment_questions WHERE deleted_at IS NULL)").
+		Order("COALESCE(published_at, updated_at) DESC, id DESC").
+		First(&a).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil, util.ErrNoPublishedAssessment
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	qs, err := r.ListAllQuestions(a.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(qs) == 0 {
+		return nil, nil, util.ErrNoPublishedAssessment
+	}
+	return &a, qs, nil
+}
+
+func (r *AssessmentRepository) WithTx(fn func(*AssessmentRepository) error) error {
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		return fn(&AssessmentRepository{DB: tx})
+	})
+}
+
+func (r *AssessmentRepository) LockUserForUpdate(userID uint) (*model.User, error) {
+	var user model.User
+	err := r.DB.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "can_take_assessment").
+		First(&user, userID).Error
+	return &user, err
+}
+
+func (r *AssessmentRepository) FindSubmissionByClientRequestID(userID uint, clientRequestID string) (*model.AssessmentSubmission, error) {
+	var s model.AssessmentSubmission
+	// 唯一索引含软删行，查找必须 Unscoped，避免删后同号插入撞唯一约束。
+	err := r.DB.Unscoped().Where("user_id = ? AND client_request_id = ?", userID, clientRequestID).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+func (r *AssessmentRepository) MaxAttemptNo(userID, assessmentID uint) (int, error) {
+	var max *int
+	err := r.DB.Unscoped().Model(&model.AssessmentSubmission{}).
+		Where("user_id = ? AND assessment_id = ?", userID, assessmentID).
+		Select("MAX(attempt_no)").
+		Scan(&max).Error
+	if err != nil {
+		return 0, err
+	}
+	if max == nil {
+		return 0, nil
+	}
+	return *max, nil
+}
+
+func (r *AssessmentRepository) FindLatestAttempt(userID, assessmentID uint) (*model.AssessmentSubmission, error) {
+	var s model.AssessmentSubmission
+	err := r.DB.Where("user_id = ? AND assessment_id = ?", userID, assessmentID).
+		Order("attempt_no DESC, id DESC").
+		First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+func (r *AssessmentRepository) FindConfirmedDiagnosis(userID, assessmentID uint, paperVersion string) (*model.AssessmentSubmission, error) {
+	var s model.AssessmentSubmission
+	query := r.DB.Where("user_id = ? AND assessment_id = ? AND status = ? AND recommended_level > 0",
+		userID, assessmentID, model.SubmissionStatusCompleted)
+	if paperVersion != "" {
+		query = query.Where("paper_version = ?", paperVersion)
+	}
+	err := query.Order("updated_at DESC, id DESC").First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 func (r *AssessmentRepository) CreateSubmission(s *model.AssessmentSubmission) error {
 	return r.DB.Create(s).Error
 }
@@ -88,9 +190,15 @@ func (r *AssessmentRepository) ListSubmissions(page, limit int, status string, s
 	var ss []model.AssessmentSubmission
 	var total int64
 
+	latestJoin := `LEFT JOIN assessment_submissions ON assessment_submissions.id = (
+		SELECT s2.id FROM assessment_submissions s2
+		WHERE s2.user_id = users.id AND s2.deleted_at IS NULL
+		ORDER BY s2.attempt_no DESC, s2.id DESC
+		LIMIT 1
+	)`
 	query := r.DB.Table("users").
 		Select("assessment_submissions.*, users.id as user_id_from_user, users.name as user_name, users.email as user_email").
-		Joins("LEFT JOIN assessment_submissions ON users.id = assessment_submissions.user_id AND assessment_submissions.deleted_at IS NULL").
+		Joins(latestJoin).
 		Where("users.role = ?", "student").
 		Where("users.deleted_at IS NULL")
 
@@ -156,12 +264,14 @@ func (r *AssessmentRepository) UpdateSubmission(s *model.AssessmentSubmission) e
 }
 
 func (r *AssessmentRepository) FindSubmissionByUserAndAssessment(userID, assessmentID uint) (*model.AssessmentSubmission, error) {
-	var s model.AssessmentSubmission
-	err := r.DB.Where("user_id = ? AND assessment_id = ?", userID, assessmentID).First(&s).Error
+	s, err := r.FindLatestAttempt(userID, assessmentID)
 	if err != nil {
 		return nil, err
 	}
-	return &s, nil
+	if s == nil {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return s, nil
 }
 
 func (r *AssessmentRepository) DeleteSubmission(id uint) error {

@@ -1,11 +1,15 @@
 package controller
 
 import (
+	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
+	"errors"
+	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type AssessmentController struct {
@@ -14,6 +18,52 @@ type AssessmentController struct {
 
 func NewAssessmentController(svc *service.AssessmentService) *AssessmentController {
 	return &AssessmentController{Service: svc}
+}
+
+func requireTeacherOrAdmin(ctx *gin.Context) bool {
+	user := util.GetUserFromContext(ctx)
+	if user == nil {
+		util.Unauthorized(ctx)
+		return false
+	}
+	if user.Role != model.Teacher && user.Role != model.Admin {
+		util.Forbidden(ctx)
+		return false
+	}
+	return true
+}
+
+func TeacherOrAdminMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if !requireTeacherOrAdmin(ctx) {
+			ctx.Abort()
+			return
+		}
+		ctx.Next()
+	}
+}
+
+func (c *AssessmentController) TeacherOrAdmin() gin.HandlerFunc {
+	return TeacherOrAdminMiddleware()
+}
+
+func respondAssessmentError(ctx *gin.Context, err error) {
+	switch {
+	case errors.Is(err, util.ErrNoPublishedAssessment):
+		util.Error(ctx, http.StatusNotFound, util.ErrNoPublishedAssessment.Error())
+	case errors.Is(err, util.ErrAssessmentPaperStale):
+		util.ErrorWithCode(ctx, http.StatusConflict, util.ErrCodeAssessmentPaperStale, util.ErrAssessmentPaperStale.Error())
+	case errors.Is(err, util.ErrAssessmentIdempotencyConflict):
+		util.ErrorWithCode(ctx, http.StatusConflict, util.ErrCodeAssessmentIdempotencyConflict, util.ErrAssessmentIdempotencyConflict.Error())
+	case errors.Is(err, util.ErrAssessmentPaperUnavailable):
+		util.ErrorWithCode(ctx, http.StatusConflict, util.ErrCodeAssessmentPaperUnavailable, util.ErrAssessmentPaperUnavailable.Error())
+	case errors.Is(err, util.ErrAssessmentSubmitInvalid), errors.Is(err, util.ErrAssessmentSubmitMissingMeta):
+		util.BadRequest(ctx, err.Error())
+	case errors.Is(err, util.ErrAssessmentRetestDenied):
+		util.Error(ctx, http.StatusForbidden, util.ErrAssessmentRetestDenied.Error())
+	default:
+		util.LogInternalError(ctx, err)
+	}
 }
 
 // @Summary 创建测试题
@@ -33,6 +83,10 @@ func (c *AssessmentController) CreateQuestion(ctx *gin.Context) {
 
 	q, err := c.Service.CreateQuestion(req)
 	if err != nil {
+		if errors.Is(err, util.ErrInvalidKnowledgePoint) {
+			util.BadRequest(ctx, err.Error())
+			return
+		}
 		util.InternalServerError(ctx)
 		return
 	}
@@ -101,7 +155,11 @@ func (c *AssessmentController) GetQuestion(ctx *gin.Context) {
 
 	q, err := c.Service.GetQuestion(uint(id))
 	if err != nil {
-		util.NotFound(ctx)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			util.NotFound(ctx)
+			return
+		}
+		util.InternalServerError(ctx)
 		return
 	}
 
@@ -134,7 +192,7 @@ func (c *AssessmentController) GetStudentQuestions(ctx *gin.Context) {
 
 	qs, err := c.Service.ListStudentQuestions()
 	if err != nil {
-		util.InternalServerError(ctx)
+		respondAssessmentError(ctx, err)
 		return
 	}
 
@@ -156,30 +214,19 @@ func (c *AssessmentController) SubmitAssessment(ctx *gin.Context) {
 		return
 	}
 
-	// 检查学生是否有权进行测试
-	canTake, err := c.Service.GetUserAssessmentStatus(user.UserID)
-	if err != nil {
-		util.InternalServerError(ctx)
-		return
-	}
-	if !canTake {
-		util.Error(ctx, 403, "您已完成测试，暂不可重测")
-		return
-	}
-
 	var req service.AssessmentSubmissionRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		util.BadRequest(ctx, err.Error())
 		return
 	}
 
-	_, err = c.Service.SubmitAssessment(user.UserID, req)
+	submission, err := c.Service.SubmitAssessment(user.UserID, req)
 	if err != nil {
-		util.InternalServerError(ctx)
+		respondAssessmentError(ctx, err)
 		return
 	}
 
-	util.Success(ctx, "提交成功")
+	util.Success(ctx, submission)
 }
 
 // @Summary 学生端：获取自己的评估状态和结果
@@ -229,6 +276,14 @@ func (c *AssessmentController) UpdateQuestion(ctx *gin.Context) {
 
 	q, err := c.Service.UpdateQuestion(uint(id), req)
 	if err != nil {
+		if errors.Is(err, util.ErrInvalidKnowledgePoint) {
+			util.BadRequest(ctx, err.Error())
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			util.NotFound(ctx)
+			return
+		}
 		util.InternalServerError(ctx)
 		return
 	}
@@ -334,6 +389,38 @@ func (c *AssessmentController) GetAssessment(ctx *gin.Context) {
 	util.Success(ctx, a)
 }
 
+// @Summary 发布或取消发布评估
+// @Tags 学前测试评估
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "评估ID"
+// @Param body body service.PublishAssessmentRequest true "发布状态"
+// @Success 200 {object} util.Response
+// @Router /api/teacher/assessments/{id}/publish [post]
+func (c *AssessmentController) PublishAssessment(ctx *gin.Context) {
+	if !requireTeacherOrAdmin(ctx) {
+		return
+	}
+	idStr := ctx.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		util.BadRequest(ctx, "invalid id")
+		return
+	}
+	var req service.PublishAssessmentRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+	a, err := c.Service.SetAssessmentPublished(uint(id), req.IsPublished)
+	if err != nil {
+		util.NotFound(ctx)
+		return
+	}
+	util.Success(ctx, a)
+}
+
 // @Summary 教师端：获取提交列表
 // @Tags 学前测试评估
 // @Produce json
@@ -393,6 +480,9 @@ func (c *AssessmentController) GetSubmissionDetail(ctx *gin.Context) {
 // @Success 200 {object} util.Response
 // @Router /api/teacher/assessments/submissions/{id}/grade [post]
 func (c *AssessmentController) GradeSubmission(ctx *gin.Context) {
+	if !requireTeacherOrAdmin(ctx) {
+		return
+	}
 	idStr := ctx.Param("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {

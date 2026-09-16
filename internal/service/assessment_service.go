@@ -3,7 +3,14 @@ package service
 import (
 	"coder_edu_backend/internal/model"
 	"coder_edu_backend/internal/repository"
+	"coder_edu_backend/internal/util"
 	"encoding/json"
+	"errors"
+	"sort"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
 )
 
 type AssessmentService struct {
@@ -15,15 +22,21 @@ func NewAssessmentService(repo *repository.AssessmentRepository) *AssessmentServ
 }
 
 type AssessmentQuestionRequest struct {
-	AssessmentID uint            `json:"assessmentId"` // 可选，用于后续扩展
-	QuestionType string          `json:"questionType" binding:"required"`
-	Title        string          `json:"title"`
-	Content      string          `json:"content" binding:"required"`
-	Options      json.RawMessage `json:"options"`
-	Answer       string          `json:"answer"`
-	Points       int             `json:"points"`
-	Order        int             `json:"order"`
-	Explanation  string          `json:"explanation"`
+	AssessmentID      uint            `json:"assessmentId"` // 可选，用于后续扩展
+	QuestionType      string          `json:"questionType" binding:"required"`
+	Title             string          `json:"title"`
+	Content           string          `json:"content" binding:"required"`
+	Options           json.RawMessage `json:"options"`
+	Answer            string          `json:"answer"`
+	Points            int             `json:"points"`
+	Order             int             `json:"order"`
+	Explanation       string          `json:"explanation"`
+	KnowledgePointIDs *[]string       `json:"knowledgePointIds"` // nil=不改关联；[]=清空
+}
+
+type AssessmentQuestionView struct {
+	model.AssessmentQuestion
+	KnowledgePointIDs []string `json:"knowledgePointIds"`
 }
 
 func (s *AssessmentService) getOrCreateDefaultAssessment() (*model.Assessment, error) {
@@ -43,7 +56,31 @@ func (s *AssessmentService) getOrCreateDefaultAssessment() (*model.Assessment, e
 	return newAssessment, nil
 }
 
-func (s *AssessmentService) CreateQuestion(req AssessmentQuestionRequest) (*model.AssessmentQuestion, error) {
+func emptyKnowledgePointIDs() []string {
+	return []string{}
+}
+
+func (s *AssessmentService) attachQuestionKnowledgePoints(qs []model.AssessmentQuestion) ([]AssessmentQuestionView, error) {
+	ids := make([]uint, len(qs))
+	for i, q := range qs {
+		ids[i] = q.ID
+	}
+	linked, err := s.Repo.ListKnowledgePointIDsByQuestionIDs(ids)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]AssessmentQuestionView, len(qs))
+	for i, q := range qs {
+		kps := linked[q.ID]
+		if kps == nil {
+			kps = emptyKnowledgePointIDs()
+		}
+		views[i] = AssessmentQuestionView{AssessmentQuestion: q, KnowledgePointIDs: kps}
+	}
+	return views, nil
+}
+
+func (s *AssessmentService) CreateQuestion(req AssessmentQuestionRequest) (*AssessmentQuestionView, error) {
 	if req.AssessmentID == 0 {
 		defaultA, err := s.getOrCreateDefaultAssessment()
 		if err != nil {
@@ -63,20 +100,41 @@ func (s *AssessmentService) CreateQuestion(req AssessmentQuestionRequest) (*mode
 		Order:        req.Order,
 		Explanation:  req.Explanation,
 	}
-	if err := s.Repo.CreateQuestion(q); err != nil {
+	err := s.Repo.WithTx(func(tx *repository.AssessmentRepository) error {
+		if err := tx.CreateQuestion(q); err != nil {
+			return err
+		}
+		if req.KnowledgePointIDs != nil {
+			return tx.ReplaceQuestionKnowledgePoints(q.ID, *req.KnowledgePointIDs)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	return q, nil
+	views, err := s.attachQuestionKnowledgePoints([]model.AssessmentQuestion{*q})
+	if err != nil {
+		return nil, err
+	}
+	return &views[0], nil
 }
 
-func (s *AssessmentService) ListQuestions(assessmentID uint, page, limit int) ([]model.AssessmentQuestion, int64, error) {
+func (s *AssessmentService) ListQuestions(assessmentID uint, page, limit int) ([]AssessmentQuestionView, int64, error) {
 	if assessmentID == 0 {
 		defaultA, err := s.getOrCreateDefaultAssessment()
 		if err == nil {
 			assessmentID = defaultA.ID
 		}
 	}
-	return s.Repo.ListQuestions(assessmentID, page, limit)
+	qs, total, err := s.Repo.ListQuestions(assessmentID, page, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	views, err := s.attachQuestionKnowledgePoints(qs)
+	if err != nil {
+		return nil, 0, err
+	}
+	return views, total, nil
 }
 
 type StudentAssessmentQuestion struct {
@@ -89,17 +147,56 @@ type StudentAssessmentQuestion struct {
 	Order        int             `json:"order"`
 }
 
-func (s *AssessmentService) ListStudentQuestions() ([]StudentAssessmentQuestion, error) {
-	defaultA, err := s.getOrCreateDefaultAssessment()
+type StudentPaperResponse struct {
+	AssessmentID uint                        `json:"assessmentId"`
+	Title        string                      `json:"title"`
+	PaperVersion string                      `json:"paperVersion"`
+	Questions    []StudentAssessmentQuestion `json:"questions"`
+}
+
+func sanitizeStudentOptions(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage("[]")
+	}
+	var objects []map[string]interface{}
+	if err := json.Unmarshal(raw, &objects); err == nil {
+		clean := make([]map[string]string, 0, len(objects))
+		for _, opt := range objects {
+			item := map[string]string{}
+			if v := stringifyOpt(opt["label"]); v != "" {
+				item["label"] = v
+			}
+			if v := stringifyOpt(opt["text"]); v != "" {
+				item["text"] = v
+			}
+			clean = append(clean, item)
+		}
+		out, err := json.Marshal(clean)
+		if err != nil {
+			return json.RawMessage("[]")
+		}
+		return out
+	}
+	var generic []interface{}
+	if err := json.Unmarshal(raw, &generic); err == nil {
+		out, err := json.Marshal(generic)
+		if err != nil {
+			return json.RawMessage("[]")
+		}
+		return out
+	}
+	return json.RawMessage("[]")
+}
+
+func (s *AssessmentService) ListStudentQuestions() (*StudentPaperResponse, error) {
+	paper, qs, err := s.Repo.FindPublishedAssessmentWithQuestions()
 	if err != nil {
 		return nil, err
 	}
-
-	qs, err := s.Repo.ListAllQuestions(defaultA.ID)
+	version, err := ComputePaperVersion(paper.ID, qs)
 	if err != nil {
 		return nil, err
 	}
-
 	res := make([]StudentAssessmentQuestion, len(qs))
 	for i, q := range qs {
 		res[i] = StudentAssessmentQuestion{
@@ -107,19 +204,32 @@ func (s *AssessmentService) ListStudentQuestions() ([]StudentAssessmentQuestion,
 			QuestionType: q.QuestionType,
 			Title:        q.Title,
 			Content:      q.Content,
-			Options:      q.Options,
+			Options:      sanitizeStudentOptions(q.Options),
 			Points:       q.Points,
 			Order:        q.Order,
 		}
 	}
-	return res, nil
+	return &StudentPaperResponse{
+		AssessmentID: paper.ID,
+		Title:        paper.Title,
+		PaperVersion: version,
+		Questions:    res,
+	}, nil
 }
 
-func (s *AssessmentService) GetQuestion(id uint) (*model.AssessmentQuestion, error) {
-	return s.Repo.FindQuestionByID(id)
+func (s *AssessmentService) GetQuestion(id uint) (*AssessmentQuestionView, error) {
+	q, err := s.Repo.FindQuestionByID(id)
+	if err != nil {
+		return nil, err
+	}
+	views, err := s.attachQuestionKnowledgePoints([]model.AssessmentQuestion{*q})
+	if err != nil {
+		return nil, err
+	}
+	return &views[0], nil
 }
 
-func (s *AssessmentService) UpdateQuestion(id uint, req AssessmentQuestionRequest) (*model.AssessmentQuestion, error) {
+func (s *AssessmentService) UpdateQuestion(id uint, req AssessmentQuestionRequest) (*AssessmentQuestionView, error) {
 	q, err := s.Repo.FindQuestionByID(id)
 	if err != nil {
 		return nil, err
@@ -138,10 +248,23 @@ func (s *AssessmentService) UpdateQuestion(id uint, req AssessmentQuestionReques
 	q.Points = req.Points
 	q.Order = req.Order
 	q.Explanation = req.Explanation
-	if err := s.Repo.UpdateQuestion(q); err != nil {
+	err = s.Repo.WithTx(func(tx *repository.AssessmentRepository) error {
+		if err := tx.UpdateQuestion(q); err != nil {
+			return err
+		}
+		if req.KnowledgePointIDs != nil {
+			return tx.ReplaceQuestionKnowledgePoints(q.ID, *req.KnowledgePointIDs)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	return q, nil
+	views, err := s.attachQuestionKnowledgePoints([]model.AssessmentQuestion{*q})
+	if err != nil {
+		return nil, err
+	}
+	return &views[0], nil
 }
 
 func (s *AssessmentService) DeleteQuestion(id uint) error {
@@ -152,6 +275,10 @@ type AssessmentRequest struct {
 	Title       string `json:"title" binding:"required"`
 	Description string `json:"description"`
 	TimeLimit   int    `json:"timeLimit"`
+}
+
+type PublishAssessmentRequest struct {
+	IsPublished bool `json:"isPublished"`
 }
 
 func (s *AssessmentService) CreateAssessment(req AssessmentRequest) (*model.Assessment, error) {
@@ -174,74 +301,221 @@ func (s *AssessmentService) GetAssessment(id uint) (*model.Assessment, error) {
 	return s.Repo.FindAssessmentByID(id)
 }
 
+func (s *AssessmentService) SetAssessmentPublished(id uint, published bool) (*model.Assessment, error) {
+	a, err := s.Repo.FindAssessmentByID(id)
+	if err != nil {
+		return nil, err
+	}
+	a.IsPublished = published
+	if published {
+		now := time.Now()
+		a.PublishedAt = &now
+	}
+	if err := s.Repo.UpdateAssessment(a); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
 type AssessmentSubmissionRequest struct {
-	AssessmentID uint                   `json:"assessmentId"`
-	Answers      []model.QuestionAnswer `json:"answers"`
+	AssessmentID    uint                   `json:"assessmentId"`
+	PaperVersion    string                 `json:"paperVersion"`
+	ClientRequestID string                 `json:"clientRequestId"`
+	Answers         []model.QuestionAnswer `json:"answers"`
+}
+
+func isUniqueConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate")
 }
 
 func (s *AssessmentService) SubmitAssessment(userID uint, req AssessmentSubmissionRequest) (*model.AssessmentSubmission, error) {
-	if req.AssessmentID == 0 {
-		defaultA, err := s.getOrCreateDefaultAssessment()
-		if err != nil {
-			return nil, err
+	req.PaperVersion = strings.TrimSpace(req.PaperVersion)
+	req.ClientRequestID = strings.TrimSpace(req.ClientRequestID)
+	if req.AssessmentID == 0 || req.PaperVersion == "" || req.ClientRequestID == "" {
+		return nil, util.ErrAssessmentSubmitMissingMeta
+	}
+
+	existing, err := s.Repo.FindSubmissionByClientRequestID(userID, req.ClientRequestID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return replayIfCompatible(existing, req)
+	}
+
+	paper, err := s.Repo.FindAssessmentByID(req.AssessmentID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, util.ErrAssessmentSubmitInvalid
 		}
-		req.AssessmentID = defaultA.ID
+		return nil, err
+	}
+	if !paper.IsPublished {
+		return nil, util.ErrAssessmentPaperUnavailable
 	}
 
 	questions, err := s.Repo.ListAllQuestions(req.AssessmentID)
 	if err != nil {
 		return nil, err
 	}
-
-	questionMap := make(map[uint]model.AssessmentQuestion)
-	for _, q := range questions {
-		questionMap[q.ID] = q
+	if len(questions) == 0 {
+		return nil, util.ErrAssessmentPaperUnavailable
 	}
 
-	totalScore := 0
-	for _, ans := range req.Answers {
-		if q, ok := questionMap[ans.QuestionID]; ok {
-			if ans.Answer == q.Answer {
-				totalScore += q.Points
-			}
-		}
+	version, err := ComputePaperVersion(req.AssessmentID, questions)
+	if err != nil {
+		return nil, err
+	}
+	if version != req.PaperVersion {
+		return nil, util.ErrAssessmentPaperStale
 	}
 
-	answersJSON, _ := json.Marshal(req.Answers)
-
-	// 查找是否已存在提交记录
-	existing, err := s.Repo.FindSubmissionByUserAndAssessment(userID, req.AssessmentID)
-	if err == nil && existing != nil {
-		// 如果存在，则覆盖旧数据
-		existing.Answers = answersJSON
-		existing.TotalScore = totalScore
-		existing.Status = "pending"   // 重新设为待审核
-		existing.Feedback = ""        // 清空旧评语
-		existing.RecommendedLevel = 0 // 重置建议等级
-		if err := s.Repo.UpdateSubmission(existing); err != nil {
-			return nil, err
-		}
-		_ = s.Repo.UpdateUserAssessmentStatus(userID, false)
-		return existing, nil
-	}
-
-	// 如果不存在，创建新记录
-	submission := &model.AssessmentSubmission{
-		UserID:       userID,
-		AssessmentID: req.AssessmentID,
-		Answers:      answersJSON,
-		TotalScore:   totalScore,
-		Status:       "pending",
-	}
-
-	if err := s.Repo.CreateSubmission(submission); err != nil {
+	results, autoScore, objectiveMax, pendingManual, err := validateAndScoreAnswers(questions, req.Answers)
+	if err != nil {
 		return nil, err
 	}
 
-	// 自动更新用户状态为不可重测
-	_ = s.Repo.UpdateUserAssessmentStatus(userID, false)
+	answersJSON, err := json.Marshal(req.Answers)
+	if err != nil {
+		return nil, err
+	}
 
-	return submission, nil
+	var created *model.AssessmentSubmission
+	txErr := s.Repo.WithTx(func(tx *repository.AssessmentRepository) error {
+		replay, findErr := tx.FindSubmissionByClientRequestID(userID, req.ClientRequestID)
+		if findErr != nil {
+			return findErr
+		}
+		if replay != nil {
+			matched, replayErr := replayIfCompatible(replay, req)
+			if replayErr != nil {
+				return replayErr
+			}
+			created = matched
+			return nil
+		}
+
+		user, lockErr := tx.LockUserForUpdate(userID)
+		if lockErr != nil {
+			return lockErr
+		}
+		if !user.CanTakeAssessment {
+			return util.ErrAssessmentRetestDenied
+		}
+
+		if snapErr := attachKnowledgePointSnapshot(tx, questions, results); snapErr != nil {
+			return snapErr
+		}
+		itemJSON, marshalErr := json.Marshal(results)
+		if marshalErr != nil {
+			return marshalErr
+		}
+
+		maxAttempt, maxErr := tx.MaxAttemptNo(userID, req.AssessmentID)
+		if maxErr != nil {
+			return maxErr
+		}
+
+		status, scoringStatus, level := applyObjectiveAutoComplete(questions, results, autoScore, objectiveMax)
+		created = &model.AssessmentSubmission{
+			UserID:             userID,
+			AssessmentID:       req.AssessmentID,
+			AttemptNo:          maxAttempt + 1,
+			ClientRequestID:    req.ClientRequestID,
+			PaperVersion:       req.PaperVersion,
+			Answers:            answersJSON,
+			ItemResults:        itemJSON,
+			TotalScore:         autoScore,
+			AutoScore:          autoScore,
+			ObjectiveMax:       objectiveMax,
+			PendingManualCount: pendingManual,
+			ScoringStatus:      scoringStatus,
+			Status:             status,
+			RecommendedLevel:   level,
+		}
+		if createErr := tx.CreateSubmission(created); createErr != nil {
+			if isUniqueConstraintError(createErr) {
+				replay, replayErr := tx.FindSubmissionByClientRequestID(userID, req.ClientRequestID)
+				if replayErr != nil {
+					return replayErr
+				}
+				if replay != nil {
+					matched, replayErr := replayIfCompatible(replay, req)
+					if replayErr != nil {
+						return replayErr
+					}
+					created = matched
+					return nil
+				}
+				return util.ErrAssessmentRetestDenied
+			}
+			return createErr
+		}
+		return tx.UpdateUserAssessmentStatus(userID, false)
+	})
+	if txErr != nil {
+		return nil, txErr
+	}
+	return created, nil
+}
+
+func attachKnowledgePointSnapshot(repo *repository.AssessmentRepository, questions []model.AssessmentQuestion, results []model.AssessmentItemResult) error {
+	ids := make([]uint, len(questions))
+	for i, q := range questions {
+		ids[i] = q.ID
+	}
+	linked, err := repo.ListKnowledgePointIDsByQuestionIDs(ids)
+	if err != nil {
+		return err
+	}
+	for i := range results {
+		kps := linked[results[i].QuestionID]
+		if kps == nil {
+			kps = emptyKnowledgePointIDs()
+		}
+		results[i].KnowledgePointIDs = kps
+	}
+	return nil
+}
+
+func replayIfCompatible(existing *model.AssessmentSubmission, req AssessmentSubmissionRequest) (*model.AssessmentSubmission, error) {
+	if existing.AssessmentID != req.AssessmentID || existing.PaperVersion != req.PaperVersion {
+		return nil, util.ErrAssessmentIdempotencyConflict
+	}
+	if !sameSubmittedAnswers(existing.Answers, req.Answers) {
+		return nil, util.ErrAssessmentIdempotencyConflict
+	}
+	return existing, nil
+}
+
+func sameSubmittedAnswers(stored json.RawMessage, incoming []model.QuestionAnswer) bool {
+	var storedAns []model.QuestionAnswer
+	if len(stored) > 0 {
+		if err := json.Unmarshal(stored, &storedAns); err != nil {
+			return false
+		}
+	}
+	return answersFingerprint(storedAns) == answersFingerprint(incoming)
+}
+
+func answersFingerprint(answers []model.QuestionAnswer) string {
+	cloned := append([]model.QuestionAnswer(nil), answers...)
+	sort.Slice(cloned, func(i, j int) bool { return cloned[i].QuestionID < cloned[j].QuestionID })
+	for i := range cloned {
+		cloned[i].Answer = strings.TrimSpace(cloned[i].Answer)
+	}
+	raw, err := json.Marshal(cloned)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }
 
 func (s *AssessmentService) ListSubmissions(page, limit int, status string, studentName string) ([]model.AssessmentSubmission, int64, error) {
@@ -282,7 +556,7 @@ func (s *AssessmentService) GetSubmissionDetail(id uint) (*SubmissionDetailRespo
 }
 
 type GradeSubmissionRequest struct {
-	Score            int    `json:"score"`
+	Score            *int   `json:"score"`
 	Feedback         string `json:"feedback"`
 	RecommendedLevel int    `json:"recommendedLevel"`
 }
@@ -293,10 +567,17 @@ func (s *AssessmentService) GradeSubmission(id uint, req GradeSubmissionRequest)
 		return err
 	}
 
-	submission.TotalScore = req.Score
+	// 推荐等级与分数独立：纯客观卷覆盖等级时保留 autoScore/totalScore，
+	// 不按基础/初级/中级/高级反推 60/75/85/100。
+	if shouldPreserveObjectiveAutoScore(submission) {
+		submission.TotalScore = submission.AutoScore
+	} else if req.Score != nil {
+		submission.TotalScore = *req.Score
+	}
 	submission.Feedback = req.Feedback
 	submission.RecommendedLevel = req.RecommendedLevel
-	submission.Status = "completed"
+	submission.Status = model.SubmissionStatusCompleted
+	submission.ScoringStatus = model.ScoringStatusTeacherCompleted
 
 	return s.Repo.UpdateSubmission(submission)
 }
@@ -305,31 +586,174 @@ func (s *AssessmentService) DeleteSubmission(id uint) error {
 	return s.Repo.DeleteSubmission(id)
 }
 
+type ConfirmedDiagnosis struct {
+	AssessmentID     uint   `json:"assessmentId"`
+	SubmissionID     uint   `json:"submissionId"`
+	AttemptNo        int    `json:"attemptNo"`
+	RecommendedLevel int    `json:"recommendedLevel"`
+	Status           string `json:"status"`
+	ScoringStatus    string `json:"scoringStatus,omitempty"`
+	PaperVersion     string `json:"paperVersion,omitempty"`
+}
+
 type StudentAssessmentStatus struct {
-	Submission        *model.AssessmentSubmission `json:"submission"`
-	CanTakeAssessment bool                        `json:"canTakeAssessment"`
+	Submission             *model.AssessmentSubmission `json:"submission"`
+	LastConfirmedDiagnosis *ConfirmedDiagnosis         `json:"lastConfirmedDiagnosis"`
+	StaleDiagnosis         *ConfirmedDiagnosis         `json:"staleDiagnosis,omitempty"`
+	HistoricalDiagnosis    *ConfirmedDiagnosis         `json:"historicalDiagnosis,omitempty"`
+	CanTakeAssessment      bool                        `json:"canTakeAssessment"`
+	HasPublishedPaper      bool                        `json:"hasPublishedPaper"`
+	AssessmentID           uint                        `json:"assessmentId,omitempty"`
+	PaperVersion           string                      `json:"paperVersion,omitempty"`
+	KnowledgeMastery       []KnowledgeMastery          `json:"knowledgeMastery,omitempty"`
+}
+
+func missingPaperVersion(v string) bool {
+	return strings.TrimSpace(v) == ""
+}
+
+func diagnosisFromSubmission(sub *model.AssessmentSubmission) *ConfirmedDiagnosis {
+	if sub == nil {
+		return nil
+	}
+	return &ConfirmedDiagnosis{
+		AssessmentID:     sub.AssessmentID,
+		SubmissionID:     sub.ID,
+		AttemptNo:        sub.AttemptNo,
+		RecommendedLevel: sub.RecommendedLevel,
+		Status:           sub.Status,
+		ScoringStatus:    sub.ScoringStatus,
+		PaperVersion:     sub.PaperVersion,
+	}
+}
+
+func (s *AssessmentService) GetConfirmedDiagnosisForUser(userID uint) (*ConfirmedDiagnosis, error) {
+	paper, qs, err := s.Repo.FindPublishedAssessmentWithQuestions()
+	if err != nil {
+		if errors.Is(err, util.ErrNoPublishedAssessment) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	version, err := ComputePaperVersion(paper.ID, qs)
+	if err != nil {
+		return nil, err
+	}
+	sub, err := s.Repo.FindConfirmedDiagnosis(userID, paper.ID, version)
+	if err != nil {
+		return nil, err
+	}
+	return diagnosisFromSubmission(sub), nil
+}
+
+func (s *AssessmentService) attachKnowledgeMastery(status *StudentAssessmentStatus, latest *model.AssessmentSubmission, questions []model.AssessmentQuestion) error {
+	if status == nil || latest == nil {
+		return nil
+	}
+	var items []model.AssessmentItemResult
+	if len(latest.ItemResults) > 0 {
+		if err := json.Unmarshal(latest.ItemResults, &items); err != nil {
+			status.KnowledgeMastery = []KnowledgeMastery{}
+			return nil
+		}
+	}
+	kpIDs := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		for _, id := range item.KnowledgePointIDs {
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			kpIDs = append(kpIDs, id)
+		}
+	}
+	metas := map[string]KnowledgePointMasteryMeta{}
+	if len(kpIDs) > 0 {
+		rows, err := s.Repo.FindKnowledgePointMasteryMeta(kpIDs)
+		if err != nil {
+			return err
+		}
+		for id, kp := range rows {
+			metas[id] = KnowledgePointMasteryMeta{
+				ID:              kp.ID,
+				Title:           kp.Title,
+				Order:           kp.Order,
+				CompletionScore: kp.CompletionScore,
+			}
+		}
+	}
+	fallbackMax := map[uint]int{}
+	for _, q := range questions {
+		fallbackMax[q.ID] = q.Points
+	}
+	status.KnowledgeMastery = AggregateKnowledgeMastery(items, metas, fallbackMax)
+	return nil
 }
 
 func (s *AssessmentService) GetStudentAssessmentStatus(userID uint) (*StudentAssessmentStatus, error) {
-	// 获取用户重测权限状态
 	canTake, err := s.Repo.GetUserAssessmentStatus(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取默认评估 ID
-	defaultA, err := s.getOrCreateDefaultAssessment()
+	status := &StudentAssessmentStatus{
+		CanTakeAssessment: canTake,
+	}
+
+	paper, qs, err := s.Repo.FindPublishedAssessmentWithQuestions()
+	if errors.Is(err, util.ErrNoPublishedAssessment) {
+		return status, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取提交记录
-	submission, _ := s.Repo.FindSubmissionByUserAndAssessment(userID, defaultA.ID)
+	version, err := ComputePaperVersion(paper.ID, qs)
+	if err != nil {
+		return nil, err
+	}
 
-	return &StudentAssessmentStatus{
-		Submission:        submission,
-		CanTakeAssessment: canTake,
-	}, nil
+	status.HasPublishedPaper = true
+	status.AssessmentID = paper.ID
+	status.PaperVersion = version
+
+	latest, err := s.Repo.FindLatestAttempt(userID, paper.ID)
+	if err != nil {
+		return nil, err
+	}
+	status.Submission = latest
+	if err := s.attachKnowledgeMastery(status, latest, qs); err != nil {
+		return nil, err
+	}
+
+	confirmed, err := s.Repo.FindConfirmedDiagnosis(userID, paper.ID, version)
+	if err != nil {
+		return nil, err
+	}
+	if confirmed != nil {
+		status.LastConfirmedDiagnosis = diagnosisFromSubmission(confirmed)
+		return status, nil
+	}
+
+	anyConfirmed, err := s.Repo.FindConfirmedDiagnosis(userID, paper.ID, "")
+	if err != nil {
+		return nil, err
+	}
+	if anyConfirmed == nil {
+		return status, nil
+	}
+	if missingPaperVersion(anyConfirmed.PaperVersion) {
+		status.HistoricalDiagnosis = diagnosisFromSubmission(anyConfirmed)
+		return status, nil
+	}
+	if anyConfirmed.PaperVersion != version {
+		status.StaleDiagnosis = diagnosisFromSubmission(anyConfirmed)
+	}
+	return status, nil
 }
 
 type StudentAssessmentResult struct {
@@ -342,38 +766,37 @@ type StudentAssessmentResult struct {
 }
 
 func (s *AssessmentService) GetStudentAssessmentResult(userID uint) (*StudentAssessmentResult, error) {
-	// 获取用户测试状态
 	canTake, err := s.Repo.GetUserAssessmentStatus(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取默认测试 ID
-	defaultA, err := s.getOrCreateDefaultAssessment()
+	result := &StudentAssessmentResult{
+		CanTakeAssessment: canTake,
+		HasSubmitted:      false,
+		Status:            "untested",
+	}
+
+	paper, _, err := s.Repo.FindPublishedAssessmentWithQuestions()
+	if errors.Is(err, util.ErrNoPublishedAssessment) {
+		return result, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取提交记录
-	submission, err := s.Repo.FindSubmissionByUserAndAssessment(userID, defaultA.ID)
-
-	result := &StudentAssessmentResult{
-		CanTakeAssessment: canTake,
-	}
-
+	submission, err := s.Repo.FindLatestAttempt(userID, paper.ID)
 	if err != nil {
-		// 没有提交记录
-		result.HasSubmitted = false
-		result.Status = "untested"
+		return nil, err
+	}
+	if submission == nil {
 		return result, nil
 	}
 
-	// 有提交记录
 	result.HasSubmitted = true
 	result.Status = submission.Status
 	result.TotalScore = submission.TotalScore
 	result.Feedback = submission.Feedback
 	result.RecommendedLevel = submission.RecommendedLevel
-
 	return result, nil
 }

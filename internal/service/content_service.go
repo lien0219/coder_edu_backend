@@ -219,7 +219,7 @@ func (s *ContentService) UploadVideo(ctx context.Context, file *multipart.FileHe
 	return resource, nil
 }
 
-func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multipart.FileHeader, chunkNumber, totalChunks int, identifier, filename string, title, description string) (*model.UploadProgress, *model.Resource, error) {
+func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multipart.FileHeader, chunkNumber, totalChunks int, identifier, filename string, title, description string, skipResource bool) (*model.UploadProgress, *model.Resource, error) {
 	// 创建临时目录存储分块
 	tempDir := filepath.Join(s.Cfg.Storage.LocalPath, "temp", identifier)
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
@@ -378,7 +378,10 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 			Thumbnail:   thumbnail,
 		}
 
-		if err := s.ResourceRepo.Create(resource); err != nil {
+		if skipResource {
+			logger.Log.Info("知识点教学视频仅上传文件，不创建 resources 记录",
+				zap.String("identifier", identifier))
+		} else if err := s.ResourceRepo.Create(resource); err != nil {
 			logger.Log.Error("创建资源记录失败", zap.Error(err))
 			s.StorageService.Delete(ctx, videoFilename)
 			if finalPath != "" {
@@ -387,7 +390,7 @@ func (s *ContentService) UploadVideoChunk(ctx context.Context, chunkFile *multip
 			return nil, nil, err
 		}
 
-		if duration == 0 {
+		if duration == 0 && !skipResource {
 			s.wg.Add(1)
 			go func(vURL, lPath, fName string, resID uint) {
 				defer s.wg.Done()

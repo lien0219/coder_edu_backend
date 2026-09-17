@@ -406,7 +406,11 @@ func (s *AssessmentService) SubmitAssessment(userID uint, req AssessmentSubmissi
 		if lockErr != nil {
 			return lockErr
 		}
-		if !user.CanTakeAssessment {
+		latest, latestErr := tx.FindLatestAttempt(userID, req.AssessmentID)
+		if latestErr != nil {
+			return latestErr
+		}
+		if !CanTakeCurrentAttempt(user.CanTakeAssessment, latest, req.PaperVersion) {
 			return util.ErrAssessmentRetestDenied
 		}
 
@@ -612,6 +616,33 @@ func missingPaperVersion(v string) bool {
 	return strings.TrimSpace(v) == ""
 }
 
+// CanTakeCurrentAttempt 按当前已发布试卷及其 paperVersion 判断是否可考。
+// users.can_take_assessment 只表示教师对「当前试卷当前版本」的重测授权，
+// 不能跨试卷沿用。无当前卷答卷、或最新答卷版本与当前不一致时允许参加。
+func CanTakeCurrentAttempt(retestGranted bool, latest *model.AssessmentSubmission, currentVersion string) bool {
+	if latest == nil {
+		return true
+	}
+	if missingPaperVersion(latest.PaperVersion) || latest.PaperVersion != currentVersion {
+		return true
+	}
+	return retestGranted
+}
+
+func (s *AssessmentService) GetStudentQuestionsIfEligible(userID uint) (*StudentPaperResponse, error) {
+	status, err := s.GetStudentAssessmentStatus(userID)
+	if err != nil {
+		return nil, err
+	}
+	if !status.HasPublishedPaper {
+		return nil, util.ErrNoPublishedAssessment
+	}
+	if !status.CanTakeAssessment {
+		return nil, util.ErrAssessmentRetestDenied
+	}
+	return s.ListStudentQuestions()
+}
+
 func diagnosisFromSubmission(sub *model.AssessmentSubmission) *ConfirmedDiagnosis {
 	if sub == nil {
 		return nil
@@ -695,13 +726,13 @@ func (s *AssessmentService) attachKnowledgeMastery(status *StudentAssessmentStat
 }
 
 func (s *AssessmentService) GetStudentAssessmentStatus(userID uint) (*StudentAssessmentStatus, error) {
-	canTake, err := s.Repo.GetUserAssessmentStatus(userID)
+	retestGranted, err := s.Repo.GetUserAssessmentStatus(userID)
 	if err != nil {
 		return nil, err
 	}
 
 	status := &StudentAssessmentStatus{
-		CanTakeAssessment: canTake,
+		CanTakeAssessment: false,
 	}
 
 	paper, qs, err := s.Repo.FindPublishedAssessmentWithQuestions()
@@ -726,6 +757,7 @@ func (s *AssessmentService) GetStudentAssessmentStatus(userID uint) (*StudentAss
 		return nil, err
 	}
 	status.Submission = latest
+	status.CanTakeAssessment = CanTakeCurrentAttempt(retestGranted, latest, version)
 	if err := s.attachKnowledgeMastery(status, latest, qs); err != nil {
 		return nil, err
 	}
@@ -766,21 +798,26 @@ type StudentAssessmentResult struct {
 }
 
 func (s *AssessmentService) GetStudentAssessmentResult(userID uint) (*StudentAssessmentResult, error) {
-	canTake, err := s.Repo.GetUserAssessmentStatus(userID)
+	retestGranted, err := s.Repo.GetUserAssessmentStatus(userID)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &StudentAssessmentResult{
-		CanTakeAssessment: canTake,
+		CanTakeAssessment: false,
 		HasSubmitted:      false,
 		Status:            "untested",
 	}
 
-	paper, _, err := s.Repo.FindPublishedAssessmentWithQuestions()
+	paper, qs, err := s.Repo.FindPublishedAssessmentWithQuestions()
 	if errors.Is(err, util.ErrNoPublishedAssessment) {
 		return result, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+
+	version, err := ComputePaperVersion(paper.ID, qs)
 	if err != nil {
 		return nil, err
 	}
@@ -789,6 +826,7 @@ func (s *AssessmentService) GetStudentAssessmentResult(userID uint) (*StudentAss
 	if err != nil {
 		return nil, err
 	}
+	result.CanTakeAssessment = CanTakeCurrentAttempt(retestGranted, submission, version)
 	if submission == nil {
 		return result, nil
 	}

@@ -38,6 +38,11 @@ func mountStudentOnlyRoutes(r *gin.Engine, extras ...gin.HandlerFunc) {
 		g.GET("/learning-path/levels/:level/materials", okHandler)
 		g.POST("/learning-path/materials/:id/learning-time", okHandler)
 		g.POST("/learning-path/materials/:id/complete", okHandler)
+		g.GET("/learning-profile/me", okHandler)
+		g.GET("/learning-profile/instruments/:code/:wave", okHandler)
+		g.PUT("/learning-profile/instruments/:code/:wave/draft", okHandler)
+		g.POST("/learning-profile/instruments/:code/:wave/submit", okHandler)
+		g.GET("/analytics/sdl-profile", okHandler)
 	}
 }
 
@@ -60,6 +65,20 @@ func TestStudentAssessmentRoutesAllowStudent(t *testing.T) {
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("student GET questions status=%d body=%s", w.Code, w.Body.String())
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/learning-profile/me", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("student GET learning-profile/me status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/analytics/sdl-profile", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("student GET analytics/sdl-profile status=%d body=%s", w.Code, w.Body.String())
+	}
 }
 
 func TestStudentAssessmentRoutesRejectTeacher(t *testing.T) {
@@ -79,6 +98,11 @@ func TestStudentAssessmentRoutesRejectTeacher(t *testing.T) {
 		{http.MethodGet, "/api/learning-path/levels/1/materials", ""},
 		{http.MethodPost, "/api/learning-path/materials/1/learning-time", `{"duration":1}`},
 		{http.MethodPost, "/api/learning-path/materials/1/complete", ""},
+		{http.MethodGet, "/api/learning-profile/me", ""},
+		{http.MethodGet, "/api/learning-profile/instruments/DL-C56-v1/pretest", ""},
+		{http.MethodPut, "/api/learning-profile/instruments/DL-C56-v1/pretest/draft", `{"answers":{}}`},
+		{http.MethodPost, "/api/learning-profile/instruments/SDL-C20-v1/pretest/submit", `{"answers":{}}`},
+		{http.MethodGet, "/api/analytics/sdl-profile", ""},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -110,6 +134,13 @@ func TestStudentAssessmentRoutesUnauthorizedWithoutLogin(t *testing.T) {
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/analytics/sdl-profile", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated sdl-profile status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 

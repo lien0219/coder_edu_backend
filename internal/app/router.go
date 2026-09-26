@@ -203,6 +203,8 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 
 	// 任务相关
 	rg.GET("/tasks/today", c.task.GetTodayTasks)
+	// STAGE6C: student-readable current-week tasks. Keep /api/teacher locked to Teacher/Admin.
+	rg.GET("/tasks/weekly/current", c.task.GetCurrentWeekTask)
 	rg.POST("/tasks/:taskItemId/completion", c.task.UpdateTaskCompletion)
 
 	// 教师建议
@@ -235,6 +237,12 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 		studentOnly.GET("/learning-path/levels/:level/materials", c.learningPath.GetMaterialsByLevel)
 		studentOnly.POST("/learning-path/materials/:id/learning-time", c.learningPath.RecordLearningTime)
 		studentOnly.POST("/learning-path/materials/:id/complete", c.learningPath.CompleteMaterial)
+
+		studentOnly.GET("/learning-profile/me", c.learningProfile.GetMe)
+		studentOnly.GET("/learning-profile/instruments/:code/:wave", c.learningProfile.GetPaper)
+		studentOnly.PUT("/learning-profile/instruments/:code/:wave/draft", c.learningProfile.SaveDraft)
+		studentOnly.POST("/learning-profile/instruments/:code/:wave/submit", c.learningProfile.Submit)
+		studentOnly.GET("/analytics/sdl-profile", c.learningProfile.GetSdlProfile)
 	}
 
 	// 有效反思
@@ -277,7 +285,8 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 
 func (a *App) registerTeacherRoutes(rg *gin.RouterGroup, c *controllers) {
 	teacher := rg.Group("/teacher")
-	teacher.Use(middleware.RoleMiddleware(model.Teacher, model.Admin, model.Student))
+	// STAGE6A_TEACHER_ROUTE_SECURITY: drop Student from teacher management group.
+	teacher.Use(middleware.RoleMiddleware(model.Teacher, model.Admin))
 	{
 		// 周任务
 		teacher.POST("/tasks/weekly", c.task.SetWeeklyTask)

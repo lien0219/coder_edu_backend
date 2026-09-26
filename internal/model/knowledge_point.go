@@ -42,7 +42,8 @@ type KnowledgePointVideo struct {
 	ID               string         `gorm:"primaryKey;type:varchar(36)" json:"id"`
 	KnowledgePointID string         `gorm:"index;type:varchar(36)" json:"knowledgePointId"`
 	Title            string         `gorm:"size:255;not null" json:"title"`
-	URL              string         `gorm:"size:500;not null" json:"url"`
+	URL              string         `gorm:"size:2048;not null" json:"url"`
+	SourceType       string         `gorm:"size:20;not null;default:upload" json:"sourceType"`
 	Description      string         `gorm:"type:text" json:"description"`
 	CreatedAt        time.Time      `json:"createdAt"`
 	UpdatedAt        time.Time      `json:"updatedAt"`

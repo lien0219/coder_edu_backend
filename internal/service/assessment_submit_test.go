@@ -622,6 +622,9 @@ func TestStudentIsolationAndDiagnosisScope(t *testing.T) {
 	if statusEdited.StaleDiagnosis == nil || statusEdited.StaleDiagnosis.RecommendedLevel != 1 {
 		t.Fatalf("incompatible diagnosis should be flagged stale %+v", statusEdited.StaleDiagnosis)
 	}
+	if !statusEdited.CanTakeAssessment {
+		t.Fatal("paperVersion change must allow a new attempt without inheriting the old diagnosis")
+	}
 
 	otherPaper, _ := publishPaper(t, svc, "other-scope", []model.AssessmentQuestion{{
 		QuestionType: "single_choice", Content: "y", Options: choiceOptions(), Answer: "0",
@@ -635,6 +638,12 @@ func TestStudentIsolationAndDiagnosisScope(t *testing.T) {
 	}
 	if statusSwitched.LastConfirmedDiagnosis != nil {
 		t.Fatalf("different paper must not inherit level %+v", statusSwitched.LastConfirmedDiagnosis)
+	}
+	if statusSwitched.Submission != nil {
+		t.Fatalf("new paper must not attach old-paper submission %+v", statusSwitched.Submission)
+	}
+	if !statusSwitched.CanTakeAssessment {
+		t.Fatal("completing an older paper must not block a newly published paper")
 	}
 }
 
@@ -960,5 +969,240 @@ func TestTeacherOverrideLevelKeepsObjectiveScore(t *testing.T) {
 	}
 	if loaded.RecommendedLevel != 1 || loaded.ScoringStatus != model.ScoringStatusTeacherCompleted {
 		t.Fatalf("teacher override source/level %+v", loaded)
+	}
+}
+
+func TestCanTakeCurrentAttempt(t *testing.T) {
+	same := &model.AssessmentSubmission{PaperVersion: "ver-a"}
+	other := &model.AssessmentSubmission{PaperVersion: "ver-b"}
+	legacy := &model.AssessmentSubmission{PaperVersion: ""}
+	cases := []struct {
+		name           string
+		retestGranted  bool
+		latest         *model.AssessmentSubmission
+		currentVersion string
+		want           bool
+	}{
+		{name: "never_attempted", retestGranted: false, latest: nil, currentVersion: "ver-a", want: true},
+		{name: "same_version_locked", retestGranted: false, latest: same, currentVersion: "ver-a", want: false},
+		{name: "same_version_retest", retestGranted: true, latest: same, currentVersion: "ver-a", want: true},
+		{name: "new_paper_version", retestGranted: false, latest: other, currentVersion: "ver-a", want: true},
+		{name: "legacy_empty_version", retestGranted: false, latest: legacy, currentVersion: "ver-a", want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CanTakeCurrentAttempt(tc.retestGranted, tc.latest, tc.currentVersion)
+			if got != tc.want {
+				t.Fatalf("got %v want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNoPublishedPaperReturnsBusinessStatus(t *testing.T) {
+	svc, _ := newAssessmentService(t)
+	userID := createTestUser(t, svc.Repo.DB, false)
+	status, err := svc.GetStudentAssessmentStatus(userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.HasPublishedPaper || status.CanTakeAssessment || status.Submission != nil {
+		t.Fatalf("no published paper must be a normal empty status %+v", status)
+	}
+	_, err = svc.GetStudentQuestionsIfEligible(userID)
+	if !errors.Is(err, util.ErrNoPublishedAssessment) {
+		t.Fatalf("questions without a paper: %v", err)
+	}
+}
+
+func TestLockedFlagDoesNotBlockFirstAttemptOnPublishedPaper(t *testing.T) {
+	svc, _ := newAssessmentService(t)
+	userID := createTestUser(t, svc.Repo.DB, false)
+	paper, ver := publishPaper(t, svc, "first-locked", []model.AssessmentQuestion{{
+		QuestionType: "single_choice", Content: "x", Options: choiceOptions(), Answer: "0", Points: 10,
+	}})
+	qs, _ := svc.Repo.ListAllQuestions(paper.ID)
+	status, err := svc.GetStudentAssessmentStatus(userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.CanTakeAssessment || status.Submission != nil || status.AssessmentID != paper.ID {
+		t.Fatalf("never-attempted student must be allowed on published paper %+v", status)
+	}
+	if _, err := svc.GetStudentQuestionsIfEligible(userID); err != nil {
+		t.Fatal(err)
+	}
+	sub, err := svc.SubmitAssessment(userID, AssessmentSubmissionRequest{
+		AssessmentID: paper.ID, PaperVersion: ver, ClientRequestID: "first-locked",
+		Answers: []model.QuestionAnswer{{QuestionID: qs[0].ID, Answer: "0"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.AttemptNo != 1 {
+		t.Fatalf("first attempt %+v", sub)
+	}
+}
+
+func TestCompletedPaperDoesNotBlockLaterPublishedPaper(t *testing.T) {
+	svc, db := newAssessmentService(t)
+	userID := createTestUser(t, db, true)
+	paper1, ver1 := publishPaper(t, svc, "paper-one", []model.AssessmentQuestion{{
+		QuestionType: "single_choice", Content: "p1", Options: choiceOptions(), Answer: "0", Points: 10,
+	}})
+	qs1, _ := svc.Repo.ListAllQuestions(paper1.ID)
+	first, err := svc.SubmitAssessment(userID, AssessmentSubmissionRequest{
+		AssessmentID: paper1.ID, PaperVersion: ver1, ClientRequestID: "p1-done",
+		Answers: []model.QuestionAnswer{{QuestionID: qs1[0].ID, Answer: "0"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	paper2, ver2 := publishPaper(t, svc, "paper-two", []model.AssessmentQuestion{{
+		QuestionType: "single_choice", Content: "p2", Options: choiceOptions(), Answer: "0", Points: 10,
+	}})
+	qs2, _ := svc.Repo.ListAllQuestions(paper2.ID)
+	status, err := svc.GetStudentAssessmentStatus(userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.AssessmentID != paper2.ID || !status.HasPublishedPaper {
+		t.Fatalf("current paper %+v", status)
+	}
+	if status.Submission != nil {
+		t.Fatalf("paper2 must have no submission yet %+v", status.Submission)
+	}
+	if !status.CanTakeAssessment {
+		t.Fatal("old-paper completion must not set canTakeAssessment=false for paper2")
+	}
+	if status.LastConfirmedDiagnosis != nil {
+		t.Fatalf("paper2 must not inherit paper1 diagnosis %+v", status.LastConfirmedDiagnosis)
+	}
+
+	flag, err := svc.GetUserAssessmentStatus(userID)
+	if err != nil || flag {
+		t.Fatalf("global retest flag must stay false after paper1, flag=%v err=%v", flag, err)
+	}
+
+	if _, err := svc.GetStudentQuestionsIfEligible(userID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.SubmitAssessment(userID, AssessmentSubmissionRequest{
+		AssessmentID: paper2.ID, PaperVersion: ver2, ClientRequestID: "p2-done",
+		Answers: []model.QuestionAnswer{{QuestionID: qs2[0].ID, Answer: "0"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID == first.ID || second.AssessmentID != paper2.ID {
+		t.Fatalf("paper2 must insert a new row %+v vs %+v", second, first)
+	}
+
+	var kept model.AssessmentSubmission
+	if err := svc.Repo.DB.First(&kept, first.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if kept.AssessmentID != paper1.ID || kept.PaperVersion != ver1 || kept.DeletedAt.Valid {
+		t.Fatalf("paper1 history must stay %+v", kept)
+	}
+
+	done, err := svc.GetStudentAssessmentStatus(userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.CanTakeAssessment {
+		t.Fatal("completed current paper must not remain takeable without retest grant")
+	}
+	if done.Submission == nil || done.Submission.ID != second.ID {
+		t.Fatalf("current submission should be paper2 %+v", done.Submission)
+	}
+
+	_, err = svc.GetStudentQuestionsIfEligible(userID)
+	if !errors.Is(err, util.ErrAssessmentRetestDenied) {
+		t.Fatalf("repeat current version without retest: %v", err)
+	}
+	_, err = svc.SubmitAssessment(userID, AssessmentSubmissionRequest{
+		AssessmentID: paper2.ID, PaperVersion: ver2, ClientRequestID: "p2-again",
+		Answers: []model.QuestionAnswer{{QuestionID: qs2[0].ID, Answer: "0"}},
+	})
+	if !errors.Is(err, util.ErrAssessmentRetestDenied) {
+		t.Fatalf("repeat submit without retest: %v", err)
+	}
+
+	replay, err := svc.SubmitAssessment(userID, AssessmentSubmissionRequest{
+		AssessmentID: paper2.ID, PaperVersion: ver2, ClientRequestID: "p2-done",
+		Answers: []model.QuestionAnswer{{QuestionID: qs2[0].ID, Answer: "0"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replay.ID != second.ID {
+		t.Fatalf("idempotent replay %+v vs %+v", replay, second)
+	}
+}
+
+func TestPaperVersionChangeAllowsRetakeWithoutRetestGrant(t *testing.T) {
+	svc, _ := newAssessmentService(t)
+	userID := createTestUser(t, svc.Repo.DB, true)
+	paper, ver := publishPaper(t, svc, "version-bump", []model.AssessmentQuestion{{
+		QuestionType: "single_choice", Content: "x", Options: choiceOptions(), Answer: "0", Points: 10,
+	}})
+	qs, _ := svc.Repo.ListAllQuestions(paper.ID)
+	first, err := svc.SubmitAssessment(userID, AssessmentSubmissionRequest{
+		AssessmentID: paper.ID, PaperVersion: ver, ClientRequestID: "v1",
+		Answers: []model.QuestionAnswer{{QuestionID: qs[0].ID, Answer: "0"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qs[0].Answer = "1"
+	if err := svc.Repo.UpdateQuestion(&qs[0]); err != nil {
+		t.Fatal(err)
+	}
+	qsAfter, err := svc.Repo.ListAllQuestions(paper.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ver2, err := ComputePaperVersion(paper.ID, qsAfter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ver2 == ver {
+		t.Fatal("expected a new paperVersion after editing the item")
+	}
+
+	status, err := svc.GetStudentAssessmentStatus(userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LastConfirmedDiagnosis != nil {
+		t.Fatalf("old diagnosis must not stay current %+v", status.LastConfirmedDiagnosis)
+	}
+	if status.StaleDiagnosis == nil || status.StaleDiagnosis.SubmissionID != first.ID {
+		t.Fatalf("old diagnosis should be stale %+v", status.StaleDiagnosis)
+	}
+	if !status.CanTakeAssessment {
+		t.Fatal("new paperVersion must be takeable without teacher retest grant")
+	}
+
+	second, err := svc.SubmitAssessment(userID, AssessmentSubmissionRequest{
+		AssessmentID: paper.ID, PaperVersion: ver2, ClientRequestID: "v2",
+		Answers: []model.QuestionAnswer{{QuestionID: qsAfter[0].ID, Answer: "1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.AttemptNo != 2 || second.PaperVersion != ver2 {
+		t.Fatalf("new version attempt %+v", second)
+	}
+
+	var kept model.AssessmentSubmission
+	if err := svc.Repo.DB.First(&kept, first.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if kept.PaperVersion != ver || kept.DeletedAt.Valid {
+		t.Fatalf("v1 row must remain %+v", kept)
 	}
 }

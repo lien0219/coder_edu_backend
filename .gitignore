@@ -32,3 +32,4 @@ configs/config.yaml
 deploy.env
 .env
 nginx.conf
+.iso-e2e/

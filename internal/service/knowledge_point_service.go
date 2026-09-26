@@ -23,7 +23,21 @@ type CreateVideoResourceRequest struct {
 	ID          string `json:"id"` // Temporary ID from frontend
 	Title       string `json:"title" binding:"required"`
 	URL         string `json:"url" binding:"required"`
+	SourceType  string `json:"sourceType"`
 	Description string `json:"description"`
+}
+
+// NormalizeKnowledgePointVideos validates each teaching video's sourceType/url in place.
+func NormalizeKnowledgePointVideos(videos []CreateVideoResourceRequest) error {
+	for i := range videos {
+		st, u, err := ValidateVideoSource(videos[i].SourceType, videos[i].URL)
+		if err != nil {
+			return err
+		}
+		videos[i].SourceType = st
+		videos[i].URL = u
+	}
+	return nil
 }
 
 type CreateExerciseRequest struct {
@@ -489,6 +503,10 @@ func (s *KnowledgePointService) RecordLearningTime(userID uint, id string, durat
 }
 
 func (s *KnowledgePointService) CreateKnowledgePoint(req CreateKnowledgePointRequest) (*model.KnowledgePoint, error) {
+	if err := NormalizeKnowledgePointVideos(req.Videos); err != nil {
+		return nil, err
+	}
+
 	kp := &model.KnowledgePoint{
 		ID:              uuid.New().String(),
 		Title:           req.Title,
@@ -511,6 +529,7 @@ func (s *KnowledgePointService) CreateKnowledgePoint(req CreateKnowledgePointReq
 				KnowledgePointID: kp.ID,
 				Title:            v.Title,
 				URL:              v.URL,
+				SourceType:       v.SourceType,
 				Description:      v.Description,
 			}
 			if err := tx.Create(&video).Error; err != nil {
@@ -563,6 +582,10 @@ func (s *KnowledgePointService) ListKnowledgePoints(title string) ([]model.Knowl
 }
 
 func (s *KnowledgePointService) UpdateKnowledgePoint(id string, req CreateKnowledgePointRequest) (*model.KnowledgePoint, error) {
+	if err := NormalizeKnowledgePointVideos(req.Videos); err != nil {
+		return nil, err
+	}
+
 	var kp model.KnowledgePoint
 	if err := s.db.First(&kp, "id = ?", id).Error; err != nil {
 		return nil, err
@@ -592,6 +615,7 @@ func (s *KnowledgePointService) UpdateKnowledgePoint(id string, req CreateKnowle
 				KnowledgePointID: id,
 				Title:            v.Title,
 				URL:              v.URL,
+				SourceType:       v.SourceType,
 				Description:      v.Description,
 			}
 			if err := tx.Create(&video).Error; err != nil {

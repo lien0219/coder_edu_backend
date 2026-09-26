@@ -641,6 +641,7 @@ func (c *CProgrammingResourceController) AddVideoToResource(ctx *gin.Context) {
 		Title       string  `json:"title" binding:"required"`
 		Description string  `json:"description"`
 		URL         string  `json:"url" binding:"required"`
+		SourceType  string  `json:"sourceType"`
 		Duration    float64 `json:"duration"`
 		Order       int     `json:"order"`
 		Points      int     `json:"points" binding:"gte=0"`
@@ -652,17 +653,23 @@ func (c *CProgrammingResourceController) AddVideoToResource(ctx *gin.Context) {
 		return
 	}
 
+	sourceType, videoURL, err := service.ValidateVideoSource(video.SourceType, video.URL)
+	if err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+
 	resource := &model.Resource{
 		ModuleID:    uint(id),
 		ModuleType:  "c_programming",
 		Type:        model.Video,
 		Title:       video.Title,
 		Description: video.Description,
-		URL:         video.URL,
+		URL:         videoURL,
+		SourceType:  sourceType,
 		Duration:    video.Duration,
 		Points:      video.Points,
 		Thumbnail:   video.Thumbnail,
-		// Duration和Order可以存储在额外字段中，这里使用description扩展
 	}
 
 	if err := c.ContentService.ResourceRepo.Create(resource); err != nil {
@@ -744,6 +751,8 @@ func convertMapKeysToSnakeCase(input map[string]interface{}) map[string]interfac
 			result["module_type"] = value
 		case "uploaderId":
 			result["uploader_id"] = value
+		case "sourceType", "SourceType", "source_type":
+			result["source_type"] = value
 		default:
 			result[key] = value
 		}
@@ -767,6 +776,7 @@ func (c *CProgrammingResourceController) UpdateContentItem(ctx *gin.Context, con
 				"title":       true,
 				"description": true,
 				"url":         true,
+				"source_type": true,
 				"module_id":   true,
 				"module_type": true,
 				"view_count":  true,
@@ -950,6 +960,11 @@ func (c *CProgrammingResourceController) UpdateVideo(ctx *gin.Context) {
 			util.BadRequest(ctx, "积分不能为负数")
 			return
 		}
+	}
+
+	if err := service.NormalizeVideoPayload(updateData); err != nil {
+		util.BadRequest(ctx, err.Error())
+		return
 	}
 
 	if err := c.UpdateContentItem(ctx, "video", uint(id), updateData); err != nil {

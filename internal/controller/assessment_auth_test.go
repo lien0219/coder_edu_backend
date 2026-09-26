@@ -134,3 +134,13 @@ func TestAssessmentConflictErrorCodes(t *testing.T) {
 		})
 	}
 }
+
+func TestAssessmentRetestDeniedIsForbidden(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	respondAssessmentError(ctx, util.ErrAssessmentRetestDenied)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}

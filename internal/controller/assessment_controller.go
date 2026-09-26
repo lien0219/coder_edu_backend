@@ -179,18 +179,7 @@ func (c *AssessmentController) GetStudentQuestions(ctx *gin.Context) {
 		return
 	}
 
-	// 检查学生是否有权进行测试
-	canTake, err := c.Service.GetUserAssessmentStatus(user.UserID)
-	if err != nil {
-		util.InternalServerError(ctx)
-		return
-	}
-	if !canTake {
-		util.Error(ctx, 403, "您已完成测试，暂不可重测")
-		return
-	}
-
-	qs, err := c.Service.ListStudentQuestions()
+	qs, err := c.Service.GetStudentQuestionsIfEligible(user.UserID)
 	if err != nil {
 		respondAssessmentError(ctx, err)
 		return

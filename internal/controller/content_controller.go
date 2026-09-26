@@ -145,9 +145,10 @@ type VideoChunkUploadRequest struct {
 	ChunkNumber int    `form:"chunkNumber" binding:"required,min=1"`
 	TotalChunks int    `form:"totalChunks" binding:"required,min=1"`
 	Identifier  string `form:"identifier" binding:"required,max=100"`
-	Filename    string `form:"filename" binding:"required,max=255"`
-	Title       string `form:"title"`
-	Description string `form:"description"`
+	Filename     string `form:"filename" binding:"required,max=255"`
+	Title        string `form:"title"`
+	Description  string `form:"description"`
+	SkipResource bool   `form:"skipResource"`
 }
 
 // UploadVideo godoc
@@ -228,7 +229,7 @@ func (c *ContentController) UploadVideoChunk(ctx *gin.Context) {
 		return
 	}
 
-	progress, resource, err := c.ContentService.UploadVideoChunk(ctx, chunkFile, req.ChunkNumber, req.TotalChunks, req.Identifier, req.Filename, req.Title, req.Description)
+	progress, resource, err := c.ContentService.UploadVideoChunk(ctx, chunkFile, req.ChunkNumber, req.TotalChunks, req.Identifier, req.Filename, req.Title, req.Description, req.SkipResource)
 	if err != nil {
 		util.LogInternalError(ctx, err)
 		return

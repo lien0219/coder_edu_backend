@@ -20,6 +20,12 @@ const (
 	ResourceFailed     ResourceStatus = "failed"     // 处理失败
 )
 
+const (
+	ResourceSourceUpload   = "upload"
+	ResourceSourceExternal = "external"
+	MaxVideoURLLength      = 2048
+)
+
 // swagger:model Resource
 type Resource struct {
 	BaseModel
@@ -27,7 +33,8 @@ type Resource struct {
 	Description string         `gorm:"type:text"`
 	Type        ResourceType   `gorm:"type:enum('pdf','video','article','worksheet');not null"`
 	Status      ResourceStatus `gorm:"size:20;default:'success'"` // 资源状态
-	URL         string         `gorm:"size:255;not null"`
+	URL         string         `gorm:"size:2048;not null"`
+	SourceType  string         `gorm:"column:source_type;size:20;not null;default:upload" json:"sourceType"`
 	ModuleType  string         `gorm:"size:50;not null"`
 	ModuleID    uint           `gorm:"index;type:bigint unsigned"`
 	UploaderID  uint           `gorm:"index;type:bigint unsigned"`

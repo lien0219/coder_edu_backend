@@ -1,12 +1,25 @@
 package controller
 
 import (
+	"errors"
+
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
+
+func respondKnowledgePointError(ctx *gin.Context, err error) {
+	if errors.Is(err, util.ErrVideoURLEmpty) ||
+		errors.Is(err, util.ErrVideoURLInvalid) ||
+		errors.Is(err, util.ErrVideoURLUnsupportedProtocol) ||
+		errors.Is(err, util.ErrVideoSourceInvalid) {
+		util.BadRequest(ctx, err.Error())
+		return
+	}
+	util.InternalServerError(ctx)
+}
 
 type KnowledgePointController struct {
 	Service *service.KnowledgePointService
@@ -33,7 +46,7 @@ func (c *KnowledgePointController) Create(ctx *gin.Context) {
 
 	kp, err := c.Service.CreateKnowledgePoint(req)
 	if err != nil {
-		util.InternalServerError(ctx)
+		respondKnowledgePointError(ctx, err)
 		return
 	}
 
@@ -347,7 +360,7 @@ func (c *KnowledgePointController) Update(ctx *gin.Context) {
 
 	kp, err := c.Service.UpdateKnowledgePoint(id, req)
 	if err != nil {
-		util.InternalServerError(ctx)
+		respondKnowledgePointError(ctx, err)
 		return
 	}
 

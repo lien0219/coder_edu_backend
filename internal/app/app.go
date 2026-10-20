@@ -231,7 +231,10 @@ func (a *App) initServices(repos *repositories, cfg *config.Config, db *gorm.DB,
 	)
 	s.postClassTest = service.NewPostClassTestService(repos.postClassTest, s.user)
 	s.migrationTask = service.NewMigrationTaskService(repos.migrationTask, s.user)
-	s.reflection = service.NewReflectionService(repos.reflection)
+	s.reflection = service.NewReflectionService(repos.reflection, repository.NewReflectionEntryRepository(db), db)
+	if os.Getenv("REFLECTION_LEGACY_WRITE") == "true" {
+		s.reflection.LegacyWriteEnabled = true
+	}
 
 	s.chatHub = service.NewChatHub(rdb, repos.chat, repos.user, repos.friendship)
 	go s.chatHub.Run()
@@ -416,7 +419,7 @@ func (a *App) Run() {
 	defer logger.Log.Sync()
 
 	srv := &http.Server{
-		Addr:         ":" + a.Config.Server.Port,
+		Addr:         a.Config.Server.ListenAddr(),
 		Handler:      a.Router,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 60 * time.Second,
@@ -425,7 +428,7 @@ func (a *App) Run() {
 
 	// 启动服务器
 	go func() {
-		log.Printf("Server running on port %s", a.Config.Server.Port)
+		log.Printf("Server running on %s", a.Config.Server.ListenAddr())
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %s\n", err)
 		}

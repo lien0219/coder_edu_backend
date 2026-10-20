@@ -3,6 +3,7 @@ package controller
 import (
 	"coder_edu_backend/internal/service"
 	"coder_edu_backend/internal/util"
+	"errors"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -47,6 +48,10 @@ func (c *ReflectionController) SaveMyReflection(ctx *gin.Context) {
 	}
 
 	reflection, err := c.service.SaveReflection(user.UserID, req.Summary, req.Challenges, req.Connections, req.NextSteps)
+	if errors.Is(err, service.ErrLegacyReflectionWriteDisabled) {
+		util.Forbidden(ctx)
+		return
+	}
 	if err != nil {
 		util.InternalServerError(ctx)
 		return
@@ -120,24 +125,5 @@ func (c *ReflectionController) ListAllReflections(ctx *gin.Context) {
 // @Success 200 {object} util.Response{data=model.Reflection}
 // @Router /api/teacher/reflections/user/{userId} [put]
 func (c *ReflectionController) UpdateReflection(ctx *gin.Context) {
-	userIDStr := ctx.Param("userId")
-	userID, err := strconv.Atoi(userIDStr)
-	if err != nil {
-		util.BadRequest(ctx, "无效的用户ID")
-		return
-	}
-
-	var req SaveReflectionRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		util.BadRequest(ctx, err.Error())
-		return
-	}
-
-	reflection, err := c.service.UpdateReflectionByUserID(uint(userID), req.Summary, req.Challenges, req.Connections, req.NextSteps)
-	if err != nil {
-		util.InternalServerError(ctx)
-		return
-	}
-
-	util.Success(ctx, reflection)
+	util.Forbidden(ctx)
 }

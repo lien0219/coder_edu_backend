@@ -243,6 +243,15 @@ func (a *App) registerStudentRoutes(rg *gin.RouterGroup, c *controllers) {
 		studentOnly.PUT("/learning-profile/instruments/:code/:wave/draft", c.learningProfile.SaveDraft)
 		studentOnly.POST("/learning-profile/instruments/:code/:wave/submit", c.learningProfile.Submit)
 		studentOnly.GET("/analytics/sdl-profile", c.learningProfile.GetSdlProfile)
+
+		studentOnly.GET("/reflections/task-options", c.reflection.TaskOptions)
+		studentOnly.POST("/reflections/entries", c.reflection.CreateEntry)
+		studentOnly.GET("/reflections/entries", c.reflection.ListEntries)
+		studentOnly.GET("/reflections/entries/latest", c.reflection.LatestEntry)
+		studentOnly.GET("/reflections/entries/:id/revisions", c.reflection.ListRevisions)
+		studentOnly.PUT("/reflections/entries/:id", c.reflection.UpdateEntry)
+		studentOnly.POST("/reflections/entries/:id/hide", c.reflection.HideEntry)
+		studentOnly.POST("/reflections/entries/:id/restore", c.reflection.RestoreEntry)
 	}
 
 	// 有效反思
@@ -388,9 +397,11 @@ func (a *App) registerTeacherRoutes(rg *gin.RouterGroup, c *controllers) {
 		teacher.GET("/migration-tasks/:id/submissions", c.migrationTask.ListSubmissions)
 		teacher.GET("/migration-tasks/submissions/:id", c.migrationTask.GetSubmissionDetail)
 
-		// 有效反思管理
-		teacher.GET("/reflections", middleware.RoleMiddleware(model.Teacher, model.Admin), c.reflection.ListAllReflections)
-		teacher.PUT("/reflections/user/:userId", middleware.RoleMiddleware(model.Teacher, model.Admin), c.reflection.UpdateReflection)
+		// 反思历史只读。不提供覆盖学生正文的写入路由。
+		teacher.GET("/reflections/task-options", middleware.RoleMiddleware(model.Teacher, model.Admin), c.reflection.StaffTaskOptions)
+		teacher.GET("/reflections/entries", middleware.RoleMiddleware(model.Teacher, model.Admin), c.reflection.ListStaffEntries)
+		teacher.GET("/reflections/entries/:id", middleware.RoleMiddleware(model.Teacher, model.Admin), c.reflection.GetStaffEntry)
+		teacher.GET("/reflections/entries/:id/revisions", middleware.RoleMiddleware(model.Teacher, model.Admin), c.reflection.ListStaffRevisions)
 	}
 
 	// 学习路径管理

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -41,8 +42,19 @@ type AIConfig struct {
 }
 
 type ServerConfig struct {
-	Port string
-	Mode string
+	Host string `mapstructure:"host"`
+	Port string `mapstructure:"port"`
+	Mode string `mapstructure:"mode"`
+}
+
+// ListenAddr 返回 HTTP 监听地址。Host 为空时保持历史行为，绑定全部网卡的 :port。
+func (s ServerConfig) ListenAddr() string {
+	port := strings.TrimSpace(s.Port)
+	host := strings.TrimSpace(s.Host)
+	if host == "" {
+		return ":" + port
+	}
+	return host + ":" + port
 }
 
 type DatabaseConfig struct {

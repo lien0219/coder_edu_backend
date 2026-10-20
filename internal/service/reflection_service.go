@@ -8,15 +8,24 @@ import (
 	"gorm.io/gorm"
 )
 
+var ErrLegacyReflectionWriteDisabled = errors.New("legacy reflection write is disabled")
+
 type ReflectionService struct {
-	repo *repository.ReflectionRepository
+	repo               *repository.ReflectionRepository
+	entries            *repository.ReflectionEntryRepository
+	db                 *gorm.DB
+	LegacyWriteEnabled bool
 }
 
-func NewReflectionService(repo *repository.ReflectionRepository) *ReflectionService {
-	return &ReflectionService{repo: repo}
+func NewReflectionService(repo *repository.ReflectionRepository, entries *repository.ReflectionEntryRepository, db *gorm.DB) *ReflectionService {
+	// 环境变量缺失时保持拒绝。只有调用方显式设置为 true 才恢复旧的单条覆盖写入。
+	return &ReflectionService{repo: repo, entries: entries, db: db, LegacyWriteEnabled: false}
 }
 
 func (s *ReflectionService) SaveReflection(userID uint, summary, challenges, connections, nextSteps string) (*model.Reflection, error) {
+	if !s.LegacyWriteEnabled {
+		return nil, ErrLegacyReflectionWriteDisabled
+	}
 	reflection, err := s.repo.FindByUserID(userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
